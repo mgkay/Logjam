@@ -1,6 +1,5 @@
 using Logjam
 using Test
 
-@testset "Logjam.jl" begin
-    # Write your tests here.
-end
+include("test_maptools.jl")
+include("test_datatools.jl")

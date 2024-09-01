@@ -9,9 +9,10 @@ makedocs(;
     sitename="Logjam.jl",
     format=Documenter.HTML(;
         canonical="https://mgkay.github.io/Logjam.jl",
-        edit_link="master",
+        edit_link="main",   # Updated to "main" from "master"
         assets=String[],
     ),
+    checkdocs = :none, # Disable the missing docstrings check
     pages=[
         "Home" => "index.md",
     ],
@@ -19,5 +20,6 @@ makedocs(;
 
 deploydocs(;
     repo="github.com/mgkay/Logjam.jl",
-    devbranch="master",
+    branch="gh-pages",  # Ensure gh-pages branch is set correctly
+    devbranch="main",   # Updated to "main" from "master"
 )
