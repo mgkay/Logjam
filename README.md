@@ -12,7 +12,7 @@ To install Logjam, use the following command in your Julia REPL:
 
 ```julia
 using Pkg
-Pkg.add("Logjam")
+Pkg.add("https://github.com/mgkay/Logjam.git")
 ```
 
 ## Example Usage
@@ -20,6 +20,7 @@ Pkg.add("Logjam")
 Here’s an example that demonstrates how to use Logjam to visualize cities in North Carolina with populations over 100,000 using GeoMakie and DataFrames:
 
 ```julia
+using Logjam.DataTools, Logjam.MapTools
 using GeoMakie, DataFrames
 
 # Filter U.S. place data for cities in North Carolina with populations over 100,000
