@@ -12,7 +12,7 @@ To install Logjam, use the following command in your Julia REPL:
 
 ```julia
 using Pkg
-Pkg.add("https://github.com/mgkay/Logjam.git")
+Pkg.add(url="https://github.com/mgkay/Logjam.git")
 ```
 
 ## Example Usage
