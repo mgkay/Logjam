@@ -40,7 +40,7 @@ scatter!(ax, x, y)
 text!(ax, x, y, text=name; aligntext(x, y)...)
 
 # Display the map
-display(fig)
+display(fig);
 ```
 In the above code, `st2fips`, `usplace`, `makemap`, and `aligntext` are Logjam functions.
 
