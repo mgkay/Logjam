@@ -358,7 +358,7 @@ function aligntext(x::Union{Real, AbstractVector{<:Real}, Tuple{Vararg{Real}}},
 
             for (k, orig_idx) in enumerate(indices)
                 # Distribute labels evenly around the base angle
-                ang = base_ang + (k - 1) * angle_step
+                ang = mod(base_ang + (k - 1) * angle_step, 360.0)
                 align, offset = bestfit(ang, offsetamt)
                 alignout[orig_idx] = align
                 offsetout[orig_idx] = offset
