@@ -1,6 +1,4 @@
 using Test
-include("../src/DataTools.jl")
-using .DataTools
 using DataFrames
 
 # Test for usplace function
@@ -72,4 +70,12 @@ end
     @test st2fips(:NC) == 37
     @test st2fips(:NY) == 36
     @test_throws ArgumentError st2fips(:XX)
+end
+
+# Test for fips2st function
+@testset "fips2st function tests" begin
+    @test fips2st(37) == :NC
+    @test fips2st(36) == :NY
+    @test fips2st(72) == :PR
+    @test_throws ArgumentError fips2st(99)
 end

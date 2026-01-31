@@ -10,6 +10,7 @@ makedocs(;
     format=Documenter.HTML(;
         canonical="https://mgkay.github.io/Logjam.jl",
         edit_link="main",   # Updated to "main" from "master"
+# edit_link="https://github.com/mgkay/Logjam.jl/blob/main/", # to fix source buttom in docs
         assets=String[],
     ),
     checkdocs = :none, # Disable the missing docstrings check

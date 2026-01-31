@@ -15,12 +15,21 @@ using Pkg
 Pkg.add(url="https://github.com/mgkay/Logjam.git")
 ```
 
-## Example Usage
+## Dependencies
 
-Here’s an example that demonstrates how to use Logjam to visualize cities in North Carolina with populations over 100,000 using GeoMakie and DataFrames:
+Logjam uses CairoMakie by default for rendering maps. For interactive display with GLMakie, load it before calling `makemap`:
 
 ```julia
-using Logjam.DataTools, Logjam.MapTools
+using GLMakie  # Optional: enables backend=:GLMakie
+using Logjam
+```
+
+## Example Usage
+
+Here's an example that demonstrates how to use Logjam to visualize cities in North Carolina with populations over 100,000:
+
+```julia
+using Logjam
 using GeoMakie, DataFrames
 
 # Filter U.S. place data for cities in North Carolina with populations over 100,000
@@ -42,6 +51,6 @@ text!(ax, x, y, text=name; aligntext(x, y)...)
 # Display the map
 display(fig);
 ```
-In the above code, `st2fips`, `usplace`, `makemap`, and `aligntext` are Logjam functions.
+In the above code, `st2fips`, `usplace`, `makemap`, and `aligntext` are Logjam functions. Use `fips2st` for the reverse lookup (FIPS code to state symbol).
 
 ![NC Cities Plot](docs/assets/nc_cities_plot.png)

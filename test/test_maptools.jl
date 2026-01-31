@@ -1,6 +1,4 @@
 using Test
-include("../src/MapTools.jl")
-using .MapTools
 using GeoMakie
 
 # Test for WORLD_LIMITS, US_LIMITS, and CUS_LIMITS constants

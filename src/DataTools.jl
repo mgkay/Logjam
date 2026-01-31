@@ -1,33 +1,4 @@
-"""
-    DataTools
-
-The `DataTools` module provides a set of functions and tools for working with U.S. geographical and statistical data.
-
-# Exported Functions:
-- `usplace`: Returns a DataFrame containing U.S. place data.
-- `uscounty`: Returns a DataFrame containing U.S. county data.
-- `uscentract`: Returns a DataFrame containing U.S. Census Tract data.
-- `uscenblkgrp`: Returns a DataFrame containing U.S. Census Block Group data.
-- `uszcta3`: Returns a DataFrame containing U.S. ZIP Code Tabulation Area (3-digit) data.
-- `uszcta5`: Returns a DataFrame containing U.S. ZIP Code Tabulation Area (5-digit) data.
-- `uscsa`: Returns a DataFrame containing U.S. Combined Statistical Area (CSA) data.
-- `uscbsa`: Returns a DataFrame containing U.S. Core-Based Statistical Area (CBSA) data.
-- `st2fips`: Converts state abbreviations to FIPS codes.
-
-Usage:
-```julia-repl
-    using DataFrames
-    df = usplace()
-```
-"""
-module DataTools
-
-# Import for data deserialization
-using Serialization
-
-# Exported functions
-export usplace, uscounty, uscentract, uscenblkgrp, uszcta5, uszcta3
-export uscbsa, uscsa, st2fips
+# DataTools - Functions for working with U.S. geographical and statistical data
 
 """
     loaddata(fn::String) -> Any
@@ -314,16 +285,52 @@ julia> st2fips.([:NC, :NY])
 ```
 """
 function st2fips(state::Symbol)
-    try
-        if state in keys(state_fips)
-            return state_fips[state]
-        else
-            error_message = "Error: '$state' is not a valid US state or territory symbol."
-            throw(ArgumentError(error_message))
-        end
-    catch e
-        return throw(e)
+    if state in keys(state_fips)
+        return state_fips[state]
+    else
+        error_message = "Error: '$state' is not a valid US state or territory symbol."
+        throw(ArgumentError(error_message))
     end
 end
 
-end # module DataTools
+# Reverse mapping: FIPS code to state symbol
+const fips_state = Dict(v => k for (k, v) in state_fips)
+
+"""
+    fips2st(fips::Integer) -> Symbol
+
+Convert a FIPS code to its corresponding two-character state or territory symbol.
+
+Valid FIPS codes are: $(join(sort(collect(keys(fips_state))), ", "))
+
+# Arguments
+- `fips`: An integer representing the FIPS code.
+
+# Returns
+- A `Symbol` representing the two-character state or territory abbreviation.
+
+# Throws
+- `ArgumentError` if the FIPS code is not valid.
+
+# Examples
+```julia-repl
+julia> fips2st(37)
+:NC
+
+julia> fips2st(36)
+:NY
+
+julia> fips2st.(37:39)
+3-element Vector{Symbol}:
+ :NC
+ :ND
+ :OH
+```
+"""
+function fips2st(fips::Integer)
+    if fips in keys(fips_state)
+        return fips_state[fips]
+    else
+        throw(ArgumentError("Error: '$fips' is not a valid US state or territory FIPS code."))
+    end
+end

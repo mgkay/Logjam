@@ -1,37 +1,4 @@
-"""
-# MapTools
-
-A module for creating geographical maps using the Makie ecosystem.
-
-## Overview
-The `MapTools` module provides a collection of tools and utilities that enable users to create detailed map visualizations, define and manipulate geographical regions, calculate bounding boxes, align text labels, and check if points lie within specific geographical boundaries.
-   
-## Exported Functions
-- `makemap`: Creates a map visualization for predefined or user-defined regions of interest with various customizable options.
-- `mapbbox`: Calculates the bounding box for a set of geographic coordinates with optional expansion.
-- `aligntext`: Determines the best alignment and offset positions for text labels on a map based on point arrangements.
-- `isptinbbox`: Checks if a given point lies within a specified bounding box.
-
-## Constants
-- `WORLD_LIMITS`: Defines geographical limits for world map projections.
-- `US_LIMITS`: Defines geographical limits for map projections of the contiguous United States.
-- `CUS_LIMITS`: Defines geographical limits for map projections of the continental United States (excluding Alaska and Hawaii).
-
-## Dependencies
-The module depends on the following packages:
-- `Serialization`: For loading pre-serialized geographic data.
-- `GeoMakie`, `GLMakie`, `CairoMakie`: For creating and rendering maps.
-- `DelaunayTriangulation`: For triangulation in text alignment functions.
-"""
-module MapTools
-
-# Import packages used in the module
-using Serialization, GeoMakie, GLMakie, CairoMakie
-using DelaunayTriangulation
-
-# Exported functions
-export WORLD_LIMITS, US_LIMITS, CUS_LIMITS
-export makemap, mapbbox, aligntext, isptinbbox
+# MapTools - Functions for creating geographical maps using the Makie ecosystem
 
 """
     WORLD_LIMITS
@@ -63,9 +30,53 @@ A constant defining the geographical limits for a map projection of the contiguo
 """
 const CUS_LIMITS = ((-125, -65), (24, 50))
 
+# Cache for geographic data (loaded on first use)
+const _countries_cache = Ref{Union{Nothing, Tuple}}(nothing)
+const _usstates_cache = Ref{Union{Nothing, Tuple}}(nothing)
+const _nhsroads_cache = Ref{Union{Nothing, Tuple}}(nothing)
+
 """
-    makemap(x::Union{Nothing, AbstractVector{<:Real}, Tuple{Vararg{<:Real, 2}}} = nothing,
-            y::Union{Nothing, AbstractVector{<:Real}, Tuple{Vararg{<:Real, 2}}} = nothing;
+    countries() -> Tuple{Vector, Vector}
+
+Load and cache country border coordinates from serialized data.
+"""
+function countries()
+    if isnothing(_countries_cache[])
+        data_dir = joinpath(dirname(@__FILE__), "..", "data")
+        _countries_cache[] = open(deserialize, joinpath(data_dir, "countries.jls"))
+    end
+    return _countries_cache[]
+end
+
+"""
+    usstates() -> Tuple{Vector, Vector}
+
+Load and cache U.S. state border coordinates from serialized data.
+"""
+function usstates()
+    if isnothing(_usstates_cache[])
+        data_dir = joinpath(dirname(@__FILE__), "..", "data")
+        _usstates_cache[] = open(deserialize, joinpath(data_dir, "usstates.jls"))
+    end
+    return _usstates_cache[]
+end
+
+"""
+    nhsroads() -> Tuple{Vector, Vector}
+
+Load and cache NHS road coordinates from serialized data.
+"""
+function nhsroads()
+    if isnothing(_nhsroads_cache[])
+        data_dir = joinpath(dirname(@__FILE__), "..", "data")
+        _nhsroads_cache[] = open(deserialize, joinpath(data_dir, "nhsroads.jls"))
+    end
+    return _nhsroads_cache[]
+end
+
+"""
+    makemap(x::Union{Nothing, AbstractVector{<:Real}, NTuple{2, <:Real}} = nothing,
+            y::Union{Nothing, AbstractVector{<:Real}, NTuple{2, <:Real}} = nothing;
             region::Symbol = :World, backend::Symbol = :CairoMakie,
             xexpand::Real = 0.3, yexpand::Real = 0.1, doRoadbkgd::Bool = true, maxroadlatspan::Real = 2.5) -> Figure, GeoAxis, Vector, Tuple
 
@@ -82,7 +93,7 @@ The map can focus on different predefined regions (the world, U.S., or continent
     - `:CUS`: Focuses on the continental U.S. without showing country borders.
 - `backend::Symbol`: Specifies the rendering backend. Options are:
     - `:CairoMakie`: Default. Uses CairoMakie for rendering.
-    - `:GLMakie`: Uses GLMakie for rendering.
+    - `:GLMakie`: Uses GLMakie for interactive rendering. Requires `using GLMakie` before calling.
 - `xexpand::Float64`: Expansion factor for the x-axis limits. Default is `0.3`.
 - `yexpand::Float64`: Expansion factor for the y-axis limits. Default is `0.1`.
 - `doRoadbkgd::Bool`: Whether to include roads as background features if maximum latitude span is less than `maxroadlatspan`. Default is `true`.
@@ -109,7 +120,8 @@ The map can focus on different predefined regions (the world, U.S., or continent
 fig, ax = makemap()
 display(fig)
 
-# Create a U.S. map with GLMakie backend
+# Create a U.S. map with GLMakie backend (requires `using GLMakie` first)
+using GLMakie
 fig, ax, hborders = makemap(region=:US, backend=:GLMakie)
 display(fig)
 
@@ -123,10 +135,10 @@ println(limits)
 display(fig)
 ```
 """
-function makemap(x::Union{Nothing, AbstractVector{<:Real}, Tuple{Vararg{<:Real, 2}}} = nothing,
-                 y::Union{Nothing, AbstractVector{<:Real}, Tuple{Vararg{<:Real, 2}}} = nothing;
+function makemap(x::Union{Nothing, AbstractVector{<:Real}, NTuple{2, <:Real}} = nothing,
+                 y::Union{Nothing, AbstractVector{<:Real}, NTuple{2, <:Real}} = nothing;
                  region::Symbol = :World, backend::Symbol = :CairoMakie,
-                 xexpand::Real = 0.3, yexpand::Real = 0.1, 
+                 xexpand::Real = 0.3, yexpand::Real = 0.1,
                  doRoadbkgd::Bool = true, maxroadlatspan::Real = 2.5)
 
     # Enforce that x and y must have at least two elements if they are vectors
@@ -139,11 +151,15 @@ function makemap(x::Union{Nothing, AbstractVector{<:Real}, Tuple{Vararg{<:Real, 
 
     # Activate the appropriate backend for rendering the map
     if backend == :GLMakie
-        GLMakie.activate!()  # Use GLMakie for rendering
+        if _glmakie_available[]
+            _glmakie_activate[]()  # Use GLMakie for rendering
+        else
+            error("GLMakie backend requested but GLMakie is not loaded. Add `using GLMakie` first.")
+        end
     elseif backend == :CairoMakie
         CairoMakie.activate!()  # Use CairoMakie for rendering
     else
-        error("Unknown backend specified, choose :GLMakie or :CairoMakie.")  # Error if an unsupported backend is specified
+        error("Unknown backend specified, choose :GLMakie or :CairoMakie.")
     end
 
     # Define a helper function to check if one bounding box (bbox0) is within another (bbox)
@@ -171,10 +187,10 @@ function makemap(x::Union{Nothing, AbstractVector{<:Real}, Tuple{Vararg{<:Real, 
     else
         # Calculate map limits based on provided coordinates with optional expansion
         limits, limits0 = mapbbox(x, y, xexpand = xexpand, yexpand = yexpand)
-        # Check if the region falls within the continental U.S. limits
+        # Check if the region falls within the continental U.S. or broader U.S. limits
         if isinbbox(limits0, CUS_LIMITS)
             doCountryborder, doUSborder = false, true  # Show only U.S. borders
-        elseif isinbbox(limits0, CUS_LIMITS)
+        elseif isinbbox(limits0, US_LIMITS)
             doUSborder = true  # Show both country and U.S. borders
         end
     end
@@ -183,25 +199,6 @@ function makemap(x::Union{Nothing, AbstractVector{<:Real}, Tuple{Vararg{<:Real, 
     fig = Figure()
     ax = GeoAxis(fig[1, 1]; dest="+proj=merc", limits=limits, autolimitaspect = nothing)
     ax.xgridstyle, ax.ygridstyle = :dot, :dot  # Set grid style for the axis
-
-    # Define helper functions to load pre-serialized geographic data
-    function countries()
-        data_dir = joinpath(dirname(@__FILE__), "..", "data")
-        x, y = open(deserialize, joinpath(data_dir, "countries.jls"))
-        return x, y  # Return coordinates for country borders
-    end
-
-    function usstates()
-        data_dir = joinpath(dirname(@__FILE__), "..", "data")
-        x, y = open(deserialize, joinpath(data_dir, "usstates.jls"))
-        return x, y  # Return coordinates for U.S. state borders
-    end
-
-    function nhsroads()
-        data_dir = joinpath(dirname(@__FILE__), "..", "data")
-        x, y = open(deserialize, joinpath(data_dir, "nhsroads.jls"))
-        return x, y  # Return coordinates for NHS roads
-    end
 
     hborders = []  # Initialize an empty array to hold border handles
 
@@ -233,8 +230,8 @@ function makemap(x::Union{Nothing, AbstractVector{<:Real}, Tuple{Vararg{<:Real, 
 end
 
 """
-    aligntext(x::Union{Real, AbstractVector, Tuple{Vararg{Real}}}, 
-              y::Union{Real, AbstractVector, Tuple{Vararg{Real}}};
+    aligntext(x::Union{Real, AbstractVector{<:Real}, Tuple{Vararg{Real}}},
+              y::Union{Real, AbstractVector{<:Real}, Tuple{Vararg{Real}}};
               offsetamt::Real=1, mindistratio::Real=1.5) -> Pair, Pair
 
 Determines text alignment and offset positions for given points.
@@ -268,8 +265,8 @@ text!(ax, x, y, text=name; aligntext(x, y)...)  # Note ";" and "..." for splatti
 display(fig)
 ```
 """
-function aligntext(x::Union{Real, AbstractVector, Tuple{Vararg{Real}}}, 
-                   y::Union{Real, AbstractVector, Tuple{Vararg{Real}}};
+function aligntext(x::Union{Real, AbstractVector{<:Real}, Tuple{Vararg{Real}}},
+                   y::Union{Real, AbstractVector{<:Real}, Tuple{Vararg{Real}}};
                    offsetamt::Real=1, mindistratio::Real=1.5)
 
     # Convert scalars to single-element vectors for consistent handling
@@ -327,9 +324,9 @@ function aligntext(x::Union{Real, AbstractVector, Tuple{Vararg{Real}}},
 end
 
 """
-    mapbbox(x::Union{AbstractVector{<:Real}, Tuple{Vararg{<:Real}}},
-            y::Union{AbstractVector{<:Real}, Tuple{Vararg{<:Real}}};
-            xexpand::Float64=0.0, yexpand::Float64=0.0) -> Tuple, Tuple
+    mapbbox(x::Union{AbstractVector{<:Real}, Tuple{Vararg{Real}}},
+            y::Union{AbstractVector{<:Real}, Tuple{Vararg{Real}}};
+            xexpand::Real=0.0, yexpand::Real=0.0) -> Tuple, Tuple
 
 Calculates the bounding box for a set of geographic coordinates, with optional expansion along the x and y axes.
 
@@ -349,9 +346,9 @@ Calculates the bounding box for a set of geographic coordinates, with optional e
 - The x-limits are clamped to the range `[-180, 180]` to ensure valid longitude values.
 - The y-limits are clamped to slightly above `-90` and slightly below `90` to ensure valid latitude values and avoid issues with map projections.
 """
-function mapbbox(x::Union{AbstractVector{<:Real}, Tuple{Vararg{<:Real}}},
-                 y::Union{AbstractVector{<:Real}, Tuple{Vararg{<:Real}}};
-                 xexpand::Float64=0.0, yexpand::Float64=0.0)
+function mapbbox(x::Union{AbstractVector{<:Real}, Tuple{Vararg{Real}}},
+                 y::Union{AbstractVector{<:Real}, Tuple{Vararg{Real}}};
+                 xexpand::Real=0.0, yexpand::Real=0.0)
     
     # Check that x and y have the same length
     if length(x) != length(y)
@@ -511,5 +508,3 @@ function isptinbbox(pt, bbox::Tuple{Union{Tuple{<:Real, <:Real}, AbstractVector{
     return (pt[1] >= bbox[1][1] && pt[1] <= bbox[1][2] &&
     pt[2] >= bbox[2][1] && pt[2] <= bbox[2][2])
 end
-
-end # module MapTools
