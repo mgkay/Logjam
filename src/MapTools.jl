@@ -284,43 +284,89 @@ function aligntext(x::Union{Real, AbstractVector{<:Real}, Tuple{Vararg{Real}}},
     if length(pts) == 1
         return (:align => (:left, :bottom), :offset => (offsetamt, offsetamt))
     else
-        alignout, offsetout = [], []
-        if length(pts) == 2
-            ang = arcang(pts[1], pts[2])
-            align, offset = bestfit(ang, offsetamt)
-            push!(alignout, align)
-            push!(offsetout, offset) 
-            ang -= 180    # Reverse direction
-            align, offset = bestfit(ang, offsetamt)
-            push!(alignout, align)
-            push!(offsetout, offset) 
+        # Handle duplicate points: group by unique coordinates
+        # Maps each unique coordinate to list of original indices
+        coord_to_indices = Dict{Tuple{Float64,Float64}, Vector{Int}}()
+        for (i, pt) in enumerate(pts)
+            key = (Float64(pt[1]), Float64(pt[2]))
+            if haskey(coord_to_indices, key)
+                push!(coord_to_indices[key], i)
+            else
+                coord_to_indices[key] = [i]
+            end
+        end
+
+        # Build unique points list and mapping
+        unique_pts = Tuple{Float64,Float64}[]
+        unique_idx_to_original = Int[]  # First original index for each unique point
+        for (coord, indices) in coord_to_indices
+            push!(unique_pts, coord)
+            push!(unique_idx_to_original, first(indices))
+        end
+        n_unique = length(unique_pts)
+
+        # Compute base angles for unique points
+        base_angles = zeros(Float64, n_unique)
+
+        if n_unique == 1
+            # All points at same location - distribute evenly around compass
+            base_angles[1] = 45.0  # Start at NE
+        elseif n_unique == 2
+            # Two unique locations
+            ang = arcang(unique_pts[1], unique_pts[2])
+            base_angles[1] = ang
+            base_angles[2] = ang - 180
         else
-            tri = triangulate(pts)
-            for i in 1:length(pts)
-                IJ = get_adjacent2vertex(tri, i)
+            # Three or more unique points - use triangulation
+            tri = triangulate(unique_pts)
+            for ui in 1:n_unique
+                IJ = get_adjacent2vertex(tri, ui)
                 idx = collect(reduce(union, [Set(t) for t in IJ]))
                 filter!(j -> j > 0, idx)   # Remove ghost vertices
-                d = [d2(pts[i], pts[j]) for j in idx]
+                d = [d2(unique_pts[ui], unique_pts[j]) for j in idx]
                 sidx = sortperm(d)
                 d, idx = d[sidx], idx[sidx]
-                if (d[2]/d[1] > mindistratio) || 
+                if (d[2]/d[1] > mindistratio) ||
                     (length(d) > 2 ? (d[3]/(d[1] + d[2]) > mindistratio) : false)
-                    ang = arcang(pts[i], pts[idx[1]]) - 180
+                    base_angles[ui] = arcang(unique_pts[ui], unique_pts[idx[1]]) - 180
                 else
-                    ang = [arcang(pts[i], pts[j]) for j in idx]
+                    ang = [arcang(unique_pts[ui], unique_pts[j]) for j in idx]
                     ang = sort(ang)
                     δ = diff([-180; ang; 180])
                     δ = [δ[2:end-1]; δ[1] + δ[end]]
-                    idx = argmax(δ)
-                    ang = ang[idx] + δ[idx]/2
+                    idx_max = argmax(δ)
+                    base_angles[ui] = ang[idx_max] + δ[idx_max]/2
                 end
-                align, offset = bestfit(ang, offsetamt)
-                push!(alignout, align)
-                push!(offsetout, offset)    
             end
         end
+
+        # Create mapping from unique coord to its base angle
+        coord_to_base_angle = Dict{Tuple{Float64,Float64}, Float64}()
+        for (ui, coord) in enumerate(unique_pts)
+            coord_to_base_angle[coord] = base_angles[ui]
+        end
+
+        # Assign alignments to all original points
+        # For duplicates at same location, distribute evenly starting from base angle
+        alignout = Vector{Tuple{Symbol,Symbol}}(undef, length(pts))
+        offsetout = Vector{Tuple{Real,Real}}(undef, length(pts))
+
+        for (coord, indices) in coord_to_indices
+            base_ang = coord_to_base_angle[coord]
+            n_at_loc = length(indices)
+            angle_step = 360.0 / n_at_loc
+
+            for (k, orig_idx) in enumerate(indices)
+                # Distribute labels evenly around the base angle
+                ang = base_ang + (k - 1) * angle_step
+                align, offset = bestfit(ang, offsetamt)
+                alignout[orig_idx] = align
+                offsetout[orig_idx] = offset
+            end
+        end
+
         return :align => alignout, :offset => offsetout
-    end 
+    end
 end
 
 """
