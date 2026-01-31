@@ -30,7 +30,7 @@ Geographic and population data for each place in the U.S., where each place is a
 - `STFIP`: Integer representing state FIPS (Federal Information Processing Standards) code.
 - `PLFIP`: Integer representing place FIPS code.
 - `NAME`: String containing name of place (city, town, or CDP).
-- `ST`: String representing state abbreviation (e.g., AL for Alabama).
+- `ST`: Symbol representing state abbreviation (e.g., :AL for Alabama).
 - `LAT`: Float representing an interior latitude of place.
 - `LON`: Float representing an interior longitude of place.
 - `POP`: Integer representing population of place.
@@ -65,7 +65,7 @@ Geographic and population data for each U.S. county, including latitude-longitud
 - `STFIP`: Integer representing state FIPS (Federal Information Processing Standards) code.
 - `COFIP`: Integer representing county FIPS code.
 - `NAME`: String containing name of county.
-- `ST`: String representing state abbreviation (e.g., AL for Alabama).
+- `ST`: Symbol representing state abbreviation (e.g., :AL for Alabama).
 - `LAT`: Float representing latitude of county center of population.
 - `LON`: Float representing longitude of county center of population.
 - `POP`: Integer representing population of county.
@@ -97,7 +97,7 @@ Geographic and population data for each U.S. census tract, including latitude-lo
 - `STFIP`: Integer representing state FIPS (Federal Information Processing Standards) code.
 - `COFIP`: Integer representing county FIPS code.
 - `TRFIP`: Integer representing census tract FIPS code.
-- `ST`: String representing state abbreviation (e.g., AL for Alabama).
+- `ST`: Symbol representing state abbreviation (e.g., :AL for Alabama).
 - `LAT`: Float representing latitude of census tract center of population.
 - `LON`: Float representing longitude of census tract center of population.
 - `POP`: Integer representing population of census tract.
