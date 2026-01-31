@@ -43,10 +43,43 @@ end
     @test isptinbbox(pt_outside, bbox) == false
 end
 
-# Test for makemap function (this will test if makemap runs without errors)
+# Test for makemap function
 @testset "makemap tests" begin
-    fig, ax, hborders, limits = makemap(region=:World)
-    @test fig isa Figure
-    @test ax isa GeoAxis
+    # Test different regions
+    @testset "region=$region" for region in [:World, :US, :CUS]
+        fig, ax, hborders, limits = makemap(region=region)
+        @test fig isa Figure
+        @test ax isa GeoAxis
+        @test hborders isa Vector
+        @test limits isa Tuple
+    end
+
+    # Test with coordinate inputs
+    @testset "coordinate inputs" begin
+        x = [-80.0, -75.0, -78.0]
+        y = [35.0, 40.0, 38.0]
+        fig, ax, hborders, limits = makemap(x, y)
+        @test fig isa Figure
+        @test ax isa GeoAxis
+    end
+
+    # Test invalid backend error message
+    @testset "invalid backend error" begin
+        @test_throws ErrorException makemap(backend=:InvalidBackend)
+    end
+
+    # Test GLMakie backend without loading GLMakie
+    @testset "GLMakie not loaded error" begin
+        if !Logjam._glmakie_available[]
+            err = try
+                makemap(backend=:GLMakie)
+                nothing
+            catch e
+                e
+            end
+            @test err isa ErrorException
+            @test occursin("GLMakie", err.msg)
+        end
+    end
 end
 
