@@ -59,7 +59,7 @@ export makemap, mapbbox, aligntext, isptinbbox
 export WORLD_LIMITS, US_LIMITS, CUS_LIMITS
 
 # Include component files
-include("datatools.jl")
-include("maptools.jl")
+include("DataTools.jl")
+include("MapTools.jl")
 
 end # module Logjam
