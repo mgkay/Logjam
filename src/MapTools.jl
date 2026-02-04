@@ -33,7 +33,7 @@ const CUS_LIMITS = ((-125, -65), (24, 50))
 # Cache for geographic data (loaded on first use)
 const _countries_cache = Ref{Union{Nothing, Tuple}}(nothing)
 const _usstates_cache = Ref{Union{Nothing, Tuple}}(nothing)
-const _nhsroads_cache = Ref{Union{Nothing, Tuple}}(nothing)
+const _faf5interstate_cache = Ref{Union{Nothing, Tuple}}(nothing)
 
 """
     countries() -> Tuple{Vector, Vector}
@@ -62,23 +62,26 @@ function usstates()
 end
 
 """
-    nhsroads() -> Tuple{Vector, Vector}
+    faf5interstateroads() -> Tuple{Vector, Vector}
 
-Load and cache NHS road coordinates from serialized data.
+Load and cache FAF5 interstate road coordinates from serialized data.
+
+Returns polyline vectors (x, y) with NaN separators for interstate highways
+derived from the Freight Analysis Framework version 5 (FAF5) network.
 """
-function nhsroads()
-    if isnothing(_nhsroads_cache[])
+function faf5interstateroads()
+    if isnothing(_faf5interstate_cache[])
         data_dir = joinpath(dirname(@__FILE__), "..", "data")
-        _nhsroads_cache[] = open(deserialize, joinpath(data_dir, "nhsroads.jls"))
+        _faf5interstate_cache[] = open(deserialize, joinpath(data_dir, "faf5_interstate_roads.jls"))
     end
-    return _nhsroads_cache[]
+    return _faf5interstate_cache[]
 end
 
 """
     makemap(x::Union{Nothing, AbstractVector{<:Real}, NTuple{2, <:Real}} = nothing,
             y::Union{Nothing, AbstractVector{<:Real}, NTuple{2, <:Real}} = nothing;
             region::Symbol = :World, backend::Symbol = :CairoMakie,
-            xexpand::Real = 0.3, yexpand::Real = 0.1, doRoadbkgd::Bool = true, maxroadlatspan::Real = 2.5) -> Figure, GeoAxis, Vector, Tuple
+            xexpand::Real = 0.3, yexpand::Real = 0.1, doRoadbkgd::Bool = true, maxroadlatspan::Real = 30.0) -> Figure, GeoAxis, Vector, Tuple
 
 Creates map visualization for predefined or user-defined region of interest. 
     
@@ -97,13 +100,13 @@ The map can focus on different predefined regions (the world, U.S., or continent
 - `xexpand::Float64`: Expansion factor for the x-axis limits. Default is `0.3`.
 - `yexpand::Float64`: Expansion factor for the y-axis limits. Default is `0.1`.
 - `doRoadbkgd::Bool`: Whether to include roads as background features if maximum latitude span is less than `maxroadlatspan`. Default is `true`.
-- `maxroadlatspan::Float64`: Maximum latitude span for displaying roads. Default is `2.5`°.
+- `maxroadlatspan::Float64`: Maximum latitude span for displaying roads. Default is `30.0`° (allows continental US coverage with FAF5 interstate network).
 
 # Returns
 - `fig::Figure`: The figure object containing the map.
 - `ax::GeoAxis`: The axis object where the map is drawn.
 - `hborders::Vector`: A vector of handles for the lines plotted on the map in the following order:
-    - `hborders[1]`: NHS roads, if used (derived from: https://geodata.bts.gov/datasets/usdot::national-highway-system-nhs/explore).
+    - `hborders[1]`: Interstate roads, if used (derived from FAF5: https://geodata.bts.gov/datasets/usdot::freight-analysis-framework-faf5-network-links/about).
     - `hborders[2]`: U.S. state borders, if used (derived from: https://raw.githubusercontent.com/PublicaMundi/MappingAPI/master/data/geojson/us-states.json)).
     - `hborders[3]`: Country borders, if used (derived from https://github.com/PublicaMundi/MappingAPI/blob/master/data/geojson/countries.geojson?short_path=b27f2ec)).
 - `limits::Tuple`: The geographic limits (bounding box) used for the map.
@@ -139,7 +142,7 @@ function makemap(x::Union{Nothing, AbstractVector{<:Real}, NTuple{2, <:Real}} = 
                  y::Union{Nothing, AbstractVector{<:Real}, NTuple{2, <:Real}} = nothing;
                  region::Symbol = :World, backend::Symbol = :CairoMakie,
                  xexpand::Real = 0.3, yexpand::Real = 0.1,
-                 doRoadbkgd::Bool = true, maxroadlatspan::Real = 2.5)
+                 doRoadbkgd::Bool = true, maxroadlatspan::Real = 30.0)
 
     # Enforce that x and y must have at least two elements if they are vectors
     if x isa AbstractVector && length(x) < 2
@@ -204,9 +207,13 @@ function makemap(x::Union{Nothing, AbstractVector{<:Real}, NTuple{2, <:Real}} = 
 
     # Add roads as background if specified and within latitude span limits
     if doRoadbkgd
-        if abs(limits[2][2] - limits[2][1]) <= maxroadlatspan
-            push!(hborders, lines!(ax, nhsroads()..., color=:grey, linewidth=.5,
-                alpha=0.5, label="NHS Roads"))  # Add NHS roads to the map
+        latspan = abs(limits[2][2] - limits[2][1])
+        if latspan <= maxroadlatspan
+            # Adjust opacity based on zoom level (lighter when zoomed in)
+            road_alpha = latspan > 20 ? 0.35 : (latspan > 10 ? 0.25 : 0.2)
+            road_lw = latspan > 20 ? 0.3 : (latspan > 10 ? 0.5 : 0.6)
+            push!(hborders, lines!(ax, faf5interstateroads()..., color=(:steelblue, road_alpha),
+                linewidth=road_lw, label="Interstate Roads"))
         end
     end
 

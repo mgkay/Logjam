@@ -4,9 +4,7 @@ CurrentModule = Logjam
 
 # Logjam
 
-Welcome to the documentation for Logjam.
-
-This package provides tools for geographical mapping and handling U.S. geographical and statistical data.
+Logjam is a Julia package providing tools and data for logistics engineering tasks. It enables users to work with U.S. geographical data and FAF5 road networks, create maps using GeoMakie, and create multi-stop routes using savings-based construction and 2-opt improvement heuristics.
 
 ## GLMakie Extension
 
@@ -66,4 +64,56 @@ uscsa
 ```@docs
 st2fips
 fips2st
+```
+
+### FAF5 Road Network Data
+
+```@docs
+faf5nodes
+faf5links
+faf5interstate
+```
+
+## Road Network Functions
+
+Functions for working with road networks.
+
+```@docs
+dgc
+Dgc
+prune_reindex
+thin
+addconnectors
+links2graph
+x2ln
+cropnetwork
+shortestpaths
+```
+
+## Routing Functions
+
+Functions for vehicle routing problems.
+
+### Route Cost and Representation
+
+```@docs
+segcost
+rteTC
+isorigin
+rte2loc
+```
+
+### Route Construction and Improvement
+
+```@docs
+mincostinsert
+pairwisesavings
+savings
+twoopt
+```
+
+### Route Visualization
+
+```@docs
+rte2lines
 ```

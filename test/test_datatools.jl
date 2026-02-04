@@ -79,3 +79,43 @@ end
     @test fips2st(72) == :PR
     @test_throws ArgumentError fips2st(99)
 end
+
+# Test for FAF5 road network functions
+@testset "faf5nodes function tests" begin
+    df = faf5nodes()
+    @test isa(df, DataFrame)
+    @test !isempty(df)
+    @test "IDX" in names(df)
+    @test "LON" in names(df)
+    @test "LAT" in names(df)
+    # Check that coordinates are in valid range
+    @test all(-180 .<= df.LON .<= 180)
+    @test all(-90 .<= df.LAT .<= 90)
+end
+
+@testset "faf5links function tests" begin
+    df = faf5links()
+    @test isa(df, DataFrame)
+    @test !isempty(df)
+    @test "SRC" in names(df)
+    @test "DST" in names(df)
+    @test "DIST" in names(df)
+    # Check positive distances
+    @test all(df.DIST .>= 0)
+end
+
+@testset "faf5interstate function tests" begin
+    x, y = faf5interstate()
+    @test isa(x, Vector)
+    @test isa(y, Vector)
+    @test length(x) == length(y)
+    @test !isempty(x)
+    # Polyline vectors should contain NaN separators
+    @test any(isnan, x)
+    @test any(isnan, y)
+    # Non-NaN values should be valid coordinates
+    valid_x = filter(!isnan, x)
+    valid_y = filter(!isnan, y)
+    @test all(-180 .<= valid_x .<= 180)
+    @test all(-90 .<= valid_y .<= 90)
+end

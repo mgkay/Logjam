@@ -334,3 +334,119 @@ function fips2st(fips::Integer)
         throw(ArgumentError("Error: '$fips' is not a valid US state or territory FIPS code."))
     end
 end
+
+# =============================================================================
+# FAF5 Road Network Data
+# =============================================================================
+
+"""
+    loadcsvdata(fn::String) -> DataFrame
+
+Loads and returns data from a CSV file in the "data" directory.
+
+- `fn`: String representing the filename (without extension) of the data to be loaded.
+"""
+function loadcsvdata(fn)
+    try
+        data_dir = joinpath(dirname(@__FILE__), "..", "data")
+        return CSV.read(joinpath(data_dir, fn * ".csv"), DataFrame)
+    catch e
+        println("Failed to load CSV data: ", e)
+        throw(e)
+    end
+end
+
+"""
+    faf5nodes() -> DataFrame
+
+Returns DataFrame containing FAF5 road network nodes.
+
+Physical road network nodes from the Freight Analysis Framework version 5 (FAF5).
+Centroid nodes (artificial FAF zone connectors) are excluded.
+
+# Columns
+- `IDX`: Integer node identifier (non-sequential due to centroid removal).
+- `LON`: Float representing longitude of node.
+- `LAT`: Float representing latitude of node.
+- `ENTRY_EXIT`: Entry/exit indicator for interchanges.
+- `EXIT_NUM`: Exit number (if applicable).
+- `INTERCHANGE`: Interchange name (if applicable).
+- `FACILITY_TYPE`: Facility type code (port, airport, etc.).
+- `FACILITY_NAME`: Facility name (if applicable).
+- `STATEID`: Integer state FIPS code.
+- `FAFID`: Integer FAF zone identifier.
+
+# Sources
+U.S. Department of Transportation, Bureau of Transportation Statistics,
+Freight Analysis Framework (FAF5) Network,
+https://geodata.bts.gov/datasets/usdot::freight-analysis-framework-faf5-network-nodes/about
+"""
+function faf5nodes()
+    return loadcsvdata("faf5_nodes")
+end
+
+"""
+    faf5links() -> DataFrame
+
+Returns DataFrame containing FAF5 road network links.
+
+Physical road network links from the Freight Analysis Framework version 5 (FAF5).
+Links connecting to centroid nodes are excluded.
+
+# Columns
+- `SRC`: Integer source node ID.
+- `DST`: Integer destination node ID.
+- `DIST`: Float link distance in miles.
+- `STFIP`: Integer state FIPS code.
+- `COFIP`: Integer county FIPS code.
+- `SPEED`: Integer posted speed limit (mph).
+- `NHS`: Integer National Highway System code.
+- `SIGN`: String signed route (e.g., "I 40", "US 1").
+- `NAME`: String road name.
+- `FCLASS`: Integer functional classification code.
+- `URBAN`: String urban area code.
+- `AB_SPEED`: Float final speed A→B direction (mph).
+- `BA_SPEED`: Float final speed B→A direction (mph).
+- `AB_TIME`: Float free-flow travel time A→B (minutes).
+- `BA_TIME`: Float free-flow travel time B→A (minutes).
+- `AB_LANES`: Integer lane count A→B direction.
+- `BA_LANES`: Integer lane count B→A direction.
+- `DIR`: Integer direction code.
+- `STRAHNET`: Integer Strategic Highway Network code.
+- `NHFN`: Integer National Highway Freight Network code.
+- `TOLL_TYPE`: Integer toll classification.
+- `TOLL_LINK`: Integer toll road indicator (0/1).
+- `BORDER_LINK`: Integer border crossing indicator (0/1).
+- `FAFZONE`: Integer FAF zone identifier.
+- `STATUS`: Integer road status code.
+
+# Sources
+U.S. Department of Transportation, Bureau of Transportation Statistics,
+Freight Analysis Framework (FAF5) Network,
+https://geodata.bts.gov/datasets/usdot::freight-analysis-framework-faf5-network-links/about
+"""
+function faf5links()
+    return loadcsvdata("faf5_links")
+end
+
+"""
+    faf5interstate() -> Tuple{Vector{Float64}, Vector{Float64}}
+
+Returns polyline vectors for FAF5 interstate road network.
+
+Returns a tuple `(x, y)` of coordinate vectors with NaN separators between segments.
+This format is directly compatible with Makie's `lines!()` function for plotting
+road network backgrounds.
+
+# Usage
+```julia
+x, y = faf5interstate()
+lines!(ax, x, y, color=(:steelblue, 0.3), linewidth=0.5)
+```
+
+# Sources
+Derived from FAF5 links where SIGN starts with "I " (interstate routes).
+"""
+function faf5interstate()
+    return loaddata("faf5_interstate_roads")
+end
