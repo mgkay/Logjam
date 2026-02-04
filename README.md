@@ -113,12 +113,17 @@ display(fig)
 
 ![NC Routing Plot](docs/assets/nc_routing_plot.png)
 
-Key functions used:
-- `cropnetwork`: Extracts a subnetwork within a bounding box
+Logjam functions used:
 - `addconnectors`: Adds demand points to the road network
+- `cropnetwork`: Extracts a subnetwork within a bounding box
+- `faf5links`: Loads FAF5 road network links
+- `faf5nodes`: Loads FAF5 road network nodes
 - `links2graph`: Converts links to a weighted directed graph
-- `shortestpaths`: Computes shortest path distances and parent pointers
-- `savings`: Constructs routes using a savings-based insertion heuristic
-- `twoopt`: Improves routes using 2-opt local search
-- `rte2loc`: Converts shipment sequence to location sequence
 - `rte2lines`: Converts locations to plottable coordinates via network paths
+- `rte2loc`: Converts shipment sequence to location sequence
+- `rteTC`: Calculates total route cost
+- `savings`: Constructs routes using a savings-based insertion heuristic
+- `shortestpaths`: Computes shortest path distances and parent pointers
+- `st2fips`: Converts state symbol to FIPS code
+- `twoopt`: Improves routes using 2-opt local search
+- `usplace`: Returns U.S. place (city) data

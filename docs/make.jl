@@ -14,6 +14,7 @@ makedocs(;
         assets=String[],
     ),
     checkdocs = :none, # Disable the missing docstrings check
+    doctest = true,    # Enable doctest for jldoctest blocks
     pages=[
         "Home" => "index.md",
     ],

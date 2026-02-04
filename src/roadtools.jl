@@ -513,13 +513,13 @@ By default, roads are bidirectional unless marked as one-way via `dir_col`.
 
 # Examples
 ```julia
-# Default: use column 3 for symmetric weights
+# Load FAF5 road network
+links = faf5links()
+
+# Default: use column 3 (DIST) for symmetric weights
 g = links2graph(links)
 
-# Use named weight column
-g = links2graph(links, weight=:COST)
-
-# Asymmetric weights (e.g., FAF5 travel times)
+# Asymmetric weights using FAF5 travel times
 g = links2graph(links, ab_weight=:AB_TIME, ba_weight=:BA_TIME)
 ```
 
@@ -679,10 +679,20 @@ for path reconstruction.
 # Example
 ```julia
 using Graphs, SparseArrays
+
+# Load network and add 3 demand points
+nodes, links = faf5nodes(), faf5links()
+links, nodes = cropnetwork(nodes, links, [-79.0, -78.0], [35.5, 36.0])
+locs_lon, locs_lat = [-78.5, -78.7, -78.3], [35.7, 35.8, 35.6]
+links, nodes = addconnectors(links, nodes, locs_lon, locs_lat)
+
+# Build graph and weight matrix
 g = links2graph(links)
 weights = sparse(links.SRC, links.DST, links.DIST, nv(g), nv(g))
-weights = weights + weights'  # Make symmetric for undirected graph
-D, P = shortestpaths(g, weights, 10)  # Paths from first 10 nodes
+weights = weights + weights'  # Make symmetric
+
+# Compute paths from the 3 demand points
+D, P = shortestpaths(g, weights, 3)
 ```
 
 # Notes
@@ -719,9 +729,15 @@ graph's internal edge weights directly.
 
 # Example
 ```julia
+# Load network and add demand points
+nodes, links = faf5nodes(), faf5links()
+links, nodes = cropnetwork(nodes, links, [-79.0, -78.0], [35.5, 36.0])
+locs_lon, locs_lat = [-78.5, -78.7, -78.3], [35.7, 35.8, 35.6]
+links, nodes = addconnectors(links, nodes, locs_lon, locs_lat)
+
 # Build weighted graph and compute paths in two lines
 g = links2graph(links)
-D, P = shortestpaths(g, 10)  # Paths from first 10 nodes
+D, P = shortestpaths(g, 3)  # Paths from the 3 demand points
 ```
 
 # Notes

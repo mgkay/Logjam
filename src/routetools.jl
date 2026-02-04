@@ -46,9 +46,18 @@ Converts the route to a location sequence and sums all segment costs.
 # Example
 ```julia
 using DataFrames
-C = Dgc(nodes[:, [:LON, :LAT]], nodes[:, [:LON, :LAT]])
-sh = DataFrame(b=[1,2,3], e=[4,5,6])  # 3 shipments
-rte = [1, 1, 2, 2, 3, 3]              # Visit each shipment sequentially
+
+# Define 6 locations as (lon, lat) pairs
+locs = [-78.6 35.8; -80.8 35.2; -79.0 36.1; -77.5 35.5; -81.0 35.0; -78.0 36.0]
+
+# Create cost matrix using great circle distances
+C = Dgc(locs, locs)
+
+# Define 3 shipments: pickup at locs 1,2,3 and deliver to locs 4,5,6
+sh = DataFrame(b=[1, 2, 3], e=[4, 5, 6])
+
+# Route visiting each shipment sequentially (pickup then deliver)
+rte = [1, 1, 2, 2, 3, 3]
 cost = rteTC(rte, sh, C)
 ```
 """
@@ -187,9 +196,19 @@ This function tries all valid insertion positions and returns the best.
 
 # Example
 ```julia
+using DataFrames
+
+# Define locations and cost matrix
+locs = [-78.6 35.8; -80.8 35.2; -79.0 36.1; -77.5 35.5]
+C = Dgc(locs, locs)
+
+# Define 2 shipments
+sh = DataFrame(b=[1, 3], e=[2, 4])
 rteTCh = rte -> rteTC(rte, sh, C)
-rte = [1, 1]          # Route with just shipment 1
-rte, cost = mincostinsert(2, rte, rteTCh)  # Insert shipment 2
+
+# Insert shipment 2 into a route containing only shipment 1
+rte = [1, 1]
+rte, cost = mincostinsert(2, rte, rteTCh)
 ```
 
 # Notes
@@ -227,9 +246,18 @@ on one route instead of two separate routes.
 
 # Example
 ```julia
+using DataFrames
+
+# Define locations and cost matrix
+locs = [-78.6 35.8; -80.8 35.2; -79.0 36.1; -77.5 35.5]
+C = Dgc(locs, locs)
+
+# Define 2 shipments
+sh = DataFrame(b=[1, 3], e=[2, 4])
 rteTCh = rte -> rteTC(rte, sh, C)
+
+# Calculate pairwise savings (pairs with highest savings are first)
 iˢ, jˢ, sˢ = pairwisesavings(rteTCh, sh)
-# Pairs with highest savings are first
 ```
 
 # Notes
@@ -278,8 +306,17 @@ target route.
 # Example
 ```julia
 using DataFrames
-sh = DataFrame(b=[1,2,3,4], e=[5,6,7,8])  # 4 shipments
-C = Dgc(nodes, nodes)
+
+# Define locations as (lon, lat) pairs
+locs = [-78.6 35.8; -80.8 35.2; -79.0 36.1; -77.5 35.5]  # 4 locations
+
+# Create cost matrix using great circle distances
+C = Dgc(locs, locs)
+
+# Define 2 shipments: pickup at loc 1 deliver to loc 2, pickup at loc 3 deliver to loc 4
+sh = DataFrame(b=[1, 3], e=[2, 4])
+
+# Build routes using savings heuristic
 rteTCh = rte -> rteTC(rte, sh, C)
 routes = savings(rteTCh, sh)
 ```
@@ -342,13 +379,23 @@ for plotting with `lines!`.
 
 # Example
 ```julia
-using GeoMakie, CairoMakie
+using GeoMakie, CairoMakie, DataFrames
 
-# After computing route and shortest paths
-loc_seq = rte2loc(final_route, shipments)
-lx, ly = rte2lines(loc_seq, parents, nodes_conn)
+# Load network and define demand points
+nodes, links = faf5nodes(), faf5links()
+cities = filter(r -> r.ST == :NC && r.POP > 100_000, usplace())
+links, nodes = cropnetwork(nodes, links, cities.LON, cities.LAT)
+links, nodes = addconnectors(links, nodes, cities.LON, cities.LAT)
 
-# Plot on map
+# Compute shortest paths and build a route
+g = links2graph(links)
+D, P = shortestpaths(g, nrow(cities))
+shipments = DataFrame(b=[1, 2], e=[3, 4])  # 2 shipments
+route = [1, 1, 2, 2]  # Simple sequential route
+
+# Convert route to line coordinates and plot
+loc_seq = rte2loc(route, shipments)
+lx, ly = rte2lines(loc_seq, P, nodes)
 fig, ax = makemap(cities.LON, cities.LAT)
 lines!(ax, lx, ly, color=:red, linewidth=2)
 ```

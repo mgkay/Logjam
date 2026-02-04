@@ -274,14 +274,14 @@ Valid two-character symbols of the state or territory are
 $(join(sort(collect(keys(state_fips))), ", "))
 
 # Examples
-```julia-repl
+```jldoctest
 julia> st2fips(:NC)
 37
 
 julia> st2fips.([:NC, :NY])
 2-element Vector{Int64}:
-37
-36
+ 37
+ 36
 ```
 """
 function st2fips(state::Symbol)
@@ -313,7 +313,7 @@ Valid FIPS codes are: $(join(sort(collect(keys(fips_state))), ", "))
 - `ArgumentError` if the FIPS code is not valid.
 
 # Examples
-```julia-repl
+```jldoctest
 julia> fips2st(37)
 :NC
 

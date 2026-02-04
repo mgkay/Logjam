@@ -538,16 +538,14 @@ Determines whether a given point lies within a specified bounding box.
   - `false` otherwise.
 
 # Example
-```julia-repl
-pt = (5, 10)
-bbox = ((0, 10), (0, 15))
-isptinbbox(pt, bbox)  # returns true
+```jldoctest
+julia> bbox = ((0, 10), (0, 15));
 
-pt_outside = (15, 10)
-isptinbbox(pt_outside, bbox)  # returns false
+julia> isptinbbox((5, 10), bbox)  # inside
+true
 
-invalid_pt = (5,)
-isptinbbox(invalid_pt, bbox)  # throws ArgumentError
+julia> isptinbbox((15, 10), bbox)  # outside
+false
 ```
 """
 function isptinbbox(pt, bbox::Tuple{Union{Tuple{<:Real, <:Real}, AbstractVector{<:Real}},
