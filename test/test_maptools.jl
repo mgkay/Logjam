@@ -17,6 +17,12 @@ using GeoMakie
     @test expanded_bbox[2] != original_bbox[2]  # y limits should be expanded
 end
 
+@testset "mapbbox all-NaN input" begin
+    x = [NaN, NaN]
+    y = [NaN, NaN]
+    @test_throws ArgumentError mapbbox(x, y)
+end
+
 # Test for aligntext function
 @testset "aligntext tests" begin
     x = [1.0, 2.0]

@@ -92,6 +92,29 @@ using SimpleWeightedGraphs
         @test sum(dfL_out.DIST) ≈ sum(dfL.DIST)
     end
 
+    @testset "prune_reindex - custom column order" begin
+        dfN = DataFrame(
+            NAME = ["A", "B", "C", "D", "E"],
+            IDX = [10, 20, 30, 40, 50],
+            LON = [-78.0, -79.0, -80.0, -81.0, -82.0],
+            LAT = [35.0, 35.5, 36.0, 35.5, 35.0]
+        )
+        dfL = DataFrame(
+            LINKID = [101, 102, 103],
+            SRC = [10, 20, 30],
+            DST = [20, 30, 40],
+            DIST = [10.0, 15.0, 12.0]
+        )
+
+        dfL_out, dfN_out = prune_reindex(dfL, dfN; src_col=:SRC, dst_col=:DST, node_col=:IDX)
+
+        @test nrow(dfN_out) == 4
+        @test sort(dfN_out.IDX) == [1, 2, 3, 4]
+        @test minimum(dfL_out.SRC) >= 1
+        @test maximum(dfL_out.DST) <= 4
+        @test sum(dfL_out.DIST) ≈ sum(dfL.DIST)
+    end
+
     @testset "thin - Degree-2 Node Removal" begin
         # Create chain network: 1 - 2 - 3 - 4
         # Node 2 and 3 are degree-2 and should be removed
@@ -249,12 +272,15 @@ using SimpleWeightedGraphs
         dfN = DataFrame(
             IDX = [1, 2, 3, 4],
             LON = [-78.0, -78.0, -79.0, -79.0],
-            LAT = [35.0, 36.0, 35.0, 36.0]
+            LAT = [35.0, 36.0, 35.0, 36.0],
+            ZONE = ["N1", "N2", "N3", "N4"]
         )
         dfL = DataFrame(
             SRC = [1, 2, 1],
             DST = [2, 4, 3],
-            DIST = [69.0, 69.0, 54.0]  # Approximate great circle distances
+            DIST = [69.0, 69.0, 54.0],  # Approximate great circle distances
+            SPEED = [55, 60, 50],
+            DIR = [0, 1, 0]
         )
 
         # Add one demand point
@@ -269,6 +295,14 @@ using SimpleWeightedGraphs
 
         # Should have original links + connectors
         @test nrow(dfL_conn) > nrow(dfL)
+        @test names(dfL_conn) == names(dfL)
+        @test names(dfN_conn) == names(dfN)
+        @test dfL_conn.SPEED[1:nrow(dfL)] == dfL.SPEED
+        @test dfL_conn.DIR[1:nrow(dfL)] == dfL.DIR
+        @test all(ismissing, dfL_conn.SPEED[(nrow(dfL) + 1):end])
+        @test all(dfL_conn.DIR[(nrow(dfL) + 1):end] .== 0)
+        @test ismissing(dfN_conn.ZONE[1])
+        @test dfN_conn.ZONE[2:end] == dfN.ZONE
 
         # Connector links should connect node 1 to nearby network nodes
         connector_links = filter(r -> r.SRC == 1 || r.DST == 1, dfL_conn)
@@ -299,6 +333,39 @@ using SimpleWeightedGraphs
 
         # Network nodes shifted by 3
         @test dfN_conn.IDX[4:7] == [4, 5, 6, 7]
+    end
+
+    @testset "addconnectors - custom column order" begin
+        dfN = DataFrame(
+            NAME = ["N1", "N2", "N3", "N4"],
+            IDX = [10, 20, 30, 40],
+            LON = [-78.0, -78.0, -79.0, -79.0],
+            LAT = [35.0, 36.0, 35.0, 36.0]
+        )
+        dfL = DataFrame(
+            LINKID = [1001, 1002, 1003],
+            SRC = [10, 20, 10],
+            DST = [20, 40, 30],
+            DIST = [69.0, 69.0, 54.0],
+            SPEED = [55, 60, 50]
+        )
+
+        x_prime = [-78.5]
+        y_prime = [35.5]
+        dfL_conn, dfN_conn = addconnectors(
+            dfL, dfN, x_prime, y_prime;
+            src_col=:SRC, dst_col=:DST, dist_col=:DIST,
+            node_col=:IDX, x_col=:LON, y_col=:LAT
+        )
+
+        @test names(dfL_conn) == names(dfL)
+        @test names(dfN_conn) == names(dfN)
+        @test dfN_conn.IDX[1] == 1
+        @test Set(dfN_conn.IDX[2:end]) == Set(2:5)
+        @test all(v -> v in Set(dfN_conn.IDX), dfL_conn.SRC)
+        @test all(v -> v in Set(dfN_conn.IDX), dfL_conn.DST)
+        @test dfL_conn.SPEED[1:nrow(dfL)] == dfL.SPEED
+        @test all(ismissing, dfL_conn.SPEED[(nrow(dfL) + 1):end])
     end
 
     @testset "cropnetwork" begin
@@ -412,6 +479,123 @@ using SimpleWeightedGraphs
         # Reverse edges use BA_TIME (B→A)
         @test g.weights[1, 2] ≈ 15.0  # Edge FROM 2 TO 1
         @test g.weights[2, 3] ≈ 25.0  # Edge FROM 3 TO 2
+    end
+
+    @testset "links2graph - no reindex when dense" begin
+        dfL = DataFrame(
+            SRC = [1, 2, 3],
+            DST = [2, 3, 4],
+            DIST = [10.0, 20.0, 15.0]
+        )
+
+        g, id_map, inv_map = links2graph(dfL; return_map=true)
+
+        @test Graphs.nv(g) == 4
+        @test id_map[1] == 1
+        @test id_map[2] == 2
+        @test inv_map[1] == 1
+        @test inv_map[2] == 2
+    end
+
+    @testset "links2graph - auto reindex for sparse IDs" begin
+        dfL = DataFrame(
+            SRC = [10, 20],
+            DST = [20, 40],
+            DIST = [5.0, 7.0]
+        )
+
+        g, id_map, inv_map = links2graph(dfL; return_map=true)
+
+        @test Graphs.nv(g) == 3
+        @test id_map[10] == 1
+        @test id_map[20] == 2
+        @test id_map[40] == 3
+        @test inv_map[1] == 10
+        @test inv_map[2] == 20
+        @test inv_map[3] == 40
+    end
+
+    @testset "links2graph - auto reindex by max_id_threshold" begin
+        dfL = DataFrame(
+            SRC = [100, 200],
+            DST = [200, 300],
+            DIST = [5.0, 7.0]
+        )
+
+        g, id_map, inv_map = links2graph(dfL; return_map=true,
+            sparse_ratio=1_000, max_id_threshold=150)
+
+        @test Graphs.nv(g) == 3
+        @test id_map[100] == 1
+        @test id_map[200] == 2
+        @test id_map[300] == 3
+        @test inv_map[1] == 100
+        @test inv_map[2] == 200
+        @test inv_map[3] == 300
+    end
+
+    @testset "links2graph - string IDs in auto mode" begin
+        dfL = DataFrame(
+            SRC = ["NodeA", "NodeB"],
+            DST = ["NodeB", "NodeC"],
+            DIST = [1.0, 2.0]
+        )
+
+        g, id_map, inv_map = links2graph(dfL; return_map=true)
+
+        @test Graphs.nv(g) == 3
+        @test id_map["NodeA"] == 1
+        @test id_map["NodeC"] == 3
+        @test inv_map[2] == "NodeB"
+    end
+
+    @testset "links2graph - mixed IDs in auto mode" begin
+        dfL = DataFrame(
+            SRC = Any[1, "NodeA"],
+            DST = Any["NodeA", 2],
+            DIST = [1.0, 2.0]
+        )
+
+        g, id_map, inv_map = links2graph(dfL; return_map=true)
+
+        @test Graphs.nv(g) == 3
+        @test length(id_map) == 3
+        @test haskey(id_map, 1)
+        @test haskey(id_map, "NodeA")
+        @test haskey(id_map, 2)
+        @test inv_map[id_map[1]] == 1
+        @test inv_map[id_map["NodeA"]] == "NodeA"
+        @test inv_map[id_map[2]] == 2
+    end
+
+    @testset "links2graph - custom src/dst columns" begin
+        dfL = DataFrame(
+            LINKID = [1001, 1002],
+            SRC = [10, 20],
+            DST = [20, 40],
+            DIST = [5.0, 7.0]
+        )
+
+        g, id_map, inv_map = links2graph(
+            dfL; return_map=true, reindex=true, src_col=:SRC, dst_col=:DST
+        )
+
+        @test Graphs.nv(g) == 3
+        @test id_map[10] == 1
+        @test id_map[40] == 3
+        @test inv_map[2] == 20
+    end
+
+    @testset "links2graph - explicit reindex=false" begin
+        dfL = DataFrame(
+            SRC = [10, 20],
+            DST = [20, 40],
+            DIST = [5.0, 7.0]
+        )
+
+        g = links2graph(dfL; reindex=false)
+
+        @test Graphs.nv(g) == 40
     end
 
     @testset "shortestpaths - weighted graph (new API)" begin

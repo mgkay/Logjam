@@ -33,6 +33,7 @@ const CUS_LIMITS = ((-125, -65), (24, 50))
 # Cache for geographic data (loaded on first use)
 const _countries_cache = Ref{Union{Nothing, Tuple}}(nothing)
 const _usstates_cache = Ref{Union{Nothing, Tuple}}(nothing)
+const _nhsroads_cache = Ref{Union{Nothing, Tuple}}(nothing)
 const _faf5interstate_cache = Ref{Union{Nothing, Tuple}}(nothing)
 
 """
@@ -59,6 +60,19 @@ function usstates()
         _usstates_cache[] = open(deserialize, joinpath(data_dir, "usstates.jls"))
     end
     return _usstates_cache[]
+end
+
+"""
+    nhsroads() -> Tuple{Vector, Vector}
+
+Load and cache NHS road coordinates from serialized data.
+"""
+function nhsroads()
+    if isnothing(_nhsroads_cache[])
+        data_dir = joinpath(dirname(@__FILE__), "..", "data")
+        _nhsroads_cache[] = open(deserialize, joinpath(data_dir, "nhsroads.jls"))
+    end
+    return _nhsroads_cache[]
 end
 
 """
@@ -398,7 +412,6 @@ Calculates the bounding box for a set of geographic coordinates, with optional e
 - It then applies the specified `xexpand` and `yexpand` to enlarge the bounding box.
 - The x-limits are clamped to the range `[-180, 180]` to ensure valid longitude values.
 - The y-limits are clamped to slightly above `-90` and slightly below `90` to ensure valid latitude values and avoid issues with map projections.
-- Throws `ArgumentError` if `x` or `y` contains no non-`NaN` values.
 """
 function mapbbox(x::Union{AbstractVector{<:Real}, Tuple{Vararg{Real}}},
                  y::Union{AbstractVector{<:Real}, Tuple{Vararg{Real}}};
@@ -410,13 +423,8 @@ function mapbbox(x::Union{AbstractVector{<:Real}, Tuple{Vararg{Real}}},
     end
     
     # Calculate the minimum and maximum x- and y-values, ignoring NaNs
-    xvals = [x for x in x if !isnan(x)]
-    yvals = [y for y in y if !isnan(y)]
-    if isempty(xvals) || isempty(yvals)
-        throw(ArgumentError("'x' and 'y' must contain at least one non-NaN value."))
-    end
-    (xmin, xmax) = extrema(xvals)
-    (ymin, ymax) = extrema(yvals)
+    (xmin, xmax) = extrema([x for x in x if !isnan(x)])
+    (ymin, ymax) = extrema([y for y in y if !isnan(y)])
 
     # Store the original limits without any expansion
     limits0 = (xmin, xmax), (ymin, ymax)
@@ -439,10 +447,10 @@ function mapbbox(x::Union{AbstractVector{<:Real}, Tuple{Vararg{Real}}},
 
     # Ensure the y-limits stay within the valid latitude range (-90, 90)
     if ymin <= -90
-        ymin = max(-90 + sqrt(eps(Float64)), minimum(yvals))
+        ymin = max(-90 + sqrt(eps(Float64)), minimum([y for y in y if !isnan(y)]))
     end
     if ymax >= 90
-        ymax = min(90 - sqrt(eps(Float64)), maximum(yvals))
+        ymax = min(90 - sqrt(eps(Float64)), maximum([y for y in y if !isnan(y)]))
     end
 
     # Return the expanded limits and the original unexpanded limits
@@ -544,14 +552,16 @@ Determines whether a given point lies within a specified bounding box.
   - `false` otherwise.
 
 # Example
-```jldoctest
-julia> bbox = ((0, 10), (0, 15));
+```julia-repl
+pt = (5, 10)
+bbox = ((0, 10), (0, 15))
+isptinbbox(pt, bbox)  # returns true
 
-julia> isptinbbox((5, 10), bbox)  # inside
-true
+pt_outside = (15, 10)
+isptinbbox(pt_outside, bbox)  # returns false
 
-julia> isptinbbox((15, 10), bbox)  # outside
-false
+invalid_pt = (5,)
+isptinbbox(invalid_pt, bbox)  # throws ArgumentError
 ```
 """
 function isptinbbox(pt, bbox::Tuple{Union{Tuple{<:Real, <:Real}, AbstractVector{<:Real}},

@@ -35,8 +35,8 @@ using Graphs
         @test nrow(nodes_conn) == nrow(nodes_crop) + nrow(cities)
         @test nodes_conn.IDX[1:10] == collect(1:10)
 
-        # Step 5: Build graph and compute shortest paths (new simplified API)
-        g = links2graph(links_conn)
+        # Step 5: Build graph and compute shortest paths (undirected for this workflow)
+        g = links2graph(links_conn; dir_col=:__NO_DIR__)
         dist_mat, parents = shortestpaths(g, nrow(cities))
 
         @test size(dist_mat) == (10, 10)

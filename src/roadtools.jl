@@ -1,11 +1,11 @@
-# RoadTools - Functions for working with road networks
+﻿# RoadTools - Functions for working with road networks
 
 # =============================================================================
 # Distance Calculation
 # =============================================================================
 
 """
-    dgc(xy₁, xy₂; unit=:mi) -> Float64
+    dgc(xyÃ¢â€šÂ, xyÃ¢â€šâ€š; unit=:mi) -> Float64
 
 Calculate the great circle distance between two points.
 
@@ -13,8 +13,8 @@ Uses the haversine formula to compute the shortest distance over the Earth's sur
 between two points specified by longitude-latitude coordinates.
 
 # Arguments
-- `xy₁`: Tuple or vector of (longitude, latitude) for the first point.
-- `xy₂`: Tuple or vector of (longitude, latitude) for the second point.
+- `xyÃ¢â€šÂ`: Tuple or vector of (longitude, latitude) for the first point.
+- `xyÃ¢â€šâ€š`: Tuple or vector of (longitude, latitude) for the second point.
 - `unit`: Distance unit, either `:mi` (miles, default) or `:km` (kilometers).
 
 # Returns
@@ -23,49 +23,77 @@ between two points specified by longitude-latitude coordinates.
 # Example
 ```julia
 # Distance from Raleigh to Charlotte
-dgc((-78.6382, 35.7796), (-80.8431, 35.2271))  # ≈ 130 miles
+dgc((-78.6382, 35.7796), (-80.8431, 35.2271))  # Ã¢â€°Ë† 130 miles
 ```
 """
-function dgc(xy₁, xy₂; unit=:mi)
-    length(xy₁) == length(xy₂) == 2 || error("Inputs must have length 2.")
+function dgc(xy1, xy2; unit=:mi)
+    length(xy1) == length(xy2) == 2 || error("Inputs must have length 2.")
     unit in [:mi, :km] || error("Unit must be :mi or :km")
 
-    Δx, Δy = xy₂[1] - xy₁[1], xy₂[2] - xy₁[2]
-    a = sind(Δy / 2)^2 + cosd(xy₁[2]) * cosd(xy₂[2]) * sind(Δx / 2)^2
+    dx, dy = xy2[1] - xy1[1], xy2[2] - xy1[2]
+    a = sind(dy / 2)^2 + cosd(xy1[2]) * cosd(xy2[2]) * sind(dx / 2)^2
     2 * asin(min(sqrt(a), 1.0)) * (unit == :mi ? 3958.75 : 6371.00)
 end
 
 """
-    Dgc(X₁, X₂; unit=:mi) -> Matrix{Float64}
+    Dgc(X1, X2; unit=:mi) -> Matrix{Float64}
 
-Calculate great circle distance matrix between two sets of points.
+Calculate a great-circle distance matrix between two sets of points.
 
-Computes pairwise distances between all points in X₁ and all points in X₂.
+Computes pairwise haversine distances between all points in `X1` and `X2`.
+This implementation is optimized for larger inputs by:
+- reusing `dgc` for all point-to-point distance calculations, and
+- preallocating the output matrix.
 
 # Arguments
-- `X₁`: Matrix or DataFrame where each row is (longitude, latitude).
-- `X₂`: Matrix or DataFrame where each row is (longitude, latitude).
+- `X1`: Matrix/DataFrame-like object with at least two columns.
+  Column 1 is longitude, column 2 is latitude.
+- `X2`: Matrix/DataFrame-like object with at least two columns.
+  Column 1 is longitude, column 2 is latitude.
 - `unit`: Distance unit, either `:mi` (miles, default) or `:km` (kilometers).
 
 # Returns
-- Matrix of distances where element [i,j] is the distance from X₁[i,:] to X₂[j,:].
+- `Matrix{Float64}` where element `[i, j]` is the distance from row `i` of `X1`
+  to row `j` of `X2`.
+
+# Performance Notes
+- This implementation prioritizes simplicity while avoiding dynamic growth
+  of the result matrix for large inputs.
 
 # Example
 ```julia
-# Distance matrix between 3 origins and 4 destinations
 origins = [-78.6 35.8; -80.8 35.2; -79.0 36.1]
 dests = [-77.0 35.0; -78.0 36.0; -79.5 35.5; -81.0 35.0]
 D = Dgc(origins, dests)
 ```
 """
-Dgc(X₁, X₂; unit=:mi) = [dgc(collect(i), collect(j); unit=unit) for i in eachrow(X₁), j in eachrow(X₂)]
+function Dgc(X1, X2; unit=:mi)
+    unit in [:mi, :km] || error("Unit must be :mi or :km")
+
+    # Pull columns once to avoid repeated table/matrix indexing in inner loops.
+    lon1, lat1 = X1[:, 1], X1[:, 2]
+    lon2, lat2 = X2[:, 1], X2[:, 2]
+
+    n_rows, n_cols = length(lon1), length(lon2)
+    D = Matrix{Float64}(undef, n_rows, n_cols)
+
+    for i in 1:n_rows
+        p1 = (lon1[i], lat1[i])
+        for j in 1:n_cols
+            D[i, j] = dgc(p1, (lon2[j], lat2[j]); unit=unit)
+        end
+    end
+
+    return D
+end
 
 # =============================================================================
 # Network Manipulation
 # =============================================================================
 
 """
-    prune_reindex(dfL::DataFrame, dfN::DataFrame) -> Tuple{DataFrame, DataFrame}
+    prune_reindex(dfL::DataFrame, dfN::DataFrame;
+                  src_col=1, dst_col=2, node_col=1) -> Tuple{DataFrame, DataFrame}
 
 Prune network to common vertices and reindex node IDs sequentially.
 
@@ -73,8 +101,11 @@ Removes any nodes that don't appear in links and any links that reference
 non-existent nodes. Then reindexes all node IDs to be sequential starting from 1.
 
 # Arguments
-- `dfL`: Links DataFrame with columns [SRC, DST, ...] (first two columns are node IDs).
-- `dfN`: Nodes DataFrame with columns [IDX, ...] (first column is node ID).
+- `dfL`: Links DataFrame with columns [SRC, DST, ...].
+- `dfN`: Nodes DataFrame with columns [IDX, ...].
+- `src_col`: Source-node column in `dfL` (index or symbol, default `1`).
+- `dst_col`: Destination-node column in `dfL` (index or symbol, default `2`).
+- `node_col`: Node-ID column in `dfN` (index or symbol, default `1`).
 
 # Returns
 - Tuple of (pruned_links, pruned_nodes) DataFrames with sequential node IDs.
@@ -89,37 +120,41 @@ dfN_nc = filter(r -> r.STATEID == 37, dfN)
 dfL_nc, dfN_nc = prune_reindex(dfL_nc, dfN_nc)
 ```
 """
-function prune_reindex(dfL::DataFrame, dfN::DataFrame)
+function prune_reindex(dfL::DataFrame, dfN::DataFrame;
+                       src_col::Union{Int,Symbol}=1,
+                       dst_col::Union{Int,Symbol}=2,
+                       node_col::Union{Int,Symbol}=1)
     # Find vertices common to both links and nodes
-    link_vertices = union(Set(dfL[:, 1]), Set(dfL[:, 2]))
-    node_vertices = Set(dfN[:, 1])
+    link_vertices = union(Set(dfL[:, src_col]), Set(dfL[:, dst_col]))
+    node_vertices = Set(dfN[:, node_col])
     vtx = collect(intersect(link_vertices, node_vertices))
     sort!(vtx)
 
     # Prune rows in dfL and dfN based on common vertices
     vtx_set = Set(vtx)
-    dfL_out = filter(row -> (row[1] in vtx_set) && (row[2] in vtx_set), dfL)
-    dfN_out = filter(row -> row[1] in vtx_set, dfN)
+    dfL_out = filter(row -> (row[src_col] in vtx_set) && (row[dst_col] in vtx_set), dfL)
+    dfN_out = filter(row -> row[node_col] in vtx_set, dfN)
 
-    # Create mapping: old ID → new sequential ID
+    # Create mapping: old ID â†’ new sequential ID
     vtx_map = Dict(v => i for (i, v) in enumerate(vtx))
 
     # Reindex SRC and DST columns in links
     dfL_out = copy(dfL_out)
-    dfL_out[!, 1] = [vtx_map[v] for v in dfL_out[:, 1]]
-    dfL_out[!, 2] = [vtx_map[v] for v in dfL_out[:, 2]]
+    dfL_out[!, src_col] = [vtx_map[v] for v in dfL_out[:, src_col]]
+    dfL_out[!, dst_col] = [vtx_map[v] for v in dfL_out[:, dst_col]]
 
     # Reindex IDX column in nodes
     dfN_out = copy(dfN_out)
-    dfN_out[!, 1] = [vtx_map[v] for v in dfN_out[:, 1]]
-    sort!(dfN_out, 1)
+    dfN_out[!, node_col] = [vtx_map[v] for v in dfN_out[:, node_col]]
+    sort!(dfN_out, node_col)
 
     return dfL_out, dfN_out
 end
 
 """
-    addconnectors(dfL::DataFrame, dfN::DataFrame, x′::Vector, y′::Vector;
-                  circuity::Real=1.3) -> Tuple{DataFrame, DataFrame}
+    addconnectors(dfL::DataFrame, dfN::DataFrame, x_prime::Vector, y_prime::Vector;
+                  circuity::Real=1.3, src_col=1, dst_col=2, dist_col=3,
+                  node_col=1, x_col=2, y_col=3) -> Tuple{DataFrame, DataFrame}
 
 Add connector links from demand points to a road network.
 
@@ -132,12 +167,16 @@ shifted by n (i.e., old node 1 becomes n+1).
 # Arguments
 - `dfL`: Links DataFrame with columns [SRC, DST, DIST, ...].
 - `dfN`: Nodes DataFrame with columns [IDX, LON, LAT, ...].
-- `x′`: Vector of demand point longitudes.
-- `y′`: Vector of demand point latitudes.
+- `x_prime`: Vector of demand point longitudes.
+- `y_prime`: Vector of demand point latitudes.
 - `circuity`: Circuity factor for connector distances (default 1.3).
+- `src_col`, `dst_col`, `dist_col`: Link columns for source, destination, and distance.
+- `node_col`, `x_col`, `y_col`: Node columns for node ID, longitude, and latitude.
 
 # Returns
 - Tuple of (new_links, new_nodes) DataFrames with connectors added.
+- All input columns are preserved. Connector rows populate SRC/DST/DIST
+  (and set `DIR`/`ONEWAY` to `0` when present); additional columns are `missing`.
 
 # Example
 ```julia
@@ -149,62 +188,93 @@ warehouses_lat = [35.8, 35.9, 36.1]
 dfL_conn, dfN_conn = addconnectors(dfL, dfN, warehouses_lon, warehouses_lat)
 ```
 """
-function addconnectors(dfL::DataFrame, dfN::DataFrame, x′::Vector, y′::Vector;
-                       circuity::Real=1.3)
-    n = length(x′)
-    length(y′) == n || error("x′ and y′ must have the same length")
+function addconnectors(dfL::DataFrame, dfN::DataFrame, x_prime::Vector, y_prime::Vector;
+                       circuity::Real=1.3,
+                       src_col::Union{Int,Symbol}=1,
+                       dst_col::Union{Int,Symbol}=2,
+                       dist_col::Union{Int,Symbol}=3,
+                       node_col::Union{Int,Symbol}=1,
+                       x_col::Union{Int,Symbol}=2,
+                       y_col::Union{Int,Symbol}=3)
+    n = length(x_prime)
+    length(y_prime) == n || error("x_prime and y_prime must have the same length")
 
-    # Extract columns from input DataFrames
-    b, e, d = copy(dfL[:, 1]), copy(dfL[:, 2]), copy(dfL[:, 3])
-    idx, x, y = copy(dfN[:, 1]), copy(dfN[:, 2]), copy(dfN[:, 3])
+    # Copy base coordinates
+    x = copy(dfN[:, x_col])
+    y = copy(dfN[:, y_col])
+    node_ids = copy(dfN[:, node_col])
 
-    # Build Delaunay triangulation for efficient nearest-neighbor search
+    # Build Delaunay triangulation for nearest-neighbor candidates
     tri = DelaunayTriangulation.triangulate(collect(zip(x, y)))
 
-    # Create connector links
-    b′, e′, d′ = Int[], Int[], Float64[]
+    # Build connector links (demand node i -> neighboring network node j+n)
+    b_conn = Int[]
+    e_conn = Int[]
+    d_conn = Float64[]
     for i = 1:n
-        # Find triangle containing the demand point
-        t = DelaunayTriangulation.brute_force_search(tri, (x′[i], y′[i]))
-        t = filter(v -> v > 0, t)  # Remove ghost vertices
-
-        # Calculate distances to triangle vertices
-        dᵢ = [circuity * dgc((x′[i], y′[i]), (x[j], y[j])) for j in t]
-
-        # Create bidirectional connectors to each vertex
-        for (k, j) in enumerate(t)
-            push!(b′, i)           # From demand point
-            push!(e′, j + n)       # To network node (shifted)
-            push!(d′, dᵢ[k])
+        t = DelaunayTriangulation.brute_force_search(tri, (x_prime[i], y_prime[i]))
+        t = filter(v -> v > 0, t)  # remove ghost vertices
+        for j in t
+            push!(b_conn, i)
+            push!(e_conn, n + j)
+            push!(d_conn, circuity * dgc((x_prime[i], y_prime[i]), (x[j], y[j])))
         end
     end
 
-    # Shift existing node IDs by n
-    b .+= n
-    e .+= n
-    idx .+= n
+    # Existing links: keep all columns, remap node ids to n+1:n+m
+    m_nodes = nrow(dfN)
+    node_map = Dict(node_ids[i] => (n + i) for i in 1:m_nodes)
+    links_existing = copy(dfL)
+    links_existing[!, src_col] = [node_map[v] for v in links_existing[:, src_col]]
+    links_existing[!, dst_col] = [node_map[v] for v in links_existing[:, dst_col]]
 
-    # Combine original and connector links
-    append!(b, b′)
-    append!(e, e′)
-    append!(d, d′)
+    # Connector links: preserve schema, fill non-topology attributes as missing
+    m = length(b_conn)
+    link_cols = names(dfL)
+    src_name = src_col isa Int ? names(dfL)[src_col] : String(src_col)
+    dst_name = dst_col isa Int ? names(dfL)[dst_col] : String(dst_col)
+    dist_name = dist_col isa Int ? names(dfL)[dist_col] : String(dist_col)
+    links_conn = DataFrame()
+    for name in link_cols
+        s = Symbol(name)
+        u = uppercase(String(name))
+        if name == src_name
+            links_conn[!, s] = b_conn
+        elseif name == dst_name
+            links_conn[!, s] = e_conn
+        elseif name == dist_name
+            links_conn[!, s] = d_conn
+        elseif u == "DIR" || u == "ONEWAY"
+            links_conn[!, s] = zeros(Int, m)
+        else
+            links_conn[!, s] = Vector{Missing}(missing, m)
+        end
+    end
+    dfL_out = vcat(links_existing, links_conn; cols=:union)
 
-    # Prepend demand points to nodes
-    prepend!(idx, 1:n)
-    prepend!(x, x′)
-    prepend!(y, y′)
+    # Existing nodes: keep all columns, remap node ids to n+1:n+m
+    nodes_existing = copy(dfN)
+    nodes_existing[!, node_col] = collect((n + 1):(n + m_nodes))
 
-    # Build output DataFrames
-    col_names_L = names(dfL)
-    col_names_N = names(dfN)
-
-    dfL_out = DataFrame(Symbol(col_names_L[1]) => b,
-                        Symbol(col_names_L[2]) => e,
-                        Symbol(col_names_L[3]) => d)
-
-    dfN_out = DataFrame(Symbol(col_names_N[1]) => idx,
-                        Symbol(col_names_N[2]) => x,
-                        Symbol(col_names_N[3]) => y)
+    # Demand nodes: preserve schema, fill non-coordinate attributes as missing
+    node_cols = names(dfN)
+    node_name = node_col isa Int ? names(dfN)[node_col] : String(node_col)
+    x_name = x_col isa Int ? names(dfN)[x_col] : String(x_col)
+    y_name = y_col isa Int ? names(dfN)[y_col] : String(y_col)
+    nodes_demand = DataFrame()
+    for name in node_cols
+        s = Symbol(name)
+        if name == node_name
+            nodes_demand[!, s] = collect(1:n)
+        elseif name == x_name
+            nodes_demand[!, s] = x_prime
+        elseif name == y_name
+            nodes_demand[!, s] = y_prime
+        else
+            nodes_demand[!, s] = Vector{Missing}(missing, n)
+        end
+    end
+    dfN_out = vcat(nodes_demand, nodes_existing; cols=:union)
 
     return dfL_out, dfN_out
 end
@@ -282,143 +352,157 @@ function thin(dfL::DataFrame, dfN::DataFrame;
         links[!, :_orig_idx] = [[i] for i in 1:nrow(links)]
     end
 
-    # Build adjacency: node -> [(neighbor, link_idx), ...]
-    function build_adjacency(links)
-        adj = Dict{Int, Vector{Tuple{Int, Int}}}()
-        for (i, row) in enumerate(eachrow(links))
-            src, dst = row[src_col], row[dst_col]
-            push!(get!(adj, src, Tuple{Int,Int}[]), (dst, i))
-            push!(get!(adj, dst, Tuple{Int,Int}[]), (src, i))
+    # Build mutable edge store and adjacency once, then update incrementally.
+    cols = names(links)
+    edges = Dict{Int, Dict{String, Any}}()
+    adj = Dict{Any, Set{Int}}()
+
+    for (i, row) in enumerate(eachrow(links))
+        erow = Dict{String, Any}()
+        for c in cols
+            erow[c] = row[c]
         end
-        return adj
+        edges[i] = erow
+        s, d = erow[src_col], erow[dst_col]
+        push!(get!(adj, s, Set{Int}()), i)
+        push!(get!(adj, d, Set{Int}()), i)
     end
 
-    # Merge two links through a degree-2 node
-    function merge_links(link1_idx::Int, link2_idx::Int, through_node::Int)
-        link1 = links[link1_idx, :]
-        link2 = links[link2_idx, :]
+    next_edge_id = Ref(nrow(links) + 1)
 
-        # Determine the two endpoint nodes (not the through_node)
-        node_a = link1[src_col] == through_node ? link1[dst_col] : link1[src_col]
-        node_b = link2[src_col] == through_node ? link2[dst_col] : link2[src_col]
+    other_end(edge::Dict{String, Any}, node) = edge[src_col] == node ? edge[dst_col] : edge[src_col]
 
-        # Build merged link
-        new_row = Dict{Symbol, Any}()
-        for col in names(links)
-            sym = Symbol(col)
-            if col == src_col
-                new_row[sym] = node_a
-            elseif col == dst_col
-                new_row[sym] = node_b
-            elseif col == dist_col
-                new_row[sym] = link1[col] + link2[col]
-            elseif col == "_orig_idx" && keep_index
-                new_row[sym] = vcat(link1[col], link2[col])
-            elseif haskey(agg, col)
-                new_row[sym] = agg[col]([link1[col], link2[col]])
-            else
-                new_row[sym] = link1[col]
-            end
+    function remove_edge!(eid::Int)
+        if !haskey(edges, eid)
+            return
         end
-
-        return new_row, node_a, node_b
+        e = edges[eid]
+        s, d = e[src_col], e[dst_col]
+        if haskey(adj, s)
+            delete!(adj[s], eid)
+        end
+        if haskey(adj, d)
+            delete!(adj[d], eid)
+        end
+        delete!(edges, eid)
     end
 
-    # Check if must_match attributes are compatible
-    function attrs_compatible(link1_idx::Int, link2_idx::Int)
+    function add_edge!(erow::Dict{String, Any})
+        eid = next_edge_id[]
+        next_edge_id[] += 1
+        edges[eid] = erow
+        s, d = erow[src_col], erow[dst_col]
+        push!(get!(adj, s, Set{Int}()), eid)
+        push!(get!(adj, d, Set{Int}()), eid)
+        return eid
+    end
+
+    function attrs_compatible(edge1::Dict{String, Any}, edge2::Dict{String, Any})
         if isempty(must_match)
             return true
         end
-        link1 = links[link1_idx, :]
-        link2 = links[link2_idx, :]
         for col in must_match
-            if !isequal(link1[col], link2[col])
+            if !isequal(edge1[col], edge2[col])
                 return false
             end
         end
         return true
     end
 
-    # Main thinning loop
-    changed = true
-    iteration = 0
-    max_iterations = nrow(links)
-
-    while changed && iteration < max_iterations
-        changed = false
-        iteration += 1
-
-        adj = build_adjacency(links)
-
-        # Find degree-2 nodes
-        deg2_nodes = [node for (node, neighbors) in adj if length(neighbors) == 2]
-
-        # Track which links to remove
-        links_to_remove = Set{Int}()
-        new_links_to_add = Vector{Dict{Symbol, Any}}()
-
-        for node in deg2_nodes
-            neighbors = adj[node]
-
-            # Skip if already processed in this iteration
-            if neighbors[1][2] in links_to_remove || neighbors[2][2] in links_to_remove
-                continue
-            end
-
-            link1_idx, link2_idx = neighbors[1][2], neighbors[2][2]
-            neighbor1, neighbor2 = neighbors[1][1], neighbors[2][1]
-
-            # Check must_match compatibility
-            if !attrs_compatible(link1_idx, link2_idx)
-                continue
-            end
-
-            # Check if there's already a direct link between neighbors
-            neighbor1_adj = get(adj, neighbor1, Tuple{Int,Int}[])
-            existing_link_idx = nothing
-            for (n, lidx) in neighbor1_adj
-                if n == neighbor2 && lidx != link1_idx && lidx != link2_idx
-                    existing_link_idx = lidx
-                    break
-                end
-            end
-
-            # Don't merge if it would create a self-loop
-            if neighbor1 == neighbor2
-                continue
-            end
-
-            # Calculate new merged distance
-            new_dist = links[link1_idx, dist_col] + links[link2_idx, dist_col]
-
-            # Decide whether to merge
-            should_merge = false
-            if isnothing(existing_link_idx)
-                should_merge = true
-            elseif new_dist < links[existing_link_idx, dist_col]
-                push!(links_to_remove, existing_link_idx)
-                should_merge = true
-            end
-
-            if should_merge
-                merged, _, _ = merge_links(link1_idx, link2_idx, node)
-                push!(new_links_to_add, merged)
-                push!(links_to_remove, link1_idx)
-                push!(links_to_remove, link2_idx)
-                changed = true
+    function merge_edges(edge1::Dict{String, Any}, edge2::Dict{String, Any}, through_node)
+        node_a = other_end(edge1, through_node)
+        node_b = other_end(edge2, through_node)
+        new_row = Dict{String, Any}()
+        for col in cols
+            if col == src_col
+                new_row[col] = node_a
+            elseif col == dst_col
+                new_row[col] = node_b
+            elseif col == dist_col
+                new_row[col] = edge1[col] + edge2[col]
+            elseif col == "_orig_idx" && keep_index
+                new_row[col] = vcat(edge1[col], edge2[col])
+            elseif haskey(agg, col)
+                new_row[col] = agg[col]([edge1[col], edge2[col]])
+            else
+                new_row[col] = edge1[col]
             end
         end
-
-        # Apply changes
-        if !isempty(links_to_remove)
-            keep_mask = [!(i in links_to_remove) for i in 1:nrow(links)]
-            links = links[keep_mask, :]
-
-            for new_link in new_links_to_add
-                push!(links, new_link; cols=:union)
-            end
-        end
+        return new_row, node_a, node_b
     end
+
+    function find_direct_edge(node_a, node_b, skip1::Int, skip2::Int)
+        for eid in get(adj, node_a, Set{Int}())
+            if eid == skip1 || eid == skip2 || !haskey(edges, eid)
+                continue
+            end
+            e = edges[eid]
+            if other_end(e, node_a) == node_b
+                return eid
+            end
+        end
+        return nothing
+    end
+
+    # Queue of candidate degree-2 nodes.
+    queue = Any[node for (node, eids) in adj if length(eids) == 2]
+    qidx = 1
+
+    while qidx <= length(queue)
+        node = queue[qidx]
+        qidx += 1
+
+        node_edges = get(adj, node, Set{Int}())
+        if length(node_edges) != 2
+            continue
+        end
+
+        eids = collect(node_edges)
+        eid1, eid2 = eids[1], eids[2]
+        if !(haskey(edges, eid1) && haskey(edges, eid2))
+            continue
+        end
+
+        edge1, edge2 = edges[eid1], edges[eid2]
+        neighbor1 = other_end(edge1, node)
+        neighbor2 = other_end(edge2, node)
+
+        if neighbor1 == neighbor2
+            continue
+        end
+
+        if !attrs_compatible(edge1, edge2)
+            continue
+        end
+
+        new_dist = edge1[dist_col] + edge2[dist_col]
+        existing_eid = find_direct_edge(neighbor1, neighbor2, eid1, eid2)
+        if !isnothing(existing_eid)
+            existing_edge = edges[existing_eid]
+            if !(new_dist < existing_edge[dist_col])
+                continue
+            end
+            existing_neighbors = (existing_edge[src_col], existing_edge[dst_col])
+            remove_edge!(existing_eid)
+            append!(queue, [existing_neighbors[1], existing_neighbors[2]])
+        end
+
+        merged, node_a, node_b = merge_edges(edge1, edge2, node)
+        remove_edge!(eid1)
+        remove_edge!(eid2)
+        add_edge!(merged)
+
+        append!(queue, [node, node_a, node_b])
+    end
+
+    # Rebuild links DataFrame from active edge store.
+    edge_ids_sorted = sort!(collect(keys(edges)))
+    rows = Vector{NamedTuple}(undef, length(edge_ids_sorted))
+    for (k, eid) in enumerate(edge_ids_sorted)
+        e = edges[eid]
+        rows[k] = (; (Symbol(c) => e[c] for c in cols)...)
+    end
+    links = DataFrame(rows)
 
     # Build merge_log if requested
     merge_log = Dict{Int, Vector{Int}}()
@@ -438,13 +522,13 @@ function thin(dfL::DataFrame, dfN::DataFrame;
         orig_dist = sum(dfL[:, dist_col])
         thin_dist = sum(links[:, dist_col])
         println("Thinning Statistics:")
-        println("  Nodes: $(nrow(dfN)) → $(nrow(nodes_out)) " *
+        println("  Nodes: $(nrow(dfN)) â†’ $(nrow(nodes_out)) " *
                 "(-$(nrow(dfN) - nrow(nodes_out)), " *
                 "$(round(100*(1 - nrow(nodes_out)/nrow(dfN)), digits=1))%)")
-        println("  Links: $(nrow(dfL)) → $(nrow(links)) " *
+        println("  Links: $(nrow(dfL)) â†’ $(nrow(links)) " *
                 "(-$(nrow(dfL) - nrow(links)), " *
                 "$(round(100*(1 - nrow(links)/nrow(dfL)), digits=1))%)")
-        println("  Total distance: $(round(orig_dist, digits=1)) → " *
+        println("  Total distance: $(round(orig_dist, digits=1)) â†’ " *
                 "$(round(thin_dist, digits=1)) mi " *
                 "($(round(100*thin_dist/orig_dist, digits=1))%)")
     end
@@ -503,10 +587,10 @@ By default, roads are bidirectional unless marked as one-way via `dir_col`.
 # Arguments
 - `dfL`: Links DataFrame with columns [SRC, DST, weight_col, ...].
 - `weight`: Weight column - either column index (default 3) or column name symbol.
-- `ab_weight`: Optional symbol for A→B weight column (overrides `weight` for forward edges).
-- `ba_weight`: Optional symbol for B→A weight column (overrides `weight` for reverse edges).
+- `ab_weight`: Optional symbol for Aâ†’B weight column (overrides `weight` for forward edges).
+- `ba_weight`: Optional symbol for Bâ†’A weight column (overrides `weight` for reverse edges).
 - `dir_col`: Column symbol indicating directionality (default `:DIR`).
-- `oneway_val`: Value in `dir_col` that indicates one-way A→B only (default `1`).
+- `oneway_val`: Value in `dir_col` that indicates one-way Aâ†’B only (default `1`).
 
 # Returns
 - `SimpleWeightedDiGraph` with weighted directed edges.
@@ -526,15 +610,15 @@ g = links2graph(links, ab_weight=:AB_TIME, ba_weight=:BA_TIME)
 # Notes
 - Roads are bidirectional by default. One-way roads are identified when
   `dir_col` exists and equals `oneway_val`.
-- For FAF5 data, `DIR=1` indicates one-way (A→B only), `DIR=0` is bidirectional.
+- For FAF5 data, `DIR=1` indicates one-way (Aâ†’B only), `DIR=0` is bidirectional.
 - Edges with zero or negative weights are skipped.
 """
-function links2graph(dfL::DataFrame;
-                     weight::Union{Int,Symbol}=3,
-                     ab_weight::Union{Symbol,Nothing}=nothing,
-                     ba_weight::Union{Symbol,Nothing}=nothing,
-                     dir_col::Symbol=:DIR,
-                     oneway_val=1)
+function _links2graph_core(dfL::DataFrame;
+                           weight::Union{Int,Symbol}=3,
+                           ab_weight::Union{Symbol,Nothing}=nothing,
+                           ba_weight::Union{Symbol,Nothing}=nothing,
+                           dir_col::Symbol=:DIR,
+                           oneway_val=1)
 
     # Determine which columns to use for weights
     use_asymmetric = !isnothing(ab_weight) || !isnothing(ba_weight)
@@ -584,7 +668,7 @@ function links2graph(dfL::DataFrame;
     for i in 1:nrow(dfL)
         u, v = src_col[i], dst_col[i]
 
-        # Forward edge (A → B) with AB weight
+        # Forward edge (A â†’ B) with AB weight
         val_ab = Float64(w_ab[i])
         if val_ab > 1e-10
             push!(src_vec, u)
@@ -592,7 +676,7 @@ function links2graph(dfL::DataFrame;
             push!(wgt_vec, val_ab)
         end
 
-        # Reverse edge (B → A) with BA weight, unless one-way
+        # Reverse edge (B â†’ A) with BA weight, unless one-way
         is_oneway = has_dir && (d_col[i] == oneway_val)
         if !is_oneway
             val_ba = use_asymmetric ? Float64(w_ba[i]) : val_ab
@@ -605,6 +689,163 @@ function links2graph(dfL::DataFrame;
     end
 
     return SimpleWeightedGraphs.SimpleWeightedDiGraph(src_vec, dst_vec, wgt_vec)
+end
+
+# =============================================================================
+# Network Construction with Optional Auto-Reindex
+# =============================================================================
+
+"""
+    links2graph(dfL::DataFrame; weight=3, ab_weight=nothing, ba_weight=nothing,
+                dir_col=:DIR, oneway_val=1, reindex=:auto, return_map=false,
+                sparse_ratio=10, max_id_threshold=500_000,
+                src_col=1, dst_col=2) -> SimpleWeightedDiGraph or (SimpleWeightedDiGraph, Dict, Dict)
+
+Convert a links DataFrame to a directed weighted graph, with optional auto-reindexing.
+
+This method can reindex sparse or non-sequential node IDs to avoid creating very
+large graphs with many unused vertices.
+
+# Arguments
+- `dfL`: Links DataFrame with columns [SRC, DST, weight_col, ...].
+- `weight`, `ab_weight`, `ba_weight`, `dir_col`, `oneway_val`: Same as core graph conversion.
+- `reindex`: `:auto` (default), `true`, or `false`.
+  - `:auto` reindexes if node IDs are non-integer, or if
+    `maximum(node_id) > max_id_threshold`, or
+    `maximum(node_id) > sparse_ratio * n_unique_ids`.
+  - `true` always reindexes.
+  - `false` never reindexes (requires integer node IDs).
+- `return_map`: If `true`, returns `(graph, id_map, inv_map)`.
+  - `id_map`: `Dict{ID,Int}` mapping old IDs to new IDs.
+  - `inv_map`: `Dict{Int,ID}` mapping new IDs to old IDs.
+  - When reindexing is not performed, these maps are identity maps.
+- `sparse_ratio`: Threshold for `:auto` reindexing. Default `10`.
+- `max_id_threshold`: Absolute max node ID threshold for `:auto` reindexing. Default `500_000`.
+- `src_col`, `dst_col`: Source and destination columns (index or symbol). Defaults to 1 and 2.
+
+# Returns
+- `SimpleWeightedDiGraph`, or a tuple with mapping dictionaries if `return_map=true`.
+"""
+function links2graph(dfL::DataFrame;
+                     weight::Union{Int,Symbol}=3,
+                     ab_weight::Union{Symbol,Nothing}=nothing,
+                     ba_weight::Union{Symbol,Nothing}=nothing,
+                     dir_col::Symbol=:DIR,
+                     oneway_val=1,
+                     reindex::Union{Symbol,Bool}=:auto,
+                     return_map::Bool=false,
+                     sparse_ratio::Real=10,
+                     max_id_threshold::Real=500_000,
+                     src_col::Union{Int,Symbol}=1,
+                     dst_col::Union{Int,Symbol}=2)
+
+    src_ids = dfL[:, src_col]
+    dst_ids = dfL[:, dst_col]
+    node_id_type = promote_type(eltype(src_ids), eltype(dst_ids))
+    node_id_set = Set{node_id_type}()
+    for v in src_ids
+        push!(node_id_set, v)
+    end
+    for v in dst_ids
+        push!(node_id_set, v)
+    end
+    node_ids = collect(node_id_set)
+
+    do_reindex = false
+    node_ids_eltype = eltype(node_ids)
+
+    if reindex == true
+        do_reindex = true
+    elseif reindex == false
+        if !(node_ids_eltype <: Integer)
+            error("Non-integer node IDs require reindexing. Use reindex=true or reindex=:auto.")
+        end
+        do_reindex = false
+    elseif reindex == :auto
+        if node_ids_eltype <: Integer
+            max_id = maximum(node_ids)
+            n_unique = length(node_ids)
+            do_reindex = (max_id > max_id_threshold) || (max_id > sparse_ratio * n_unique)
+        else
+            do_reindex = true
+        end
+    else
+        error("Invalid reindex option. Use :auto, true, or false.")
+    end
+
+    function normalize_links_df(df_in)
+        if src_col == 1 && dst_col == 2
+            return df_in, weight
+        end
+
+        orig_names = names(df_in)
+        weight_sym = weight isa Int ? Symbol(orig_names[weight]) : weight
+        src_name = src_col isa Int ? orig_names[src_col] : String(src_col)
+        dst_name = dst_col isa Int ? orig_names[dst_col] : String(dst_col)
+        keep = [n for n in orig_names if n != src_name && n != dst_name]
+        df_out = DataFrame()
+        df_out[!, :SRC] = df_in[!, src_col]
+        df_out[!, :DST] = df_in[!, dst_col]
+        for n in keep
+            df_out[!, Symbol(n)] = df_in[!, n]
+        end
+        return df_out, weight_sym
+    end
+
+    if !do_reindex
+        df_graph, weight_sym = normalize_links_df(dfL)
+        g = _links2graph_core(df_graph;
+            weight=weight_sym, ab_weight=ab_weight, ba_weight=ba_weight,
+            dir_col=dir_col, oneway_val=oneway_val)
+        if return_map
+            id_map = Dict{eltype(node_ids), eltype(node_ids)}(v => v for v in node_ids)
+            inv_map = Dict{eltype(node_ids), eltype(node_ids)}(v => v for v in node_ids)
+            return g, id_map, inv_map
+        end
+        return g
+    end
+
+    sort_ids = try
+        sort(collect(node_ids))
+    catch e
+        if e isa MethodError || e isa ArgumentError
+            # Fallback for mixed/incomparable ID types: preserve first-seen order.
+            seen = Set{Any}()
+            ordered = Any[]
+            for v in src_ids
+                if !(v in seen)
+                    push!(seen, v)
+                    push!(ordered, v)
+                end
+            end
+            for v in dst_ids
+                if !(v in seen)
+                    push!(seen, v)
+                    push!(ordered, v)
+                end
+            end
+            ordered
+        else
+            rethrow(e)
+        end
+    end
+    id_map = Dict{eltype(sort_ids), Int}(id => i for (i, id) in enumerate(sort_ids))
+    inv_map = Dict{Int, eltype(sort_ids)}(i => id for (i, id) in enumerate(sort_ids))
+
+    dfL_re = copy(dfL)
+    dfL_re[!, src_col] = [id_map[v] for v in src_ids]
+    dfL_re[!, dst_col] = [id_map[v] for v in dst_ids]
+
+    df_graph, weight_sym = normalize_links_df(dfL_re)
+    g = _links2graph_core(df_graph;
+        weight=weight_sym, ab_weight=ab_weight, ba_weight=ba_weight,
+        dir_col=dir_col, oneway_val=oneway_val)
+
+    if return_map
+        return g, id_map, inv_map
+    end
+    @warn "links2graph reindexed node IDs. Pass return_map=true to get the ID mapping."
+    return g
 end
 
 # =============================================================================
@@ -672,7 +913,7 @@ for path reconstruction.
 - `n`: Number of source nodes to compute paths from (typically the number of demand points).
 
 # Returns
-- `D`: n×n distance matrix where D[i,j] is the shortest distance from node i to node j.
+- `D`: nÃ—n distance matrix where D[i,j] is the shortest distance from node i to node j.
 - `P`: Vector of parent vectors for path reconstruction. P[i][j] gives the predecessor
        of node j on the shortest path from node i.
 
@@ -723,7 +964,7 @@ graph's internal edge weights directly.
 - `n`: Number of source nodes to compute paths from (typically the number of demand points).
 
 # Returns
-- `D`: n×n distance matrix where D[i,j] is the shortest distance from node i to node j.
+- `D`: nÃ—n distance matrix where D[i,j] is the shortest distance from node i to node j.
 - `P`: Vector of parent vectors for path reconstruction. P[i][j] gives the predecessor
        of node j on the shortest path from node i.
 
@@ -755,3 +996,4 @@ function shortestpaths(g::SimpleWeightedGraphs.SimpleWeightedDiGraph, n::Int)
     end
     return D, P
 end
+
