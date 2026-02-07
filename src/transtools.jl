@@ -253,6 +253,7 @@ end
 
 """
     totlogcost(q, c, f, a, v, h) -> Float64
+    totlogcost(q, c, params) -> Float64
 
 Calculate total logistics cost (transport + inventory).
 
@@ -267,15 +268,22 @@ TLC = TC + IC, where:
 - `a`: Inventory fraction (0-D correction, typically 0.5).
 - `v`: Product value (\$/ton).
 - `h`: Annual holding cost rate (fraction, e.g., 0.25 = 25%/year).
+- `params`: Any object with fields `.f`, `.a`, `.v`, `.h` (e.g., NamedTuple
+  from [`aggshmt`](@ref) or a DataFrameRow).
 
 # Returns
 - Total logistics cost (\$/year).
 
 # Example
 ```julia
+# Scalar form
 totlogcost(5.0, 450.0, 100.0, 0.5, 1000.0, 0.25)
-# 5-ton shipments, \$450/shipment, 100 tons/year
 # Returns: TC = 9000, IC = 625, TLC = 9625
+
+# Using aggshmt output
+agg = aggshmt(products)
+c = charge_ltl(q, d, agg.s)
+totlogcost(q, c, agg)
 ```
 """
 function totlogcost(q, c, f, a, v, h)
@@ -287,6 +295,8 @@ function totlogcost(q, c, f, a, v, h)
 
     return TC .+ IC
 end
+
+totlogcost(q, c, p) = totlogcost(q, c, p.f, p.a, p.v, p.h)
 
 """
     aggshmt(df::DataFrame) -> NamedTuple
