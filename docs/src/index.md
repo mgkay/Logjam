@@ -66,6 +66,13 @@ st2fips
 fips2st
 ```
 
+### Geocoding
+
+```@docs
+name2lonlat
+lonlat2name
+```
+
 ### FAF5 Road Network Data
 
 ```@docs
@@ -125,4 +132,57 @@ twoopt
 
 ```@docs
 rte2lines
+```
+
+## Location Functions
+
+Discrete facility location optimization using construction and improvement heuristics.
+
+### Construction Heuristics
+
+```@docs
+ufladd
+ufldrop
+```
+
+### Improvement Heuristics
+
+```@docs
+uflxchg
+```
+
+### Hybrid Methods
+
+```@docs
+ufl
+pmedian
+```
+
+### Utility Functions
+
+```@docs
+randX
+```
+
+## Transportation Functions
+
+Rate estimation and cost analysis for LTL and TL freight transportation.
+
+### Rate and Charge Functions
+
+```@docs
+rate_ltl
+charge_tl
+charge_ltl
+mincharge_tl
+mincharge_ltl
+maxpayld
+```
+
+### Total Logistics Cost
+
+```@docs
+totlogcost
+aggshmt
+transport_costs
 ```

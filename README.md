@@ -4,13 +4,14 @@
 
 [![Stable](https://img.shields.io/badge/docs-stable-blue.svg)](https://mgkay.github.io/Logjam/)
 
-Logjam is a Julia package for logistics and operations research, providing tools for:
-- **Facility Location**: Discrete optimization (UFL, p-median) with construction and improvement heuristics
-- **Transportation Economics**: LTL/TL rate estimation, minimum charges, and total logistics cost analysis
-- **Freight Road Networks**: FAF5 highway network, shortest paths, distance matrices, and automatic connector generation
-- **Route Optimization**: Multi-stop routing with savings-based construction and local search improvement
-- **U.S. Geographic Data**: Built-in cities/counties/states datasets with population and coordinate information
-- **Visualization**: Publication-quality maps and plots using GeoMakie
+Logjam is a Julia package for logistics engineering, providing tools for:
+* **Facility Location**: Discrete optimization algorithms for facility location problems, including Uncapacitated Facility Location (UFL) and $p$-Median construction and improvement heuristics.
+* **Transportation Costing**: Formulas for estimating LTL & TL freight rates, calculating minimum charges, and evaluating total logistics costs (TLC).
+* **Network Analysis**: Routing and topology tools for the FAF5 highway network, including shortest paths and automatic facility connectors.
+* **Vehicle Routing**: Algorithms for multi-stop route optimization, featuring savings-based construction and local search improvement methods.
+* **Spatial Data**: A gazetteer of U.S. administrative boundaries and points, including Cities, Counties, ZIP codes (3- and 5-digit), Census tracts, and CBSA/CSA definitions.
+* **Distance Metrics**: Unified distance calculation utilities supporting Rectilinear ($L_1$), Euclidean ($L_2$), and Great Circle (Haversine) metrics.
+* **Visualization**: Plotting recipes and helper functions for visualizing networks, facilities, and flows on U.S. maps using GeoMakie.
 
 ## Installation
 

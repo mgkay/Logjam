@@ -133,6 +133,7 @@ include("loctools.jl")
 include("transtools.jl")
 include("datatools.jl")
 include("maptools.jl")
+include("disttools.jl")
 include("roadtools.jl")
 include("routetools.jl")
 

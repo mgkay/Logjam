@@ -17,8 +17,6 @@ makedocs(;
     doctest = true,    # Enable doctest for jldoctest blocks
     pages=[
         "Home" => "index.md",
-        "Location Functions" => "loctools.md",
-        "Transportation Functions" => "transtools.md",
     ],
 )
 
