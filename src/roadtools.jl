@@ -5,7 +5,7 @@
 # =============================================================================
 
 """
-    dgc(xyÃ¢â€šÂ, xyÃ¢â€šâ€š; unit=:mi) -> Float64
+    dgc(xy₁, xy₂; unit=:mi) -> Float64
 
 Calculate the great circle distance between two points.
 
@@ -13,8 +13,8 @@ Uses the haversine formula to compute the shortest distance over the Earth's sur
 between two points specified by longitude-latitude coordinates.
 
 # Arguments
-- `xyÃ¢â€šÂ`: Tuple or vector of (longitude, latitude) for the first point.
-- `xyÃ¢â€šâ€š`: Tuple or vector of (longitude, latitude) for the second point.
+- `xy₁`: Tuple or vector of (longitude, latitude) for the first point.
+- `xy₂`: Tuple or vector of (longitude, latitude) for the second point.
 - `unit`: Distance unit, either `:mi` (miles, default) or `:km` (kilometers).
 
 # Returns
@@ -23,7 +23,7 @@ between two points specified by longitude-latitude coordinates.
 # Example
 ```julia
 # Distance from Raleigh to Charlotte
-dgc((-78.6382, 35.7796), (-80.8431, 35.2271))  # Ã¢â€°Ë† 130 miles
+dgc((-78.6382, 35.7796), (-80.8431, 35.2271))  # ≈ 130 miles
 ```
 """
 function dgc(xy1, xy2; unit=:mi)
@@ -963,7 +963,7 @@ for path reconstruction.
 - `n`: Number of source nodes to compute paths from (typically the number of demand points).
 
 # Returns
-- `D`: nÃ—n distance matrix where D[i,j] is the shortest distance from node i to node j.
+- `D`: n×n distance matrix where D[i,j] is the shortest distance from node i to node j.
 - `P`: Vector of parent vectors for path reconstruction. P[i][j] gives the predecessor
        of node j on the shortest path from node i.
 
@@ -1014,7 +1014,7 @@ graph's internal edge weights directly.
 - `n`: Number of source nodes to compute paths from (typically the number of demand points).
 
 # Returns
-- `D`: nÃ—n distance matrix where D[i,j] is the shortest distance from node i to node j.
+- `D`: n×n distance matrix where D[i,j] is the shortest distance from node i to node j.
 - `P`: Vector of parent vectors for path reconstruction. P[i][j] gives the predecessor
        of node j on the shortest path from node i.
 
