@@ -114,7 +114,7 @@ The map can focus on different predefined regions (the world, U.S., or continent
 # Behavior
 - Automatically selects the appropriate region and borders based on the provided `x`, `y`, and `region` parameters.
 - Chooses the rendering backend and activates it accordingly.
-- Draws country borders, U.S. state borders, and National Highway System (NHS) roads depending on the specified options and region.
+- Draws country borders, U.S. state borders, and FAF5 Interstate Highways depending on the specified options and region.
 - If `x` and `y` are provided, calculates the bounding box with optional expansion and adjusts the map view accordingly. Expansion allows for better visualization around `x` and `y` points.
 
 # Examples

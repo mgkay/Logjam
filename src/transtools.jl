@@ -93,9 +93,8 @@ mincharge_tl(2.11; ppi=108.6)  # 2005 rates → 47.6
 
 # References
 - M.G. Kay (2023), Freight Transport (course notes), Section 1.5.3, Eq (1.7),
-  NC State University
-- Empirical derivation methodology: Kay & Warsing (2009), Int. J. Logistics
-  Research and Applications, 12(3):165–193
+  NC State University. Empirical derivation methodology: Kay & Warsing (2009),
+  Int. J. Logistics Research and Applications, 12(3):165–193
 """
 function mincharge_tl(r::Real=2.00; ppi=102.7)
     return (ppi / 102.7) * 45
@@ -135,9 +134,8 @@ mincharge_ltl(500.0)  # 500 miles → ~90.8
 
 # References
 - M.G. Kay (2023), Freight Transport (course notes), Section 1.5.3, Eq (1.8),
-  NC State University
-- Empirical derivation methodology: Kay & Warsing (2009), Int. J. Logistics
-  Research and Applications, 12(3):165–193
+  NC State University. Empirical derivation methodology: Kay & Warsing (2009),
+  Int. J. Logistics Research and Applications, 12(3):165–193
 """
 function mincharge_ltl(d::Real; ppi=104.2)
     d > 3354 && error("LTL minimum charge not defined for d > 3354 miles")
@@ -344,7 +342,7 @@ Calculate transport costs for a collection of shipments, automatically selecting
 - `kwargs`: Additional parameters passed to charge functions (e.g., `ppi`, `Kwt`, `Kcu`, `r`).
 
 # Returns
-- DataFrame with original columns plus `:cost` (\$), `:mode` (:tl or :ltl), `:rate` (\$/ton-mi).
+- DataFrame with original columns plus `:cost` (\$), `:mode` (`:tl` or `:ltl`), `:rate` (\$/ton-mi).
 
 # Example
 ```julia

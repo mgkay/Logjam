@@ -35,60 +35,6 @@ aggshmt
 transport_costs
 ```
 
-## Model Background
-
-### LTL Rate Model
-
-The LTL rate function is based on nonlinear regression fitted to CzarLite tariff data:
-
-```
-r_LTL = PPI_LTL × [(s²/8 + 14) / ((q^(1/7) × d^(15/29) - 7/2) × (s² + 2s + 14))]
-```
-
-**Variables:**
-- `q`: Shipment weight (tons)
-- `s`: Shipment density (lb/ft³)
-- `d`: Distance (miles)
-- `PPI_LTL`: LTL Producer Price Index (base year 2004 = 104.2)
-
-**Valid Ranges:**
-- Weight: 150 lb (0.075 tons) to 10,000 lb (5 tons)
-- Distance: 37 to 3,354 miles
-- Cube constraint: 2000q/s ≤ 650 ft³
-
-Returns `Inf` for out-of-bounds inputs.
-
-### TL Cost Model
-
-TL charges are based on distance and truck capacity constraints:
-
-```
-c_TL = ⌈q/q_max⌉ × max(r × d, MC_TL)
-```
-
-**Variables:**
-- `q_max = min(K_wt, s × K_cu / 2000)`: Maximum payload (weight or cube limited)
-- `K_wt`: Truck weight capacity (default: 25 tons)
-- `K_cu`: Truck cube capacity (default: 2750 ft³)
-- `r`: Revenue per loaded truck-mile (default: $2.00/mi)
-- `MC_TL`: Minimum charge (default: $45)
-
-### Minimum Charges
-
-**TL Minimum Charge:**
-```
-MC_TL = (PPI_TL / 102.7) × 45
-```
-
-Represents fixed costs of loading/unloading (independent of distance).
-
-**LTL Minimum Charge:**
-```
-MC_LTL = (PPI_LTL / 104.2) × [45 + d^(28/19) / 1625]
-```
-
-Includes fixed terminal cost plus distance-dependent component for multi-terminal handling.
-
 ## Examples
 
 ### Basic LTL Rate Estimation

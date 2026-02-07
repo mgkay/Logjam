@@ -74,15 +74,22 @@ faf5links
 faf5interstate
 ```
 
-## Road Network Functions
+## Distance Functions
 
-Functions for working with road networks.
+Functions for calculating distances between points using various metrics.
 
 ```@docs
 dgc
 d1
 d2
 dists
+```
+
+## Road Network Functions
+
+Functions for working with road networks.
+
+```@docs
 prune_reindex
 thin
 addconnectors
