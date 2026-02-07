@@ -450,3 +450,105 @@ Derived from FAF5 links where SIGN starts with "I " (interstate routes).
 function faf5interstate()
     return loaddata("faf5_interstate_roads")
 end
+
+# =============================================================================
+# Geographic Name Lookup
+# =============================================================================
+
+"""
+    name2lonlat(name, df; st=nothing) -> Vector{Float64}
+
+Convert city name to longitude-latitude coordinates.
+
+Searches DataFrame for matching city name, optionally filtered by state.
+Supports "City, ST" format parsing.
+
+# Arguments
+- `name`: City name string, or "City, ST" format.
+- `df`: DataFrame with `:NAME`, `:ST`, `:LON`, `:LAT` columns (e.g., from usplace()).
+- `st`: State abbreviation to filter search (default: nothing, search all states).
+
+# Returns
+- [LON, LAT] vector for the first matching city.
+
+# Example
+```julia
+cities = usplace()
+name2lonlat("Raleigh", cities; st="NC")
+name2lonlat("Raleigh, NC", cities)  # Alternative format
+```
+"""
+function name2lonlat(name::AbstractString, df::DataFrame; st=nothing)
+    # Parse "City, ST" format
+    if occursin(", ", name)
+        parts = split(name, ", ")
+        length(parts) == 2 || error("Invalid format: $name")
+        name, st = parts[1], parts[2]
+    end
+
+    # Search with optional state filter
+    if isnothing(st)
+        idx = findfirst(r -> r.NAME == name, eachrow(df))
+    else
+        idx = findfirst(r -> r.NAME == name && r.ST == st, eachrow(df))
+    end
+
+    isnothing(idx) && error("'$name' not found in DataFrame")
+
+    return [df[idx, :LON], df[idx, :LAT]]
+end
+
+"""
+    lonlat2name(XY, df; threshold=4.0) -> DataFrame
+
+Find nearest cities to given coordinates (reverse geocoding).
+
+# Arguments
+- `XY`: n×2 matrix of [LON, LAT] coordinates, or single [LON, LAT] vector.
+- `df`: DataFrame with `:NAME`, `:ST`, `:LON`, `:LAT` columns (e.g., from usplace()).
+- `threshold`: Distance threshold (miles) for "in city" vs "X mi from city" (default: 4.0).
+
+# Returns
+- DataFrame with columns `:idx` (nearest city index), `:name`, `:st`, `:dist` (miles), `:desc` (description).
+
+# Example
+```julia
+cities = usplace()
+xy = [-78.6382 35.7796; -80.8431 35.2271]  # Raleigh, Charlotte
+lonlat2name(xy, cities)
+```
+"""
+function lonlat2name(XY, df::DataFrame; threshold=4.0)
+    # Convert vector to 1×2 matrix
+    if XY isa AbstractVector
+        XY = reshape(XY, 1, 2)
+    end
+
+    # Compute distances to all cities
+    city_coords = hcat(df.LON, df.LAT)
+    D = dists(XY, city_coords, :mi)
+
+    # Find nearest for each query point
+    results = DataFrame(
+        idx = Int[],
+        name = String[],
+        st = String[],
+        dist = Float64[],
+        desc = String[]
+    )
+
+    for i in 1:size(D, 1)
+        j = argmin(D[i, :])
+        dist = D[i, j]
+
+        desc = if dist < threshold
+            "in $(df.NAME[j]), $(df.ST[j])"
+        else
+            "$(round(dist, digits=1)) mi from $(df.NAME[j]), $(df.ST[j])"
+        end
+
+        push!(results, (idx=j, name=df.NAME[j], st=df.ST[j], dist=dist, desc=desc))
+    end
+
+    return results
+end

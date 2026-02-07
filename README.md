@@ -4,7 +4,13 @@
 
 [![Stable](https://img.shields.io/badge/docs-stable-blue.svg)](https://mgkay.github.io/Logjam/)
 
-Logjam is a Julia package providing tools and data for logistics engineering tasks. It enables users to work with U.S. geographical data and FAF5 road networks, create maps using GeoMakie, and create multi-stop routes using savings-based construction and 2-opt improvement heuristics.
+Logjam is a Julia package for logistics and operations research, providing tools for:
+- **Facility Location**: Discrete optimization (UFL, p-median) with construction and improvement heuristics
+- **Transportation Economics**: LTL/TL rate estimation, minimum charges, and total logistics cost analysis
+- **Freight Road Networks**: FAF5 highway network, shortest paths, distance matrices, and automatic connector generation
+- **Route Optimization**: Multi-stop routing with savings-based construction and local search improvement
+- **U.S. Geographic Data**: Built-in cities/counties/states datasets with population and coordinate information
+- **Visualization**: Publication-quality maps and plots using GeoMakie
 
 ## Installation
 
@@ -22,6 +28,78 @@ Logjam uses CairoMakie by default for rendering maps. For interactive display wi
 ```julia
 using GLMakie  # Optional: enables backend=:GLMakie
 using Logjam
+```
+
+## Quick Start
+
+### Facility Location Example
+
+Solve an uncapacitated facility location (UFL) problem to optimally place facilities:
+
+```julia
+using Logjam
+
+# Fixed costs and customer-facility transport costs
+k = [10.0, 10.0, 15.0]  # Fixed facility costs
+C = [0.0 3.0 7.0;       # Transport costs: facility i → customer j
+     3.0 0.0 4.0;
+     7.0 4.0 0.0]
+
+# Find optimal facility locations
+facilities, total_cost = ufl(k, C)
+println("Open facilities: ", facilities)
+println("Total cost: ", total_cost)
+
+# Solve p-median (select exactly 2 facilities, no fixed costs)
+facilities, total_cost = pmedian(2, C; verbose=false)
+```
+
+### Transportation Cost Example
+
+Estimate LTL and TL transportation charges using empirically-derived rate models:
+
+```julia
+using Logjam
+
+# Calculate LTL rate and charge
+rate = rate_ltl(0.5, 8.0, 250.0)  # 0.5 tons, 8 lb/ft³, 250 miles
+charge = charge_ltl(0.5, 250.0, 8.0)  # Total charge including minimum
+println("LTL rate: \$", round(rate, digits=3), "/ton-mi")
+println("LTL charge: \$", round(charge, digits=2))
+
+# Calculate TL charge (automatically handles multiple trucks if needed)
+tl_charge = charge_tl(10.0, 500.0, 8.0)  # 10 tons, 500 miles, 8 lb/ft³
+
+# Batch process multiple shipments with mode selection
+using DataFrames
+shipments = DataFrame(
+    weight = [0.5, 2.0, 15.0, 30.0],
+    density = [8.0, 10.0, 12.0, 15.0],
+    distance = [250.0, 500.0, 800.0, 1200.0]
+)
+results = transport_costs(shipments; mode=:auto)  # Auto-selects TL vs LTL
+```
+
+### Distance Matrix Example
+
+Compute distance matrices using multiple metrics:
+
+```julia
+using Logjam
+
+# City coordinates [LON, LAT]
+cities = [-78.64 35.78;   # Raleigh, NC
+          -122.42 37.77;  # San Francisco, CA
+          -87.63 41.88]   # Chicago, IL
+
+# Great circle (geodesic) distances in miles
+D_miles = dists(cities, cities, :mi)
+
+# Euclidean distances (planar approximation)
+D_eucl = dists(cities, cities, 2)  # or just dists(cities, cities)
+
+# Manhattan (rectilinear) distances
+D_manh = dists(cities, cities, 1)
 ```
 
 ## Example Usage

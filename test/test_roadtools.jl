@@ -37,18 +37,18 @@ using SimpleWeightedGraphs
         @test_throws Exception dgc(raleigh, charlotte; unit=:ft)  # Invalid unit
     end
 
-    @testset "Dgc - Distance Matrix" begin
+    @testset "dists - Distance Matrix" begin
         # Three NC cities
         origins = [-78.6 35.8; -80.8 35.2; -79.0 36.1]  # Raleigh, Charlotte, Durham
         dests = [-77.0 35.0; -78.5 36.0]  # Two destinations
 
-        D = Dgc(origins, dests)
-
-        @test size(D) == (3, 2)
-        @test all(D .>= 0)  # All distances non-negative
+        # Test great circle distance (replaces Dgc)
+        D_gc = dists(origins, dests, :mi)
+        @test size(D_gc) == (3, 2)
+        @test all(D_gc .>= 0)  # All distances non-negative
 
         # Diagonal of square matrix should be zeros
-        D_square = Dgc(origins, origins)
+        D_square = dists(origins, origins, :mi)
         @test size(D_square) == (3, 3)
         for i in 1:3
             @test D_square[i, i] ≈ 0.0 atol=1e-10
@@ -56,6 +56,24 @@ using SimpleWeightedGraphs
 
         # Symmetry
         @test D_square[1, 2] ≈ D_square[2, 1] atol=1e-10
+
+        # Test Euclidean distance (default)
+        D_eucl = dists(origins, dests)
+        @test size(D_eucl) == (3, 2)
+        @test all(D_eucl .>= 0)
+
+        # Test Euclidean with explicit p=2
+        D_eucl2 = dists(origins, dests, 2)
+        @test D_eucl ≈ D_eucl2
+
+        # Test Manhattan distance
+        D_manh = dists(origins, dests, 1)
+        @test size(D_manh) == (3, 2)
+        @test all(D_manh .>= D_eucl)  # Manhattan >= Euclidean
+
+        # Test kilometers
+        D_km = dists(origins, dests, :km)
+        @test D_km ≈ D_gc .* 1.60934 atol=0.1  # mi to km conversion
     end
 
     @testset "prune_reindex" begin

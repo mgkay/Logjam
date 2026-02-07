@@ -80,7 +80,9 @@ Functions for working with road networks.
 
 ```@docs
 dgc
-Dgc
+d1
+d2
+dists
 prune_reindex
 thin
 addconnectors

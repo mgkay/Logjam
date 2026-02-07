@@ -1,13 +1,32 @@
 """
 # Logjam
 
-A Julia package providing tools and data for logistics engineering tasks.
+Logistics toolkit for facility location, transportation costing, freight road networks,
+route optimization, U.S. geographic data, and GeoMakie visualizations.
 
 ## Overview
-The `Logjam` package provides a practical set of tools for common logistics engineering tasks, 
-including geocoding, routing, and map visualization. It enables users to work with U.S. 
-geographical data and FAF5 road networks, create maps using GeoMakie, and create multi-stop 
-routes using savings-based construction and 2-opt improvement heuristics.
+The `Logjam` package provides comprehensive tools for logistics engineering and operations
+research, including facility location optimization, transportation economics, freight road
+networks, route optimization, U.S. geographic data, and map visualization.
+
+## Facility Location Functions
+- `ufladd`: Greedy ADD construction heuristic for UFL.
+- `ufldrop`: Greedy DROP construction heuristic for UFL.
+- `uflxchg`: Pairwise EXCHANGE improvement heuristic.
+- `ufl`: Hybrid UFL heuristic (ADD + DROP + EXCHANGE).
+- `pmedian`: p-median facility location (fixed number of facilities).
+- `randX`: Generate random points within bounding box.
+
+## Transportation Economics Functions
+- `rate_ltl`: Estimate LTL transportation rate (\$/ton-mi).
+- `charge_tl`: Calculate TL transport charge.
+- `charge_ltl`: Calculate LTL transport charge.
+- `mincharge_tl`: TL minimum charge.
+- `mincharge_ltl`: LTL minimum charge.
+- `maxpayld`: Maximum truck payload (weight or cube limited).
+- `totlogcost`: Total logistics cost (transport + inventory).
+- `aggshmt`: Aggregate shipments into equivalent single shipment.
+- `transport_costs`: Batch calculate transport costs with mode selection.
 
 ## Data Functions
 - `usplace`: Returns DataFrame of U.S. place data (cities, towns, CDPs).
@@ -23,6 +42,8 @@ routes using savings-based construction and 2-opt improvement heuristics.
 - `faf5nodes`: Returns DataFrame of FAF5 road network nodes.
 - `faf5links`: Returns DataFrame of FAF5 road network links.
 - `faf5interstate`: Returns interstate polyline vectors for map backgrounds.
+- `name2lonlat`: Convert city name to coordinates.
+- `lonlat2name`: Find nearest cities (reverse geocoding).
 
 ## Map Functions
 - `makemap`: Creates a map visualization for predefined or user-defined regions.
@@ -32,7 +53,9 @@ routes using savings-based construction and 2-opt improvement heuristics.
 
 ## Road Network Functions
 - `dgc`: Great circle distance between two points.
-- `Dgc`: Great circle distance matrix between point sets.
+- `d1`: Rectilinear (Manhattan) distance between two points.
+- `d2`: Euclidean distance between two points.
+- `dists`: Unified distance matrix (replaces Dgc, supports all metrics).
 - `prune_reindex`: Prune network to common vertices and reindex.
 - `thin`: Remove degree-2 nodes from network (use `verbose=true` for statistics).
 - `addconnectors`: Add demand point connectors to road network.
@@ -80,17 +103,25 @@ using SimpleWeightedGraphs
 const _glmakie_available = Ref{Bool}(false)
 const _glmakie_activate = Ref{Any}(nothing)
 
+# Export facility location functions
+export ufladd, ufldrop, uflxchg, ufl, pmedian, randX
+
+# Export transportation economics functions
+export rate_ltl, charge_tl, charge_ltl, mincharge_tl, mincharge_ltl, maxpayld
+export totlogcost, aggshmt, transport_costs
+
 # Export data functions
 export usplace, uscounty, uscentract, uscenblkgrp, uszcta5, uszcta3
 export uscbsa, uscsa, st2fips, fips2st
 export faf5nodes, faf5links, faf5interstate
+export name2lonlat, lonlat2name
 
 # Export map functions and constants
 export makemap, mapbbox, aligntext, isptinbbox
 export WORLD_LIMITS, US_LIMITS, CUS_LIMITS
 
 # Export road network functions
-export dgc, Dgc, prune_reindex, thin, addconnectors
+export dgc, d1, d2, dists, prune_reindex, thin, addconnectors
 export links2graph, x2ln, cropnetwork, shortestpaths
 
 # Export routing functions
@@ -98,6 +129,8 @@ export segcost, rteTC, isorigin, rte2loc, rte2lines
 export twoopt, mincostinsert, pairwisesavings, savings
 
 # Include component files
+include("loctools.jl")
+include("transtools.jl")
 include("datatools.jl")
 include("maptools.jl")
 include("roadtools.jl")

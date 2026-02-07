@@ -17,6 +17,10 @@ makedocs(;
     doctest = true,    # Enable doctest for jldoctest blocks
     pages=[
         "Home" => "index.md",
+        "Modules" => [
+            "Facility Location" => "loctools.md",
+            "Transportation Economics" => "transtools.md",
+        ],
     ],
 )
 

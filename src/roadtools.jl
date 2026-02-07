@@ -28,63 +28,114 @@ dgc((-78.6382, 35.7796), (-80.8431, 35.2271))  # Ã¢â€°Ë† 130 miles
 """
 function dgc(xy1, xy2; unit=:mi)
     length(xy1) == length(xy2) == 2 || error("Inputs must have length 2.")
-    unit in [:mi, :km] || error("Unit must be :mi or :km")
+    unit in [:mi, :km, :rad] || error("Unit must be :mi, :km, or :rad")
 
     dx, dy = xy2[1] - xy1[1], xy2[2] - xy1[2]
     a = sind(dy / 2)^2 + cosd(xy1[2]) * cosd(xy2[2]) * sind(dx / 2)^2
-    2 * asin(min(sqrt(a), 1.0)) * (unit == :mi ? 3958.75 : 6371.00)
+    dist_rad = 2 * asin(min(sqrt(a), 1.0))
+
+    # Convert to requested unit
+    if unit == :rad
+        return dist_rad
+    elseif unit == :mi
+        return dist_rad * 3958.75
+    else  # :km
+        return dist_rad * 6371.00
+    end
 end
 
 """
-    Dgc(X1, X2; unit=:mi) -> Matrix{Float64}
+    d1(x₁, x₂) -> Float64
 
-Calculate a great-circle distance matrix between two sets of points.
-
-Computes pairwise haversine distances between all points in `X1` and `X2`.
-This implementation is optimized for larger inputs by:
-- reusing `dgc` for all point-to-point distance calculations, and
-- preallocating the output matrix.
+Calculate rectilinear (Manhattan, L₁) distance between two points.
 
 # Arguments
-- `X1`: Matrix/DataFrame-like object with at least two columns.
-  Column 1 is longitude, column 2 is latitude.
-- `X2`: Matrix/DataFrame-like object with at least two columns.
-  Column 1 is longitude, column 2 is latitude.
-- `unit`: Distance unit, either `:mi` (miles, default) or `:km` (kilometers).
+- `x₁`: First point (vector or tuple).
+- `x₂`: Second point (same dimension as x₁).
 
 # Returns
-- `Matrix{Float64}` where element `[i, j]` is the distance from row `i` of `X1`
-  to row `j` of `X2`.
-
-# Performance Notes
-- This implementation prioritizes simplicity while avoiding dynamic growth
-  of the result matrix for large inputs.
+- Sum of absolute differences: Σ|x₁ᵢ - x₂ᵢ|.
 
 # Example
 ```julia
-origins = [-78.6 35.8; -80.8 35.2; -79.0 36.1]
-dests = [-77.0 35.0; -78.0 36.0; -79.5 35.5; -81.0 35.0]
-D = Dgc(origins, dests)
+d1([0, 0], [3, 4])  # Returns 7.0
+d1([1, 2, 3], [4, 6, 2])  # Returns 8.0
 ```
 """
-function Dgc(X1, X2; unit=:mi)
-    unit in [:mi, :km] || error("Unit must be :mi or :km")
+d1(x₁, x₂) = sum(abs.(x₁ .- x₂))
 
-    # Pull columns once to avoid repeated table/matrix indexing in inner loops.
-    lon1, lat1 = X1[:, 1], X1[:, 2]
-    lon2, lat2 = X2[:, 1], X2[:, 2]
+"""
+    d2(x₁, x₂) -> Float64
 
-    n_rows, n_cols = length(lon1), length(lon2)
-    D = Matrix{Float64}(undef, n_rows, n_cols)
+Calculate Euclidean (L₂) distance between two points.
 
-    for i in 1:n_rows
-        p1 = (lon1[i], lat1[i])
-        for j in 1:n_cols
-            D[i, j] = dgc(p1, (lon2[j], lat2[j]); unit=unit)
-        end
-    end
+# Arguments
+- `x₁`: First point (vector or tuple).
+- `x₂`: Second point (same dimension as x₁).
 
-    return D
+# Returns
+- Euclidean distance: √(Σ(x₁ᵢ - x₂ᵢ)²).
+
+# Example
+```julia
+d2([0, 0], [3, 4])  # Returns 5.0
+d2([1, 2, 3], [4, 6, 2])  # Returns 6.0
+```
+"""
+d2(x₁, x₂) = sqrt(sum((x₁ .- x₂).^2))
+
+"""
+    dists(X1, X2, p=2; unit=:mi) -> Matrix{Float64}
+
+Compute distance matrix between two point sets using specified metric.
+
+**Replaces**: `Dgc` with unified interface supporting all metrics.
+
+# Arguments
+- `X1`: m×n matrix of m points in n dimensions
+- `X2`: k×n matrix of k points in n dimensions
+- `p`: Distance metric
+  - `1`: Rectilinear (Manhattan) distance
+  - `2`: Euclidean distance (default)
+  - `:mi`, `:km`, `:rad`: Great circle distance (requires n=2, lon-lat coordinates)
+- `unit`: Alternative way to specify geographic distance (e.g., `dists(X1, X2; unit=:mi)`)
+
+# Returns
+- `D`: m×k matrix where D[i,j] = distance from X1[i,:] to X2[j,:]
+
+# Examples
+```julia
+# Euclidean (default)
+X1 = [0.0 0.0; 10.0 0.0]
+X2 = [5.0 0.0; 5.0 5.0]
+D = dists(X1, X2)  # 2×2 matrix
+
+# Manhattan distance
+D = dists(X1, X2, 1)
+
+# Great circle distance (lon-lat coordinates)
+cities = [-78.64 35.78; -122.42 37.77]  # Raleigh, SF
+dc = [-77.04 38.91]                      # Washington DC
+D = dists(cities, dc, :mi)               # Statute miles
+D = dists(cities, dc; unit=:km)          # Kilometers (alternative syntax)
+```
+
+See also: [`dgc`](@ref), [`d1`](@ref), [`d2`](@ref)
+"""
+# Default: Euclidean distance
+dists(X1::AbstractMatrix, X2::AbstractMatrix) = [d2(i, j) for i in eachrow(X1), j in eachrow(X2)]
+
+# Integer p: Manhattan (p=1) or Euclidean (p=2)
+function dists(X1::AbstractMatrix, X2::AbstractMatrix, p::Int)
+    p == 1 && return [d1(i, j) for i in eachrow(X1), j in eachrow(X2)]
+    p == 2 && return [d2(i, j) for i in eachrow(X1), j in eachrow(X2)]
+    error("For integer p, only p=1 (rectilinear) and p=2 (Euclidean) supported. Use p=:mi/:km/:rad for geographic.")
+end
+
+# Symbol p: Geographic distance
+function dists(X1::AbstractMatrix, X2::AbstractMatrix, p::Symbol)
+    p ∈ [:mi, :km, :rad] || error("Geographic distance requires p ∈ [:mi, :km, :rad]")
+    return [dgc(i, j; unit=p) for i in eachrow(X1), j in eachrow(X2)]
 end
 
 # =============================================================================
