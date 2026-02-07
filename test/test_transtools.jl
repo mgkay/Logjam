@@ -157,6 +157,24 @@ using DataFrames
         tlc_vec = totlogcost(q_vec, 450.0, 100.0, 0.5, 1000.0, 0.25)
         @test length(tlc_vec) == 3
         @test all(tlc_vec .> 0)
+
+        # Test params method with NamedTuple
+        params = (f=100.0, a=0.5, v=1000.0, h=0.25)
+        tlc_params = totlogcost(q, c, params)
+        @test tlc_params ≈ tlc  # Should match scalar form
+
+        # Test params method with aggshmt output
+        df = DataFrame(
+            f = [100.0, 200.0, 150.0],
+            s = [8.0, 10.0, 6.0],
+            v = [1000.0, 1500.0, 800.0],
+            h = [0.25, 0.25, 0.25],
+            a = [0.5, 0.5, 0.5]
+        )
+        agg = aggshmt(df)
+        tlc_agg = totlogcost(5.0, 450.0, agg)
+        tlc_scalar = totlogcost(5.0, 450.0, agg.f, agg.a, agg.v, agg.h)
+        @test tlc_agg ≈ tlc_scalar
     end
 
     @testset "aggshmt" begin
