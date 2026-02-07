@@ -21,7 +21,7 @@ makedocs(;
 )
 
 deploydocs(;
-    repo="github.com/mgkay/Logjam.jl",
+    repo="github.com/mgkay/Logjam",
     branch="gh-pages",  # Ensure gh-pages branch is set correctly
     devbranch="main",   # Updated to "main" from "master"
     forcepush=true,
