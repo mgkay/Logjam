@@ -122,8 +122,7 @@ D = dists(cities, dc; unit=:km)          # Kilometers (alternative syntax)
 
 See also: [`dgc`](@ref), [`d1`](@ref), [`d2`](@ref)
 """
-# Default: Euclidean distance
-dists(X1::AbstractMatrix, X2::AbstractMatrix) = [d2(i, j) for i in eachrow(X1), j in eachrow(X2)]
+dists(X1::AbstractMatrix, X2::AbstractMatrix) = [d2(i, j) for i in eachrow(X1), j in eachrow(X2)]  # Default: Euclidean distance
 
 # Integer p: Manhattan (p=1) or Euclidean (p=2)
 function dists(X1::AbstractMatrix, X2::AbstractMatrix, p::Int)
