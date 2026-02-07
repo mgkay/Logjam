@@ -6,11 +6,11 @@ DocMeta.setdocmeta!(Logjam, :DocTestSetup, :(using Logjam); recursive=true)
 makedocs(;
     modules=[Logjam],
     authors="Michael G. Kay <kay@ncsu.edu>",
-    sitename="Logjam.jl",
+    sitename="Logjam",
     format=Documenter.HTML(;
-        canonical="https://mgkay.github.io/Logjam.jl",
+        canonical="https://mgkay.github.io/Logjam",
         edit_link="main",   # Updated to "main" from "master"
-# edit_link="https://github.com/mgkay/Logjam.jl/blob/main/", # to fix source buttom in docs
+# edit_link="https://github.com/mgkay/Logjam/blob/main/", # to fix source button in docs
         assets=String[],
     ),
     checkdocs = :none, # Disable the missing docstrings check
