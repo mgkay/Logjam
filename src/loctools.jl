@@ -2,8 +2,15 @@
 # Facility Location Optimization
 # =============================================================================
 
+# Build n×m sparse allocation matrix W where W[i,j]=1 if facility i serves customer j
+function _build_alloc(y, C)
+    n, m = size(C)
+    alloc = [y[argmin(C[y, j])] for j in 1:m]
+    return sparse(alloc, 1:m, 1.0, n, m)
+end
+
 """
-    ufladd(k, C; y=Int[], p=nothing) -> (Vector{Int}, Float64)
+    ufladd(k, C; y=Int[], p=nothing) -> (Vector{Int}, Float64, SparseMatrixCSC)
 
 Greedy ADD construction heuristic for uncapacitated facility location.
 
@@ -17,13 +24,14 @@ improvement is possible or p facilities are selected.
 - `p`: Maximum facilities to select (default: nothing, no limit).
 
 # Returns
-- `(y, TC)`: Selected facility indices and total cost.
+- `(y, TC, W)`: Selected facility indices, total cost, and n×m sparse allocation matrix
+  where W[i,j]=1 if facility i serves customer j.
 
 # Example
 ```julia
 k = [10, 10, 10]
 C = [2 5 4; 4 1 3; 5 4 2]
-y, TC = ufladd(k, C)  # → ([1, 2], 21.0)
+y, TC, W = ufladd(k, C)
 ```
 
 # References
@@ -51,11 +59,11 @@ function ufladd(k, C; y = Int[], p::Union{Int, Nothing} = nothing)
             done = true
         end
     end
-    return y, TCᵒ
+    return y, TCᵒ, _build_alloc(y, C)
 end
 
 """
-    ufldrop(k, C; y=nothing, p=nothing) -> (Vector{Int}, Float64)
+    ufldrop(k, C; y=nothing, p=nothing) -> (Vector{Int}, Float64, SparseMatrixCSC)
 
 Greedy DROP construction heuristic for uncapacitated facility location.
 
@@ -69,13 +77,14 @@ greatest cost reduction until no improvement or p facilities remain.
 - `p`: Target number of facilities (default: nothing, drop until no improvement).
 
 # Returns
-- `(y, TC)`: Selected facility indices and total cost.
+- `(y, TC, W)`: Selected facility indices, total cost, and n×m sparse allocation matrix
+  where W[i,j]=1 if facility i serves customer j.
 
 # Example
 ```julia
 k = [10, 10, 10]
 C = [2 5 4; 4 1 3; 5 4 2]
-y, TC = ufldrop(k, C)  # → ([1, 2], 21.0)
+y, TC, W = ufldrop(k, C)
 ```
 
 # References
@@ -105,11 +114,11 @@ function ufldrop(k, C; y = nothing, p::Union{Int, Nothing} = nothing)
             done = true
         end
     end
-    return y, TCᵒ
+    return y, TCᵒ, _build_alloc(y, C)
 end
 
 """
-    uflxchg(k, C, y) -> (Vector{Int}, Float64)
+    uflxchg(k, C, y) -> (Vector{Int}, Float64, SparseMatrixCSC)
 
 Pairwise EXCHANGE improvement heuristic for uncapacitated facility location.
 
@@ -122,13 +131,14 @@ until local optimum is reached.
 - `y`: Initial facility set.
 
 # Returns
-- `(y, TC)`: Improved facility indices and total cost.
+- `(y, TC, W)`: Improved facility indices, total cost, and n×m sparse allocation matrix
+  where W[i,j]=1 if facility i serves customer j.
 
 # Example
 ```julia
 k = [10, 10, 10]
 C = [2 5 4; 4 1 3; 5 4 2]
-y, TC = uflxchg(k, C, [1, 3])  # Improve initial solution
+y, TC, W = uflxchg(k, C, [1, 3])
 ```
 
 # References
@@ -173,11 +183,11 @@ function uflxchg(k, C, y::Vector{Int})
             done = true
         end
     end
-    return y, TCᵒ
+    return y, TCᵒ, _build_alloc(y, C)
 end
 
 """
-    ufl(k, C; verbose=true) -> (Vector{Int}, Float64)
+    ufl(k, C; verbose=true) -> (Vector{Int}, Float64, SparseMatrixCSC)
 
 Hybrid UFL heuristic combining ADD, DROP, and EXCHANGE procedures.
 
@@ -190,30 +200,31 @@ Typically produces high-quality solutions for uncapacitated facility location pr
 - `verbose`: Print iteration costs (default: true).
 
 # Returns
-- `(y, TC)`: Best facility indices and total cost.
+- `(y, TC, W)`: Best facility indices, total cost, and n×m sparse allocation matrix
+  where W[i,j]=1 if facility i serves customer j.
 
 # Example
 ```julia
 k = [10, 10, 15]
 C = [0 3 7; 3 0 4; 7 4 0]
-y, TC = ufl(k, C)  # Prints: Add: 13.0, Xchg: 13.0
+y, TC, W = ufl(k, C)  # Prints: Add: 13.0, Xchg: 13.0
 ```
 
 # References
 - M.G. Kay, *Facility Location* (course notes), NC State University
 """
 function ufl(k, C; verbose = true)
-    y′, TC′ = ufladd(k, C)
+    y′, TC′, _ = ufladd(k, C)
     verbose && println("  Add: ", TC′)
     y, TC = y′, TC′
     done = false
     while !done
-        y, TC = uflxchg(k, C, y′)
+        y, TC, _ = uflxchg(k, C, y′)
         verbose && println(" Xchg: ", TC)
         if Set(y) !== Set(y′)
-            y′, TC′ = ufladd(k, C; y)
+            y′, TC′, _ = ufladd(k, C; y)
             verbose && println("  Add: ", TC′)
-            y′′, TC′′ = ufldrop(k, C; y)
+            y′′, TC′′, _ = ufldrop(k, C; y)
             verbose && println(" Drop: ", TC′′)
             if TC′′ < TC′
                 y′, TC′ = y′′, TC′′
@@ -225,11 +236,11 @@ function ufl(k, C; verbose = true)
             done = true
         end
     end
-    return y, TC
+    return y, TC, _build_alloc(y, C)
 end
 
 """
-    pmedian(p, C; verbose=true) -> (Vector{Int}, Float64)
+    pmedian(p, C; verbose=true) -> (Vector{Int}, Float64, SparseMatrixCSC)
 
 p-median facility location (fixed number of facilities, no fixed costs).
 
@@ -242,12 +253,13 @@ with k=0 to select p facilities, then uflxchg to improve the solution.
 - `verbose`: Print iteration costs (default: true).
 
 # Returns
-- `(y, TC)`: Selected facility indices and total cost.
+- `(y, TC, W)`: Selected facility indices, total cost, and n×m sparse allocation matrix
+  where W[i,j]=1 if facility i serves customer j.
 
 # Example
 ```julia
 C = [0 3 7; 3 0 4; 7 4 0]
-y, TC = pmedian(2, C; verbose=false)  # Select 2 facilities
+y, TC, W = pmedian(2, C; verbose=false)
 ```
 
 # References

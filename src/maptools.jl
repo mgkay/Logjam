@@ -565,3 +565,65 @@ function isptinbbox(pt, bbox::Tuple{Union{Tuple{<:Real, <:Real}, AbstractVector{
     return (pt[1] >= bbox[1][1] && pt[1] <= bbox[1][2] &&
     pt[2] >= bbox[2][1] && pt[2] <= bbox[2][2])
 end
+
+"""
+    alloclines(W, hub_xy, spoke_xy; tol=sqrt(eps())) -> (X, Y)
+
+Convert allocation matrix to NaN-separated line segments for visualization.
+
+Creates line segments connecting hubs to their allocated spokes. Returns one
+vector of coordinates per hub, enabling per-hub formatting (e.g., different colors).
+
+# Arguments
+- `W`: n×m allocation matrix where W[i,j] indicates allocation weight from hub i to spoke j.
+- `hub_xy`: n×2 matrix of hub coordinates [lon, lat] or [x, y].
+- `spoke_xy`: m×2 matrix of spoke coordinates [lon, lat] or [x, y].
+- `tol`: Threshold for nonzero allocation (default: √eps ≈ 1.5e-8).
+
+# Returns
+- `(X, Y)`: Tuple of `Vector{Vector{Float64}}`, each of length n (one per hub).
+  `X[i]` and `Y[i]` contain NaN-separated coordinates for hub i's allocation lines.
+
+# Example
+```julia
+k = [100.0, 100.0, 150.0]
+C = [0 3 7 10; 3 0 4 8; 7 4 0 5]
+y, TC, W = ufl(k, C; verbose=false)
+
+hubs = [-80.0 35.0; -78.0 36.0; -79.0 35.5]
+spokes = [-80.5 35.2; -78.5 35.8; -79.2 36.1; -78.0 35.0]
+
+X, Y = alloclines(W, hubs, spokes)
+
+# Per-hub coloring
+colors = [:red, :blue, :green]
+for i in eachindex(X)
+    lines!(ax, X[i], Y[i], color=colors[i])
+end
+
+# Or single-shot plotting (concatenate all hubs)
+lines!(ax, reduce(vcat, X), reduce(vcat, Y))
+```
+"""
+function alloclines(W::AbstractMatrix, hub_xy::AbstractMatrix, spoke_xy::AbstractMatrix;
+                    tol::Real=sqrt(eps(Float64)))
+    n, m = size(W)
+    size(hub_xy, 1) == n || throw(ArgumentError("hub_xy must have $n rows to match W"))
+    size(spoke_xy, 1) == m || throw(ArgumentError("spoke_xy must have $m rows to match W"))
+    size(hub_xy, 2) == 2 || throw(ArgumentError("hub_xy must be an n×2 matrix"))
+    size(spoke_xy, 2) == 2 || throw(ArgumentError("spoke_xy must be an m×2 matrix"))
+
+    X = [Float64[] for _ in 1:n]
+    Y = [Float64[] for _ in 1:n]
+
+    for i in 1:n
+        for j in 1:m
+            if abs(W[i, j]) > tol
+                append!(X[i], [hub_xy[i, 1], spoke_xy[j, 1], NaN])
+                append!(Y[i], [hub_xy[i, 2], spoke_xy[j, 2], NaN])
+            end
+        end
+    end
+
+    return X, Y
+end

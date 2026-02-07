@@ -98,6 +98,7 @@ using GeoMakie, CairoMakie
 using DelaunayTriangulation
 using Graphs
 using SimpleWeightedGraphs
+using SparseArrays
 
 # GLMakie extension support (set by LogjamGLMakieExt when GLMakie is loaded)
 const _glmakie_available = Ref{Bool}(false)
@@ -117,7 +118,7 @@ export faf5nodes, faf5links, faf5interstate
 export name2lonlat, lonlat2name
 
 # Export map functions and constants
-export makemap, mapbbox, aligntext, isptinbbox
+export makemap, mapbbox, aligntext, isptinbbox, alloclines
 export WORLD_LIMITS, US_LIMITS, CUS_LIMITS
 
 # Export road network functions

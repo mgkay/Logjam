@@ -40,6 +40,7 @@ mapbbox
 aligntext
 bestfit
 isptinbbox
+alloclines
 ```
 
 ## Data Functions

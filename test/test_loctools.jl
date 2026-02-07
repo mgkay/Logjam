@@ -1,5 +1,6 @@
 using Test
 using Logjam
+using SparseArrays
 
 @testset "Facility Location (loctools)" begin
 
@@ -138,5 +139,65 @@ using Logjam
 
         # Hybrid should be at least as good as ADD alone
         @test TC3 <= TC1
+    end
+
+    @testset "Allocation Matrix Output" begin
+        k = [10.0, 10.0, 15.0]
+        C = [0.0 3.0 7.0 10.0;
+             3.0 0.0 4.0 8.0;
+             7.0 4.0 0.0 5.0]
+
+        @testset "ufladd returns W" begin
+            y, TC, W = ufladd(k, C)
+            @test size(W) == (3, 4)
+            @test issparse(W)
+            @test all(sum(W, dims=1) .== 1)
+            @test all(sum(W[setdiff(1:3, y), :], dims=2) .== 0)
+        end
+
+        @testset "ufldrop returns W" begin
+            y, TC, W = ufldrop(k, C)
+            @test size(W) == (3, 4)
+            @test issparse(W)
+            @test all(sum(W, dims=1) .== 1)
+        end
+
+        @testset "uflxchg returns W" begin
+            y, TC, W = uflxchg(k, C, [1, 2])
+            @test size(W) == (3, 4)
+            @test issparse(W)
+            @test all(sum(W, dims=1) .== 1)
+        end
+
+        @testset "ufl returns W" begin
+            y, TC, W = ufl(k, C; verbose=false)
+            @test size(W) == (3, 4)
+            @test issparse(W)
+            @test all(sum(W, dims=1) .== 1)
+        end
+
+        @testset "pmedian returns W" begin
+            y, TC, W = pmedian(2, C; verbose=false)
+            @test size(W) == (3, 4)
+            @test issparse(W)
+            @test all(sum(W, dims=1) .== 1)
+            @test sum(sum(W, dims=2) .> 0) == 2
+        end
+
+        @testset "Backward compatibility" begin
+            y, TC = ufl(k, C; verbose=false)
+            @test length(y) > 0
+            @test TC < Inf
+        end
+
+        @testset "Allocation correctness" begin
+            y, TC, W = ufl(k, C; verbose=false)
+            for j in 1:4
+                facility_idx = findfirst(W[:, j] .> 0)
+                @test facility_idx !== nothing
+                @test facility_idx in y
+                @test C[facility_idx, j] == minimum(C[y, j])
+            end
+        end
     end
 end
