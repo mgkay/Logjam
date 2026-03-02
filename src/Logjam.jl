@@ -50,6 +50,8 @@ networks, route optimization, U.S. geographic data, and map visualization.
 - `mapbbox`: Calculates bounding box for geographic coordinates with optional expansion.
 - `aligntext`: Determines text alignment and offset positions for map labels.
 - `isptinbbox`: Checks if a point lies within a bounding box.
+- `alloclines`: Convert allocation matrix to NaN-separated line segments for visualization.
+- `plotroads!`: Overlay road networks on GeoAxis with adaptive zoom-based styling.
 
 ## Road Network Functions
 - `dgc`: Great circle distance between two points.
@@ -104,6 +106,11 @@ using SparseArrays
 const _glmakie_available = Ref{Bool}(false)
 const _glmakie_activate = Ref{Any}(nothing)
 
+# OSM extension support (set by LogjamOSMExt when LightOSM + NearestNeighbors are loaded)
+const _osm_available = Ref{Bool}(false)
+const _osm_download = Ref{Any}(nothing)
+const _osm_stitch = Ref{Any}(nothing)
+
 # Export facility location functions
 export ufladd, ufldrop, uflxchg, ufl, pmedian, randX
 
@@ -118,12 +125,15 @@ export faf5nodes, faf5links, faf5interstate
 export name2lonlat, lonlat2name
 
 # Export map functions and constants
-export makemap, mapbbox, aligntext, isptinbbox, alloclines
+export makemap, mapbbox, aligntext, isptinbbox, alloclines, plotroads!
 export WORLD_LIMITS, US_LIMITS, CUS_LIMITS
 
 # Export road network functions
 export dgc, d1, d2, dists, prune_reindex, thin, addconnectors
 export links2graph, x2ln, cropnetwork, shortestpaths
+
+# Export OSM functions (require LightOSM + NearestNeighbors extension)
+export osm_roads, stitchnetworks
 
 # Export routing functions
 export segcost, rteTC, isorigin, rte2loc, rte2lines
@@ -137,5 +147,6 @@ include("maptools.jl")
 include("disttools.jl")
 include("roadtools.jl")
 include("routetools.jl")
+include("osmtools.jl")
 
 end # module Logjam
