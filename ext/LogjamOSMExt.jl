@@ -6,7 +6,6 @@ using NearestNeighbors
 using DataFrames
 using CSV
 using Graphs
-using Statistics: mean
 
 function __init__()
     Logjam._osm_available[] = true
@@ -193,7 +192,7 @@ function _stitchnetworks_impl(dfN_base::DataFrame, dfL_base::DataFrame,
     # --- 3. Build KDTree over eligible base nodes ---
     # Convert lon/lat to approximate meters for distance comparison
     # Using a local flat-earth approximation centered on the region
-    center_lat = mean(eligible_nodes.LAT)
+    center_lat = sum(eligible_nodes.LAT) / nrow(eligible_nodes)
     m_per_deg_lat = 111_320.0
     m_per_deg_lon = 111_320.0 * cosd(center_lat)
 
