@@ -56,6 +56,11 @@ function _osm_roads_impl(bbox::Tuple{Real,Real,Real,Real};
 
     @info "  OSM nodes: $(length(g.nodes)), edges: $(Graphs.ne(g.graph))"
 
+    if length(g.nodes) == 0
+        error("No drivable roads found in bbox ($xmin, $xmax, $ymin, $ymax). " *
+              "The region may be in water or contain no roads.")
+    end
+
     # --- Translate to DataFrames ---
     dfN, dfL = _osm2dataframes(g)
 
