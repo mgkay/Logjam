@@ -384,8 +384,8 @@ using GeoMakie, CairoMakie, DataFrames
 # Load network and define demand points
 nodes, links = faf5nodes(), faf5links()
 cities = filter(r -> r.ST == :NC && r.POP > 100_000, usplace())
-links, nodes = cropnetwork(nodes, links, cities.LON, cities.LAT)
-links, nodes = addconnectors(links, nodes, cities.LON, cities.LAT)
+nodes, links = cropnetwork(nodes, links, cities.LON, cities.LAT)
+nodes, links = addconnectors(nodes, links, cities.LON, cities.LAT)
 
 # Compute shortest paths and build a route
 g = links2graph(links)

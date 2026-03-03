@@ -18,7 +18,8 @@ end
 # =============================================================================
 function _osm_roads_impl(bbox::Tuple{Real,Real,Real,Real};
                          cache_dir::String=".", force_download::Bool=false)
-    xmin, xmax, ymin, ymax = bbox
+    # Snap bbox to grid so nearby queries share the same cache tile
+    xmin, xmax, ymin, ymax = Logjam._osm_snap_bbox(bbox)
 
     # --- Bounding box size warning ---
     area_deg2 = (xmax - xmin) * (ymax - ymin)
@@ -170,7 +171,7 @@ function _stitchnetworks_impl(dfN_base::DataFrame, dfL_base::DataFrame,
         @warn "No eligible base-network nodes found for stitching."
         dfN_combined = vcat(dfN_base, dfN_osm; cols=:union)
         dfL_combined = vcat(dfL_base, dfL_osm; cols=:union)
-        return Logjam.prune_reindex(dfL_combined, dfN_combined)
+        return Logjam.prune_reindex(dfN_combined, dfL_combined)
     end
 
     # --- 2. Identify candidate OSM nodes (near boundary) ---
@@ -334,7 +335,7 @@ function _stitchnetworks_impl(dfN_base::DataFrame, dfL_base::DataFrame,
     dfL_combined = vcat(dfL_base, dfL_osm_offset, dfL_conn; cols=:union)
 
     # prune_reindex for clean sequential IDs
-    dfL_out, dfN_out = Logjam.prune_reindex(dfL_combined, dfN_combined)
+    dfN_out, dfL_out = Logjam.prune_reindex(dfN_combined, dfL_combined)
 
     # --- 7. Topology validation ---
     if n_connectors == 0

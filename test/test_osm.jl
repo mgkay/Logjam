@@ -122,7 +122,7 @@ const GAINESVILLE_BBOX = (-82.45, -82.20, 29.55, 29.75)
     @testset "T9: Stitching Basic Connectivity" begin
         dfN_faf = faf5nodes()
         dfL_faf = faf5links()
-        dfL_fl, dfN_fl = cropnetwork(dfN_faf, dfL_faf, [-87.0, -80.0], [24.5, 31.0])
+        dfN_fl, dfL_fl = cropnetwork(dfN_faf, dfL_faf, [-87.0, -80.0], [24.5, 31.0])
         dfL_fl.SOURCE = fill("FAF5", nrow(dfL_fl))
         dfN_fl.SOURCE = fill("FAF5", nrow(dfN_fl))
 

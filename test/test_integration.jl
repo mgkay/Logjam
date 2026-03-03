@@ -23,13 +23,13 @@ using Graphs
 
         # Step 3: Load and crop FAF5 network
         nodes_full, links_full = faf5nodes(), faf5links()
-        links_crop, nodes_crop = cropnetwork(nodes_full, links_full, cities.LON, cities.LAT)
+        nodes_crop, links_crop = cropnetwork(nodes_full, links_full, cities.LON, cities.LAT)
 
         @test nrow(nodes_crop) > 0
         @test nrow(links_crop) > 0
 
         # Step 4: Add connectors for cities
-        links_conn, nodes_conn = addconnectors(links_crop, nodes_crop, cities.LON, cities.LAT)
+        nodes_conn, links_conn = addconnectors(nodes_crop, links_crop, cities.LON, cities.LAT)
 
         # Cities should now be nodes 1-10
         @test nrow(nodes_conn) == nrow(nodes_crop) + nrow(cities)

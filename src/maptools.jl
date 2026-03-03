@@ -627,3 +627,252 @@ function alloclines(W::AbstractMatrix, hub_xy::AbstractMatrix, spoke_xy::Abstrac
 
     return X, Y
 end
+
+"""
+    plotroads!(ax::GeoAxis, dfL::DataFrame, dfN::DataFrame;
+               show_connectors::Bool = false) -> Vector{Lines}
+
+Overlay road networks on GeoAxis with adaptive zoom-based styling.
+
+Renders roads from DataFrames with automatic differentiation by SOURCE category
+(FAF5/OSM/CONNECTOR) and interstate status (FCLASS==1). Uses unified gray color
+palette with adaptive linewidth and alpha based on zoom level.
+
+# Arguments
+- `ax::GeoAxis`: Geographic axis from `makemap()` or manual creation.
+- `dfL::DataFrame`: Links with required SRC (col 1), DST (col 2); optional SOURCE, FCLASS.
+- `dfN::DataFrame`: Nodes with required IDX (col 1), LON (col 2), LAT (col 3).
+- `show_connectors::Bool`: Whether to render CONNECTOR links (default: false).
+
+# Returns
+- `Vector{Lines}`: Handles to plotted line objects, ordered as [FAF5_interstate, FAF5_other, OSM, CONNECTOR] (empty categories omitted).
+
+# Styling
+Roads are styled adaptively based on latitude span (latspan = max_lat - min_lat):
+- **latspan > 20°** (CONUS-scale): Thin lines, lower alpha (zoomed out)
+- **10° < latspan ≤ 20°** (Regional): Medium lines, medium alpha
+- **latspan ≤ 10°** (City/state): Thick lines, higher alpha (zoomed in)
+
+All roads use unified `:gray55` color with differentiation via linewidth and alpha.
+Interstates (FCLASS==1 within FAF5) are thicker than other roads at each zoom level.
+
+# Data Requirements
+- `dfL` must have at least 2 columns: SRC, DST (node IDs as integers)
+- `dfN` must have at least 3 columns: IDX, LON, LAT (coordinates in WGS84)
+- Optional `dfL.SOURCE`: "FAF5", "OSM", or "CONNECTOR" (missing treated as "FAF5")
+- Optional `dfL.FCLASS`: Integer functional class (1 = interstate, FAF5 only)
+
+# Examples
+```julia
+using Logjam, GeoMakie
+
+# Basic FAF5 plot
+dfL, dfN = faf5links(), faf5nodes()
+fig, ax = makemap(region=:CUS)
+handles = plotroads!(ax, dfL, dfN)
+display(fig)
+
+# Customize interstate color
+handles[1].color = (:darkblue, 0.7)
+
+# With connectors
+x_fac = [-80.0, -78.5]
+y_fac = [35.5, 36.2]
+dfN_conn, dfL_conn = addconnectors(dfN, dfL, x_fac, y_fac)
+fig, ax = makemap(region=:CUS)
+handles = plotroads!(ax, dfL_conn, dfN_conn; show_connectors=true)
+handles[end].color = (:red, 0.5)  # Highlight connectors
+display(fig)
+```
+
+# Notes
+- Interstates are only detected in FAF5 roads (SOURCE=="FAF5" or missing) with FCLASS==1
+- Connectors are hidden by default to avoid visual clutter from synthetic edges
+- Returns handles in deterministic order for user customization
+- Node lookup uses Dict to handle non-sequential OSM node IDs efficiently
+"""
+function plotroads!(ax, dfL::DataFrame, dfN::DataFrame;
+                    show_connectors::Bool = false)
+    # 1. Input validation
+    nrow(dfL) > 0 || throw(ArgumentError("dfL must have at least one row"))
+    nrow(dfN) > 0 || throw(ArgumentError("dfN must have at least one row"))
+    ncol(dfL) >= 2 || throw(ArgumentError("dfL must have at least 2 columns (SRC, DST)"))
+    ncol(dfN) >= 3 || throw(ArgumentError("dfN must have at least 3 columns (IDX, LON, LAT)"))
+
+    # Get column references by position
+    src_vals = dfL[:, 1]
+    dst_vals = dfL[:, 2]
+    node_ids = dfN[:, 1]
+    node_lons = dfN[:, 2]
+    node_lats = dfN[:, 3]
+
+    # Validate node reference integrity
+    node_id_set = Set(node_ids)
+    orphaned_src = findall(src -> src ∉ node_id_set, src_vals)
+    !isempty(orphaned_src) && throw(ArgumentError(
+        "dfL has $(length(orphaned_src)) links with SRC not in dfN.IDX (first: row $(orphaned_src[1]))"))
+
+    orphaned_dst = findall(dst -> dst ∉ node_id_set, dst_vals)
+    !isempty(orphaned_dst) && throw(ArgumentError(
+        "dfL has $(length(orphaned_dst)) links with DST not in dfN.IDX (first: row $(orphaned_dst[1]))"))
+
+    # Validate coordinate bounds
+    bad_lon = findall(lon -> lon < -180 || lon > 180, node_lons)
+    !isempty(bad_lon) && throw(ArgumentError(
+        "dfN has $(length(bad_lon)) nodes with LON out of bounds [-180,180] (first: row $(bad_lon[1]))"))
+
+    bad_lat = findall(lat -> lat < -90 || lat > 90, node_lats)
+    !isempty(bad_lat) && throw(ArgumentError(
+        "dfN has $(length(bad_lat)) nodes with LAT out of bounds [-90,90] (first: row $(bad_lat[1]))"))
+
+    # 2. Build node lookup dictionary
+    node_lookup = Dict(node_ids[i] => (node_lons[i], node_lats[i]) for i in 1:nrow(dfN))
+
+    # 3. Add SOURCE column if missing (backward compatibility)
+    has_source = "SOURCE" in names(dfL)
+    source_col = has_source ? dfL.SOURCE : fill(missing, nrow(dfL))
+
+    # 4. Filter connectors if hidden
+    dfL_active = dfL
+    if !show_connectors
+        keep_mask = [coalesce(s, "FAF5") != "CONNECTOR" for s in source_col]
+        dfL_active = dfL[keep_mask, :]
+        source_col = has_source ? dfL_active.SOURCE : fill(missing, nrow(dfL_active))
+    end
+
+    # 5. Detect interstates (within FAF5 only)
+    has_fclass = "FCLASS" in names(dfL_active)
+    fclass_col = has_fclass ? dfL_active.FCLASS : fill(missing, nrow(dfL_active))
+
+    # 6. Categorize links and build polylines
+    categories = ["FAF5_interstate", "FAF5_other", "OSM", "CONNECTOR"]
+    polylines = Dict(cat => (Float64[], Float64[]) for cat in categories)
+
+    # Reaccess filtered columns
+    src_active = dfL_active[:, 1]
+    dst_active = dfL_active[:, 2]
+
+    for i in 1:nrow(dfL_active)
+        source = coalesce(source_col[i], "FAF5")
+
+        # Determine category
+        if source == "FAF5" && has_fclass && !ismissing(fclass_col[i]) && fclass_col[i] == 1
+            category = "FAF5_interstate"
+        elseif source == "FAF5" || ismissing(source_col[i])
+            category = "FAF5_other"
+        elseif source == "OSM"
+            category = "OSM"
+        elseif source == "CONNECTOR"
+            category = "CONNECTOR"
+        else
+            continue  # Unknown SOURCE value, skip
+        end
+
+        # Append coordinates with NaN separator
+        src_lon, src_lat = node_lookup[src_active[i]]
+        dst_lon, dst_lat = node_lookup[dst_active[i]]
+
+        push!(polylines[category][1], src_lon, dst_lon, NaN)
+        push!(polylines[category][2], src_lat, dst_lat, NaN)
+    end
+
+    # 7. Compute adaptive styling
+    limits = ax.limits[]
+    latspan = abs(limits[2][2] - limits[2][1])
+    base_color = :gray55
+
+    # Build style dictionary for each category
+    styles = Dict{String, NamedTuple}()
+
+    # FAF5 interstate
+    lw = latspan > 20 ? 0.4 : (latspan > 10 ? 0.8 : 1.5)
+    α = latspan > 20 ? 0.3 : (latspan > 10 ? 0.4 : 0.5)
+    styles["FAF5_interstate"] = (linewidth=lw, color=(base_color, α))
+
+    # FAF5 other
+    lw = latspan > 20 ? 0.15 : (latspan > 10 ? 0.3 : 0.6)
+    α = latspan > 20 ? 0.2 : (latspan > 10 ? 0.3 : 0.4)
+    styles["FAF5_other"] = (linewidth=lw, color=(base_color, α))
+
+    # OSM
+    lw = latspan > 20 ? 0.1 : (latspan > 10 ? 0.2 : 0.35)
+    α = latspan > 20 ? 0.15 : (latspan > 10 ? 0.2 : 0.3)
+    styles["OSM"] = (linewidth=lw, color=(base_color, α))
+
+    # CONNECTOR
+    styles["CONNECTOR"] = (linewidth=0.3, color=(base_color, 0.15), linestyle=:dash)
+
+    # 8. Render polylines
+    handles = []
+    for category in categories
+        x_coords, y_coords = polylines[category]
+        if length(x_coords) > 0
+            style = styles[category]
+            h = lines!(ax, x_coords, y_coords; style...)
+            push!(handles, h)
+        end
+    end
+
+    return handles
+end
+
+"""
+    plotroute!(ax, path::Vector{Int}, dfN::DataFrame; kwargs...) → Vector
+
+Plot a route on a map axis.  `path` is an ordered node-index sequence
+(as returned by `tracepath`).  Coordinates are looked up in `dfN.LON` / `dfN.LAT`.
+
+Returns a vector of plot handles: `[line_handle, origin_scatter, dest_scatter]`
+(or `[line_handle]` when `show_markers=false`).
+
+# Keyword arguments
+- `color=:red`          – route line color
+- `linewidth=2`         – route line width
+- `show_markers=true`   – plot origin/destination scatter markers
+- `origin_color=:green` – color of origin marker
+- `dest_color=:blue`    – color of destination marker
+- `markersize=10`       – marker size
+"""
+function plotroute!(ax, path::Vector{Int}, dfN::DataFrame;
+                    color=:red, linewidth=2,
+                    show_markers=true,
+                    origin_color=:green, dest_color=:blue,
+                    markersize=10)
+    lons = dfN.LON[path]
+    lats = dfN.LAT[path]
+    handles = Any[]
+    push!(handles, lines!(ax, lons, lats; color=color, linewidth=linewidth))
+    if show_markers
+        push!(handles, scatter!(ax, [lons[1]], [lats[1]]; color=origin_color, markersize=markersize))
+        push!(handles, scatter!(ax, [lons[end]], [lats[end]]; color=dest_color, markersize=markersize))
+    end
+    return handles
+end
+
+"""
+    plotroute!(ax, paths::Vector{Vector{Int}}, dfN::DataFrame; kwargs...) → Vector{Vector}
+
+Multi-path variant.  Each path is drawn in a different color (cycling through
+`colors`).  Returns a vector of handle vectors, one per path.
+
+# Keyword arguments
+- `colors=Makie.wong_colors()` – color palette to cycle through
+- `linewidth=2`
+- `show_markers=true`
+- `markersize=10`
+"""
+function plotroute!(ax, paths::Vector{Vector{Int}}, dfN::DataFrame;
+                    colors=Makie.wong_colors(), linewidth=2,
+                    show_markers=true, markersize=10)
+    all_handles = Vector{Any}[]
+    for (i, path) in enumerate(paths)
+        c = colors[mod1(i, length(colors))]
+        h = plotroute!(ax, path, dfN;
+                       color=c, linewidth=linewidth,
+                       show_markers=show_markers,
+                       origin_color=:green, dest_color=:blue,
+                       markersize=markersize)
+        push!(all_handles, h)
+    end
+    return all_handles
+end

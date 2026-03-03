@@ -91,7 +91,7 @@ using SimpleWeightedGraphs
             DIST = [10.0, 15.0, 12.0]
         )
 
-        dfL_out, dfN_out = prune_reindex(dfL, dfN)
+        dfN_out, dfL_out = prune_reindex(dfN, dfL)
 
         # Node 50 should be removed (no links)
         @test nrow(dfN_out) == 4
@@ -124,7 +124,7 @@ using SimpleWeightedGraphs
             DIST = [10.0, 15.0, 12.0]
         )
 
-        dfL_out, dfN_out = prune_reindex(dfL, dfN; src_col=:SRC, dst_col=:DST, node_col=:IDX)
+        dfN_out, dfL_out = prune_reindex(dfN, dfL; src_col=:SRC, dst_col=:DST, node_col=:IDX)
 
         @test nrow(dfN_out) == 4
         @test sort(dfN_out.IDX) == [1, 2, 3, 4]
@@ -147,7 +147,7 @@ using SimpleWeightedGraphs
             DIST = [10.0, 15.0, 12.0]
         )
 
-        dfL_thin, dfN_thin = thin(dfL, dfN)
+        dfN_thin, dfL_thin = thin(dfN, dfL)
 
         # Should reduce to single link 1-4
         @test nrow(dfL_thin) == 1
@@ -176,11 +176,11 @@ using SimpleWeightedGraphs
         )
 
         # Without must_match, should thin fully
-        dfL_thin1, dfN_thin1 = thin(dfL, dfN)
+        dfN_thin1, dfL_thin1 = thin(dfN, dfL)
         @test nrow(dfL_thin1) == 1
 
         # With must_match=["FCLASS"], should preserve node 2
-        dfL_thin2, dfN_thin2 = thin(dfL, dfN; must_match=["FCLASS"])
+        dfN_thin2, dfL_thin2 = thin(dfN, dfL; must_match=["FCLASS"])
         @test nrow(dfL_thin2) == 2  # Two links remain
         @test nrow(dfN_thin2) == 3  # Three nodes remain
     end
@@ -199,7 +199,7 @@ using SimpleWeightedGraphs
             DIST = [10.0, 10.0, 10.0]
         )
 
-        dfL_thin, dfN_thin = thin(dfL, dfN)
+        dfN_thin, dfL_thin = thin(dfN, dfL)
 
         # No self-loops should exist
         for row in eachrow(dfL_thin)
@@ -219,7 +219,7 @@ using SimpleWeightedGraphs
             DIST = [10.0, 15.0, 12.0]
         )
 
-        dfL_thin, dfN_thin, merge_log = thin(dfL, dfN; keep_index=true)
+        dfN_thin, dfL_thin, merge_log = thin(dfN, dfL; keep_index=true)
 
         # merge_log should exist and track original indices
         @test !isempty(merge_log)
@@ -244,7 +244,7 @@ using SimpleWeightedGraphs
         )
 
         # Use minimum speed aggregation
-        dfL_thin, _ = thin(dfL, dfN; agg=Dict("SPEED" => minimum))
+        _, dfL_thin = thin(dfN, dfL; agg=Dict("SPEED" => minimum))
 
         @test nrow(dfL_thin) == 1
         @test dfL_thin.SPEED[1] == 55  # Minimum of 65 and 55
@@ -305,15 +305,15 @@ using SimpleWeightedGraphs
         x′ = [-78.5]
         y′ = [35.5]
 
-        dfL_conn, dfN_conn = addconnectors(dfL, dfN, x′, y′)
+        dfN_conn, dfL_conn = addconnectors(dfN, dfL, x′, y′)
 
         # Demand point should be node 1, network nodes shifted to 2-5
         @test nrow(dfN_conn) == 5
         @test dfN_conn.IDX[1] == 1  # Demand point is first
 
-        # Should have original links + connectors
+        # Should have original links + connectors (with added SOURCE column)
         @test nrow(dfL_conn) > nrow(dfL)
-        @test names(dfL_conn) == names(dfL)
+        @test names(dfL_conn) == [names(dfL); "SOURCE"]
         @test names(dfN_conn) == names(dfN)
         @test dfL_conn.SPEED[1:nrow(dfL)] == dfL.SPEED
         @test dfL_conn.DIR[1:nrow(dfL)] == dfL.DIR
@@ -343,7 +343,7 @@ using SimpleWeightedGraphs
         x′ = [-78.2, -78.8, -78.5]
         y′ = [35.2, 35.8, 35.5]
 
-        dfL_conn, dfN_conn = addconnectors(dfL, dfN, x′, y′)
+        dfN_conn, dfL_conn = addconnectors(dfN, dfL, x′, y′)
 
         # Demand points should be nodes 1, 2, 3
         @test nrow(dfN_conn) == 7  # 3 demand + 4 network
@@ -370,13 +370,13 @@ using SimpleWeightedGraphs
 
         x_prime = [-78.5]
         y_prime = [35.5]
-        dfL_conn, dfN_conn = addconnectors(
-            dfL, dfN, x_prime, y_prime;
+        dfN_conn, dfL_conn = addconnectors(
+            dfN, dfL, x_prime, y_prime;
             src_col=:SRC, dst_col=:DST, dist_col=:DIST,
             node_col=:IDX, x_col=:LON, y_col=:LAT
         )
 
-        @test names(dfL_conn) == names(dfL)
+        @test names(dfL_conn) == [names(dfL); "SOURCE"]
         @test names(dfN_conn) == names(dfN)
         @test dfN_conn.IDX[1] == 1
         @test Set(dfN_conn.IDX[2:end]) == Set(2:5)
@@ -384,6 +384,91 @@ using SimpleWeightedGraphs
         @test all(v -> v in Set(dfN_conn.IDX), dfL_conn.DST)
         @test dfL_conn.SPEED[1:nrow(dfL)] == dfL.SPEED
         @test all(ismissing, dfL_conn.SPEED[(nrow(dfL) + 1):end])
+    end
+
+    @testset "addconnectors - NF-NF connectors" begin
+        # Shared network for all sub-tests
+        dfN_nf = DataFrame(
+            IDX = [1, 2, 3, 4],
+            LON = [-78.0, -78.0, -79.0, -79.0],
+            LAT = [35.0, 36.0, 35.0, 36.0]
+        )
+        dfL_nf = DataFrame(
+            SRC = [1, 2, 1],
+            DST = [2, 4, 3],
+            DIST = [69.0, 69.0, 54.0],
+            DIR = [0, 1, 0]
+        )
+
+        @testset "A. three NF points (triangle)" begin
+            x′ = [-78.2, -78.8, -78.5]
+            y′ = [35.2, 35.8, 35.5]
+            dfN_conn, dfL_conn = addconnectors(dfN_nf, dfL_nf, x′, y′)
+
+            # NF-NF links: both endpoints in 1:3
+            nf_links = filter(r -> r.SRC <= 3 && r.DST <= 3, dfL_conn)
+            @test nrow(nf_links) == 3  # 3 points → 3 Delaunay edges
+
+            # DIR = 0 for all NF-NF connectors
+            @test all(nf_links.DIR .== 0)
+
+            # Circuity applied: check edge (1,3)
+            nf13 = filter(r -> Set([r.SRC, r.DST]) == Set([1, 3]), dfL_conn)
+            @test nrow(nf13) == 1
+            raw = dgc((-78.2, 35.2), (-78.5, 35.5))
+            @test nf13.DIST[1] ≈ 1.3 * raw
+        end
+
+        @testset "B. disabled with add_nf_nf=false" begin
+            x′ = [-78.2, -78.8, -78.5]
+            y′ = [35.2, 35.8, 35.5]
+            _, dfL_on = addconnectors(dfN_nf, dfL_nf, x′, y′)
+            _, dfL_off = addconnectors(dfN_nf, dfL_nf, x′, y′; add_nf_nf=false)
+
+            @test nrow(dfL_on) > nrow(dfL_off)
+            nf_off = filter(r -> r.SRC <= 3 && r.DST <= 3, dfL_off)
+            @test nrow(nf_off) == 0
+        end
+
+        @testset "C. two NF points" begin
+            x′ = [-78.3, -78.7]
+            y′ = [35.3, 35.7]
+            _, dfL_conn = addconnectors(dfN_nf, dfL_nf, x′, y′)
+
+            nf_links = filter(r -> r.SRC <= 2 && r.DST <= 2, dfL_conn)
+            @test nrow(nf_links) == 1
+            @test Set([nf_links.SRC[1], nf_links.DST[1]]) == Set([1, 2])
+            raw = dgc((-78.3, 35.3), (-78.7, 35.7))
+            @test nf_links.DIST[1] ≈ 1.3 * raw
+        end
+
+        @testset "D. single NF point" begin
+            x′ = [-78.5]
+            y′ = [35.5]
+            _, dfL_on = addconnectors(dfN_nf, dfL_nf, x′, y′)
+            _, dfL_off = addconnectors(dfN_nf, dfL_nf, x′, y′; add_nf_nf=false)
+            @test nrow(dfL_on) == nrow(dfL_off)
+        end
+
+        @testset "E. collinear NF points" begin
+            # 4 points along a line (no true triangles)
+            x′ = [-78.0, -78.5, -79.0, -79.5]
+            y′ = [35.0, 35.0, 35.0, 35.0]
+            _, dfL_conn = addconnectors(dfN_nf, dfL_nf, x′, y′)
+
+            nf_links = filter(r -> r.SRC <= 4 && r.DST <= 4, dfL_conn)
+            @test nrow(nf_links) >= 3  # chain: 1-2, 2-3, 3-4 at minimum
+        end
+
+        @testset "F. no duplicate arcs" begin
+            x′ = [-78.2, -78.8, -78.5]
+            y′ = [35.2, 35.8, 35.5]
+            _, dfL_conn = addconnectors(dfN_nf, dfL_nf, x′, y′)
+
+            nf_links = filter(r -> r.SRC <= 3 && r.DST <= 3, dfL_conn)
+            edges = Set([Set([r.SRC, r.DST]) for r in eachrow(nf_links)])
+            @test length(edges) == nrow(nf_links)  # no duplicates
+        end
     end
 
     @testset "cropnetwork" begin
@@ -403,7 +488,7 @@ using SimpleWeightedGraphs
         x = [-79.5, -80.5]
         y = [35.6, 36.0]
 
-        dfL_crop, dfN_crop = cropnetwork(dfN, dfL, x, y)
+        dfN_crop, dfL_crop = cropnetwork(dfN, dfL, x, y)
 
         # Should have fewer nodes than original
         @test nrow(dfN_crop) < nrow(dfN)
@@ -416,6 +501,47 @@ using SimpleWeightedGraphs
         max_node = maximum(dfN_crop.IDX)
         @test all(dfL_crop.SRC .<= max_node)
         @test all(dfL_crop.DST .<= max_node)
+    end
+
+    # --- Return-order regression tests (V7) ---
+
+    @testset "prune_reindex - return order regression" begin
+        dfN = DataFrame(IDX = [1, 2, 3], LON = [-78.0, -79.0, -80.0], LAT = [35.0, 35.5, 36.0])
+        dfL = DataFrame(SRC = [1, 2], DST = [2, 3], DIST = [10.0, 15.0])
+        dfN_out, dfL_out = prune_reindex(dfN, dfL)
+        @test "IDX" in names(dfN_out)
+        @test "SRC" in names(dfL_out)
+        @test "DST" in names(dfL_out)
+    end
+
+    @testset "addconnectors - return order regression" begin
+        dfN = DataFrame(IDX = [1, 2, 3, 4], LON = [-78.0, -78.0, -79.0, -79.0], LAT = [35.0, 36.0, 35.0, 36.0])
+        dfL = DataFrame(SRC = [1, 2, 1], DST = [2, 4, 3], DIST = [69.0, 69.0, 54.0])
+        dfN_out, dfL_out = addconnectors(dfN, dfL, [-78.5], [35.5])
+        @test "IDX" in names(dfN_out)
+        @test "SRC" in names(dfL_out)
+        @test "DST" in names(dfL_out)
+    end
+
+    @testset "thin - return order regression" begin
+        dfN = DataFrame(IDX = [1, 2, 3, 4], LON = [-78.0, -79.0, -80.0, -81.0], LAT = [35.0, 35.0, 35.0, 35.0])
+        dfL = DataFrame(SRC = [1, 2, 3], DST = [2, 3, 4], DIST = [10.0, 15.0, 12.0])
+        dfN_out, dfL_out = thin(dfN, dfL)
+        @test "IDX" in names(dfN_out)
+        @test "SRC" in names(dfL_out)
+        dfN_out2, dfL_out2, ml = thin(dfN, dfL; keep_index=true)
+        @test "IDX" in names(dfN_out2)
+        @test "SRC" in names(dfL_out2)
+        @test ml isa Dict
+    end
+
+    @testset "cropnetwork - return order regression" begin
+        dfN = DataFrame(IDX = 1:5, LON = [-78.0, -78.5, -79.0, -79.5, -80.0], LAT = [35.0, 35.2, 35.4, 35.6, 35.8])
+        dfL = DataFrame(SRC = [1, 2, 3, 4], DST = [2, 3, 4, 5], DIST = fill(10.0, 4))
+        dfN_out, dfL_out = cropnetwork(dfN, dfL, [-79.5, -78.5], [35.2, 35.6])
+        @test "IDX" in names(dfN_out)
+        @test "SRC" in names(dfL_out)
+        @test "DST" in names(dfL_out)
     end
 
     @testset "links2graph - weighted directed graph" begin
@@ -702,6 +828,27 @@ using SimpleWeightedGraphs
 
         # Distance from 1 to 4 should be 10 + 20 + 15 = 45
         @test D[1, 4] ≈ 45.0
+    end
+
+    @testset "tracepath" begin
+        # Chain graph: 1→2→3→4
+        parents = [0, 1, 2, 3]
+
+        @test tracepath(parents, 1, 4) == [1, 2, 3, 4]
+        @test tracepath(parents, 1, 3) == [1, 2, 3]
+        @test tracepath(parents, 1, 2) == [1, 2]
+
+        # origin == dest
+        @test tracepath(parents, 1, 1) == [1]
+        @test tracepath(parents, 3, 3) == [3]
+
+        # Unreachable destination (parents[dest] == 0)
+        parents_disc = [0, 1, 0, 0]  # node 3,4 unreachable
+        @test_throws ArgumentError tracepath(parents_disc, 1, 3)
+        @test_throws ArgumentError tracepath(parents_disc, 1, 4)
+
+        # Reachable node 2 still works
+        @test tracepath(parents_disc, 1, 2) == [1, 2]
     end
 
 end  # @testset "RoadTools"

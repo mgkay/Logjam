@@ -4,7 +4,7 @@
 # =============================================================================
 
 """
-    prune_reindex(dfL::DataFrame, dfN::DataFrame;
+    prune_reindex(dfN::DataFrame, dfL::DataFrame;
                   src_col=1, dst_col=2, node_col=1) -> Tuple{DataFrame, DataFrame}
 
 Prune network to common vertices and reindex node IDs sequentially.
@@ -13,26 +13,26 @@ Removes any nodes that don't appear in links and any links that reference
 non-existent nodes. Then reindexes all node IDs to be sequential starting from 1.
 
 # Arguments
-- `dfL`: Links DataFrame with columns [SRC, DST, ...].
 - `dfN`: Nodes DataFrame with columns [IDX, ...].
+- `dfL`: Links DataFrame with columns [SRC, DST, ...].
 - `src_col`: Source-node column in `dfL` (index or symbol, default `1`).
 - `dst_col`: Destination-node column in `dfL` (index or symbol, default `2`).
 - `node_col`: Node-ID column in `dfN` (index or symbol, default `1`).
 
 # Returns
-- Tuple of (pruned_links, pruned_nodes) DataFrames with sequential node IDs.
+- Tuple of (pruned_nodes, pruned_links) DataFrames with sequential node IDs.
 
 # Example
 ```julia
-dfL, dfN = faf5links(), faf5nodes()
+dfN, dfL = faf5nodes(), faf5links()
 # Filter to North Carolina
 dfL_nc = filter(r -> r.STFIP == 37, dfL)
 dfN_nc = filter(r -> r.STATEID == 37, dfN)
 # Prune and reindex
-dfL_nc, dfN_nc = prune_reindex(dfL_nc, dfN_nc)
+dfN_nc, dfL_nc = prune_reindex(dfN_nc, dfL_nc)
 ```
 """
-function prune_reindex(dfL::DataFrame, dfN::DataFrame;
+function prune_reindex(dfN::DataFrame, dfL::DataFrame;
                        src_col::Union{Int,Symbol}=1,
                        dst_col::Union{Int,Symbol}=2,
                        node_col::Union{Int,Symbol}=1)
@@ -60,48 +60,53 @@ function prune_reindex(dfL::DataFrame, dfN::DataFrame;
     dfN_out[!, node_col] = [vtx_map[v] for v in dfN_out[:, node_col]]
     sort!(dfN_out, node_col)
 
-    return dfL_out, dfN_out
+    return dfN_out, dfL_out
 end
 
 """
-    addconnectors(dfL::DataFrame, dfN::DataFrame, x_prime::Vector, y_prime::Vector;
-                  circuity::Real=1.3, src_col=1, dst_col=2, dist_col=3,
+    addconnectors(dfN::DataFrame, dfL::DataFrame, x_prime::Vector, y_prime::Vector;
+                  circuity::Real=1.3, add_nf_nf::Bool=true,
+                  src_col=1, dst_col=2, dist_col=3,
                   node_col=1, x_col=2, y_col=3) -> Tuple{DataFrame, DataFrame}
 
 Add connector links from demand points to a road network.
 
 Uses Delaunay triangulation to efficiently find nearby network nodes for each
 demand point, then creates connector links with estimated distances.
+When `add_nf_nf` is enabled, also creates direct connectors between neighboring
+demand points using a separate Delaunay triangulation of the demand points.
 
 Demand points are assigned node IDs 1:n, and existing network nodes are
 shifted by n (i.e., old node 1 becomes n+1).
 
 # Arguments
-- `dfL`: Links DataFrame with columns [SRC, DST, DIST, ...].
 - `dfN`: Nodes DataFrame with columns [IDX, LON, LAT, ...].
+- `dfL`: Links DataFrame with columns [SRC, DST, DIST, ...].
 - `x_prime`: Vector of demand point longitudes.
 - `y_prime`: Vector of demand point latitudes.
 - `circuity`: Circuity factor for connector distances (default 1.3).
+- `add_nf_nf`: If `true` (default), add direct connectors between neighboring demand points.
 - `src_col`, `dst_col`, `dist_col`: Link columns for source, destination, and distance.
 - `node_col`, `x_col`, `y_col`: Node columns for node ID, longitude, and latitude.
 
 # Returns
-- Tuple of (new_links, new_nodes) DataFrames with connectors added.
+- Tuple of (new_nodes, new_links) DataFrames with connectors added.
 - All input columns are preserved. Connector rows populate SRC/DST/DIST
   (and set `DIR`/`ONEWAY` to `0` when present); additional columns are `missing`.
 
 # Example
 ```julia
-dfL, dfN = faf5links(), faf5nodes()
+dfN, dfL = faf5nodes(), faf5links()
 # Define warehouse locations
 warehouses_lon = [-78.9, -80.2, -79.5]
 warehouses_lat = [35.8, 35.9, 36.1]
-# Add connectors
-dfL_conn, dfN_conn = addconnectors(dfL, dfN, warehouses_lon, warehouses_lat)
+# Add connectors (includes NF-to-NF connections)
+dfN_conn, dfL_conn = addconnectors(dfN, dfL, warehouses_lon, warehouses_lat)
 ```
 """
-function addconnectors(dfL::DataFrame, dfN::DataFrame, x_prime::Vector, y_prime::Vector;
+function addconnectors(dfN::DataFrame, dfL::DataFrame, x_prime::Vector, y_prime::Vector;
                        circuity::Real=1.3,
+                       add_nf_nf::Bool=true,
                        src_col::Union{Int,Symbol}=1,
                        dst_col::Union{Int,Symbol}=2,
                        dist_col::Union{Int,Symbol}=3,
@@ -130,6 +135,33 @@ function addconnectors(dfL::DataFrame, dfN::DataFrame, x_prime::Vector, y_prime:
             push!(b_conn, i)
             push!(e_conn, n + j)
             push!(d_conn, circuity * dgc((x_prime[i], y_prime[i]), (x[j], y[j])))
+        end
+    end
+
+    # Phase 2: NF-to-NF connectors via Delaunay triangulation of demand points
+    if add_nf_nf && n >= 2
+        if n == 2
+            # Two points: connect directly (Delaunay requires >= 3)
+            push!(b_conn, 1); push!(e_conn, 2)
+            push!(d_conn, circuity * dgc((x_prime[1], y_prime[1]), (x_prime[2], y_prime[2])))
+        else
+            # Triangulate NF points and extract Delaunay neighbor edges
+            nf_pts = collect(zip(Float64.(x_prime), Float64.(y_prime)))
+            tri_nf = triangulate(nf_pts)
+            seen = Set{Tuple{Int,Int}}()
+            for i in 1:n
+                IJ = get_adjacent2vertex(tri_nf, i)
+                idx = collect(reduce(union, [Set(t) for t in IJ]))
+                filter!(j -> j > 0, idx)  # remove ghost vertices
+                for j in idx
+                    edge = minmax(i, j)
+                    if edge ∉ seen
+                        push!(seen, edge)
+                        push!(b_conn, i); push!(e_conn, j)
+                        push!(d_conn, circuity * dgc(nf_pts[i], nf_pts[j]))
+                    end
+                end
+            end
         end
     end
 
@@ -162,6 +194,13 @@ function addconnectors(dfL::DataFrame, dfN::DataFrame, x_prime::Vector, y_prime:
             links_conn[!, s] = Vector{Missing}(missing, m)
         end
     end
+
+    # Add SOURCE column for connector identification
+    if !("SOURCE" in link_cols)
+        links_existing[!, :SOURCE] = fill(missing, nrow(links_existing))
+    end
+    links_conn[!, :SOURCE] = fill("CONNECTOR", m)
+
     dfL_out = vcat(links_existing, links_conn; cols=:union)
 
     # Existing nodes: keep all columns, remap node ids to n+1:n+m
@@ -188,11 +227,11 @@ function addconnectors(dfL::DataFrame, dfN::DataFrame, x_prime::Vector, y_prime:
     end
     dfN_out = vcat(nodes_demand, nodes_existing; cols=:union)
 
-    return dfL_out, dfN_out
+    return dfN_out, dfL_out
 end
 
 """
-    thin(dfL::DataFrame, dfN::DataFrame;
+    thin(dfN::DataFrame, dfL::DataFrame;
          agg::Dict{String, Function} = Dict(),
          must_match::Vector{String} = String[],
          keep_index::Bool = false,
@@ -217,25 +256,25 @@ while preserving connectivity and total distance.
 - `verbose`: If true, prints thinning statistics (nodes, links, distance reduction).
 
 # Returns
-- If `keep_index=false`: `(thinned_links, thinned_nodes)` tuple.
-- If `keep_index=true`: `(thinned_links, thinned_nodes, merge_log)` tuple
+- If `keep_index=false`: `(thinned_nodes, thinned_links)` tuple.
+- If `keep_index=true`: `(thinned_nodes, thinned_links, merge_log)` tuple
   where `merge_log` is a Dict mapping new link index to vector of original link indices.
 
 # Example
 ```julia
 # Simple thinning (distance only)
-dfL_thin, dfN_thin = thin(dfL, dfN)
+dfN_thin, dfL_thin = thin(dfN, dfL)
 
 # Conservative: require functional class to match
-dfL_thin, dfN_thin = thin(dfL, dfN; must_match=["FCLASS"])
+dfN_thin, dfL_thin = thin(dfN, dfL; must_match=["FCLASS"])
 
 # Custom aggregation with verbose output
-dfL_thin, dfN_thin = thin(dfL, dfN;
+dfN_thin, dfL_thin = thin(dfN, dfL;
     agg=Dict("SPEED" => minimum, "NHS" => maximum),
     must_match=["STFIP"], verbose=true)
 ```
 """
-function thin(dfL::DataFrame, dfN::DataFrame;
+function thin(dfN::DataFrame, dfL::DataFrame;
               agg::AbstractDict{String, <:Function} = Dict{String, Function}(),
               must_match::Vector{String} = String[],
               keep_index::Bool = false,
@@ -446,9 +485,9 @@ function thin(dfL::DataFrame, dfN::DataFrame;
     end
 
     if keep_index
-        return links, nodes_out, merge_log
+        return nodes_out, links, merge_log
     else
-        return links, nodes_out
+        return nodes_out, links
     end
 end
 
@@ -782,13 +821,13 @@ then filters links to those connecting remaining nodes, and reindexes.
 - `yexpand`: Expansion factor for latitude bounds (default 0.1).
 
 # Returns
-- Tuple of (cropped_links, cropped_nodes) with sequential node IDs.
+- Tuple of (cropped_nodes, cropped_links) with sequential node IDs.
 
 # Example
 ```julia
 nodes, links = faf5nodes(), faf5links()
 cities = filter(r -> r.ST == :NC && r.POP > 100_000, usplace())
-links_nc, nodes_nc = cropnetwork(nodes, links, cities.LON, cities.LAT)
+nodes_nc, links_nc = cropnetwork(nodes, links, cities.LON, cities.LAT)
 ```
 """
 function cropnetwork(nodes::DataFrame, links::DataFrame, x, y;
@@ -807,7 +846,7 @@ function cropnetwork(nodes::DataFrame, links::DataFrame, x, y;
     links_sub = filter(r -> (r.SRC in valid_ids) && (r.DST in valid_ids), links)
 
     # Prune and reindex
-    return prune_reindex(links_sub, nodes_sub)
+    return prune_reindex(nodes_sub, links_sub)
 end
 
 """
@@ -835,9 +874,9 @@ using Graphs, SparseArrays
 
 # Load network and add 3 demand points
 nodes, links = faf5nodes(), faf5links()
-links, nodes = cropnetwork(nodes, links, [-79.0, -78.0], [35.5, 36.0])
+nodes, links = cropnetwork(nodes, links, [-79.0, -78.0], [35.5, 36.0])
 locs_lon, locs_lat = [-78.5, -78.7, -78.3], [35.7, 35.8, 35.6]
-links, nodes = addconnectors(links, nodes, locs_lon, locs_lat)
+nodes, links = addconnectors(nodes, links, locs_lon, locs_lat)
 
 # Build graph and weight matrix
 g = links2graph(links)
@@ -884,9 +923,9 @@ graph's internal edge weights directly.
 ```julia
 # Load network and add demand points
 nodes, links = faf5nodes(), faf5links()
-links, nodes = cropnetwork(nodes, links, [-79.0, -78.0], [35.5, 36.0])
+nodes, links = cropnetwork(nodes, links, [-79.0, -78.0], [35.5, 36.0])
 locs_lon, locs_lat = [-78.5, -78.7, -78.3], [35.7, 35.8, 35.6]
-links, nodes = addconnectors(links, nodes, locs_lon, locs_lat)
+nodes, links = addconnectors(nodes, links, locs_lon, locs_lat)
 
 # Build weighted graph and compute paths in two lines
 g = links2graph(links)
@@ -907,5 +946,33 @@ function shortestpaths(g::SimpleWeightedGraphs.SimpleWeightedDiGraph, n::Int)
         P[i] = ds.parents
     end
     return D, P
+end
+
+"""
+    tracepath(parents::Vector{Int}, origin::Int, dest::Int) → Vector{Int}
+
+Reconstruct a shortest-path node sequence from a Dijkstra parent vector.
+
+Walk `parents` backwards from `dest` to `origin` and return the forward-ordered
+node sequence.  Throws an `ArgumentError` if `dest` is unreachable from `origin`.
+
+# Example
+```julia
+g  = links2graph(dfL; weight=:DIST)
+ds = Graphs.dijkstra_shortest_paths(g, 1)
+path = tracepath(ds.parents, 1, 42)   # [1, 5, 12, 42]
+```
+"""
+function tracepath(parents::Vector{Int}, origin::Int, dest::Int)
+    origin == dest && return [origin]
+    parents[dest] == 0 && throw(ArgumentError("Node $dest is unreachable from node $origin"))
+    path = [dest]
+    curr = dest
+    while curr != origin
+        curr = parents[curr]
+        curr == 0 && throw(ArgumentError("Node $dest is unreachable from node $origin"))
+        push!(path, curr)
+    end
+    return reverse!(path)
 end
 
