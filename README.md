@@ -5,12 +5,12 @@
 [![Stable](https://img.shields.io/badge/docs-stable-blue.svg)](https://mgkay.github.io/Logjam/)
 
 Logjam is a Julia package for logistics engineering, providing tools for:
-* **Facility Location**: Discrete optimization algorithms for facility location problems, including Uncapacitated Facility Location (UFL) and $p$-Median construction and improvement heuristics.
+* **Facility Location**: Discrete optimization algorithms for facility location problems, including Uncapacitated Facility Location (UFL) and *p*-Median construction and improvement heuristics.
 * **Transportation Costing**: Formulas for estimating LTL & TL freight rates, calculating minimum charges, and evaluating total logistics costs (TLC).
 * **Network Analysis**: Routing and topology tools for the FAF5 highway network, including shortest paths and automatic facility connectors.
 * **Vehicle Routing**: Algorithms for multi-stop route optimization, featuring savings-based construction and local search improvement methods.
 * **Spatial Data**: A gazetteer of U.S. administrative boundaries and points, including Cities, Counties, ZIP codes (3- and 5-digit), Census tracts, and CBSA/CSA definitions.
-* **Distance Metrics**: Unified distance calculation utilities supporting Rectilinear ($L_1$), Euclidean ($L_2$), and Great Circle (Haversine) metrics.
+* **Distance Metrics**: Unified distance calculation utilities supporting Rectilinear (*L*₁), Euclidean (*L*₂), and Great Circle (Haversine) metrics.
 * **Mapping**: Plotting recipes and helper functions for mapping spatial data using GeoMakie.
 
 ## Installation
@@ -54,7 +54,18 @@ using DataFrames
 
 # Load U.S. place data (cities, towns, CDPs) and inspect the schema
 places = usplace()
-first(places[:, [:NAME, :ST, :LON, :LAT, :POP, :ISCUS]], 4)
+display(first(places[:, [:NAME, :ST, :LON, :LAT, :POP, :ISCUS]], 4))
+```
+
+```
+4×6 DataFrame
+ Row │ NAME           ST   LON        LAT      POP       ISCUS
+     │ String         Sym  Float64    Float64  Int64     Bool
+─────┼───────────────────────────────────────────────────────────
+   1 │ New York       :NY  -74.0059   40.7128  8336817   true
+   2 │ Los Angeles    :CA  -118.2437  34.0522  3979576   true
+   3 │ Chicago        :IL  -87.6298   41.8781  2693976   true
+   4 │ Houston        :TX  -95.3698   29.7604  2304580   true
 ```
 
 ```julia
@@ -76,6 +87,12 @@ println("Nearest large city: $(nearest.name[1]) ($(round(nearest.dist[1]; digits
 # Load continental US 3-digit ZIP centroids
 z3 = filter(r -> r.ISCUS, uszcta3())
 println("Continental US 3-digit ZIPs: $(nrow(z3))")
+```
+
+```
+10 NC cities with pop > 100k
+Nearest large city: Cary (6.4 mi)
+Continental US 3-digit ZIPs: 899
 ```
 
 **After-action.** The `ISCUS` flag is the standard filter for continental U.S. analysis — it removes Alaska, Hawaii, Puerto Rico, and other territories that would distort national maps. All coordinate columns follow the (LON, LAT) convention throughout Logjam, which means western longitudes are negative. The `st2fips` and `fips2st` functions enable joins between datasets that use different geographic identifiers. `lonlat2name` is used in later examples to reverse-geocode facility hub coordinates into interpretable city names, making model outputs readable without manual lookup. The `name2lonlat` function provides the inverse operation when building scenarios from named locations.
@@ -220,15 +237,20 @@ initial_routes = savings(cost_fn, shipments)
 final_route, cost = twoopt(initial_routes[1], cost_fn)
 
 # Map: NC region with road network overlay and optimized route
-fig, ax = makemap(cities.LON, cities.LAT; region=:US)
+fig, ax = makemap(cities.LON, cities.LAT)
 plotroads!(ax, links, nodes)
 
 scatter!(ax, cities.LON, cities.LAT, color=:blue, markersize=10)
 text!(ax, cities.LON, cities.LAT, text=cities.NAME; aligntext(cities.LON, cities.LAT)...)
 
+# Reconstruct road-following path for each consecutive stop pair and plot
 loc_seq = rte2loc(final_route, shipments)
-lx, ly = rte2lines(loc_seq, parents, nodes)
-lines!(ax, lx, ly, color=(:red, 0.7), linewidth=2.5)
+full_path = Int[]
+for k in 1:length(loc_seq)-1
+    leg = tracepath(parents[loc_seq[k]], loc_seq[k], loc_seq[k+1])
+    k == 1 ? append!(full_path, leg) : append!(full_path, leg[2:end])
+end
+plotroute!(ax, full_path, nodes; color=:red, linewidth=2.5, show_markers=false)
 
 ax.title = "Multi-Stop PDP: Savings + 2-Opt\n(5 Shipments, 10 NC Cities, FAF5 Network)"
 display(fig)
@@ -236,7 +258,7 @@ display(fig)
 
 ![NC Routing Plot](docs/assets/nc_routing_plot.png)
 
-**After-action.** `cropnetwork` extracts the FAF5 subgraph whose bounding box contains the demand points, reducing graph size before solving. `addconnectors` appends artificial connector edges from each demand point to its nearest network node — without these, the demand points would not be reachable via shortest paths. `shortestpaths(g, nrow(cities))` computes shortest-path distances and parent pointers from the last `nrow(cities)` nodes (the connectors), returning a `dist_mat` ready for use as the routing cost matrix. `plotroads!` renders the road network with adaptive zoom-based styling — interstates appear thicker than local roads, and line weights scale with the map's latitude span. `savings` constructs an initial route by iteratively merging the most cost-saving shipment pair, then `twoopt` improves it by reversing sub-sequences. `rte2loc` and `rte2lines` convert the abstract shipment-index route into plottable node-coordinate paths via the parent pointer matrix.
+**After-action.** `cropnetwork` extracts the FAF5 subgraph whose bounding box contains the demand points, reducing graph size before solving. `addconnectors` appends artificial connector edges from each demand point to its nearest network node — without these, the demand points would not be reachable via shortest paths. `shortestpaths(g, nrow(cities))` computes shortest-path distances and parent pointers from the last `nrow(cities)` nodes (the connectors), returning a `dist_mat` ready for use as the routing cost matrix. `plotroads!` renders the road network with adaptive zoom-based styling — interstates appear thicker than local roads, and line weights scale with the map's latitude span. `savings` constructs an initial route by iteratively merging the most cost-saving shipment pair, then `twoopt` improves it by reversing sub-sequences. `rte2loc` converts the abstract route to a stop sequence; for each consecutive leg, `tracepath` reconstructs the road-following node sequence from the parent pointer vectors, and `plotroute!` renders the complete path with optional origin/destination markers.
 
 ---
 
@@ -294,9 +316,14 @@ scatter!(ax, dlv_lon, dlv_lat, color=:blue, markersize=12, label="Delivery")
 scatter!(ax, [depot_lon], [depot_lat], color=:green, markersize=16,
          marker=:rect, label="Depot")
 
+# Reconstruct road-following path for each consecutive stop pair and plot
 loc_seq = rte2loc(final_route, shipments, tr)
-lx, ly = rte2lines(loc_seq, parents, nodes)
-lines!(ax, lx, ly, color=(:red, 0.7), linewidth=2.5)
+full_path = Int[]
+for k in 1:length(loc_seq)-1
+    leg = tracepath(parents[loc_seq[k]], loc_seq[k], loc_seq[k+1])
+    k == 1 ? append!(full_path, leg) : append!(full_path, leg[2:end])
+end
+plotroute!(ax, full_path, nodes; color=(:red, 0.7), linewidth=2.5, show_markers=false)
 
 ax.title = "Single-Hub VRP: Savings + 2-Opt\n(5 Deliveries, Gainesville FL, OSM Network)"
 display(fig)
@@ -304,4 +331,4 @@ display(fig)
 
 ![Gainesville VRP Plot](docs/assets/gnv_osm_vrp_plot.png)
 
-**After-action.** `osm_roads` downloads drivable roads from the OpenStreetMap Overpass API for the specified bounding box and caches results as CSV files — subsequent calls with the same (snapped) bbox load from cache rather than re-downloading. The tight bounding box is intentional: CairoMakie renders static images at fixed resolution, so a smaller geographic area produces sharper, more readable road detail. The `tr=(b=[1], e=[1])` argument to `rteTC` and `rte2loc` specifies that the route begins and ends at stop 1 (the depot), making this a proper VRP tour rather than an open path. Setting all pickup indices to 1 (the depot) means each shipment represents a depot-to-customer delivery; the savings heuristic still applies because it evaluates cost reductions from combining deliveries into a single tour. For scenarios requiring local OSM detail integrated with the national FAF5 network — for example, long-haul routing that transitions to city streets at the destination — Logjam's `stitchnetworks` function creates connector edges between the two networks, returning a unified graph compatible with the standard `links2graph` → `shortestpaths` pipeline.
+**After-action.** `osm_roads` downloads drivable roads from the OpenStreetMap Overpass API for the specified bounding box and caches results as CSV files — subsequent calls with the same (snapped) bbox load from cache rather than re-downloading. The tight bounding box is intentional: CairoMakie renders static images at fixed resolution, so a smaller geographic area produces sharper, more readable road detail. The `tr=(b=[1], e=[1])` argument to `rteTC` and `rte2loc` specifies that the route begins and ends at stop 1 (the depot), making this a proper VRP tour rather than an open path. Setting all pickup indices to 1 (the depot) means each shipment represents a depot-to-customer delivery; the savings heuristic still applies because it evaluates cost reductions from combining deliveries into a single tour. `rte2loc` returns the stop sequence as node indices; `tracepath` reconstructs the road-following path for each leg from the parent pointer vectors, and `plotroute!` renders the complete route. For scenarios requiring local OSM detail integrated with the national FAF5 network — for example, long-haul routing that transitions to city streets at the destination — Logjam's `stitchnetworks` function creates connector edges between the two networks, returning a unified graph compatible with the standard `links2graph` → `shortestpaths` pipeline.
