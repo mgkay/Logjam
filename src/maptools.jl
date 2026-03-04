@@ -817,10 +817,11 @@ function plotroads!(ax, dfL::DataFrame, dfN::DataFrame;
 end
 
 """
-    plotroute!(ax, path::Vector{Int}, dfN::DataFrame; kwargs...) → Vector
+    plotroute!(ax, lx, ly; kwargs...) → Vector
 
-Plot a route on a map axis.  `path` is an ordered node-index sequence
-(as returned by `tracepath`).  Coordinates are looked up in `dfN.LON` / `dfN.LAT`.
+Base rendering method. Plots a route from coordinate vectors. `lx` and `ly` may
+contain NaN separators (as produced by `rte2lines`) to represent multi-segment routes.
+Origin and destination markers are placed at the first and last non-NaN points.
 
 Returns a vector of plot handles: `[line_handle, origin_scatter, dest_scatter]`
 (or `[line_handle]` when `show_markers=false`).
@@ -833,33 +834,55 @@ Returns a vector of plot handles: `[line_handle, origin_scatter, dest_scatter]`
 - `dest_color=:blue`    – color of destination marker
 - `markersize=10`       – marker size
 """
-function plotroute!(ax, path::Vector{Int}, dfN::DataFrame;
+function plotroute!(ax, lx::AbstractVector{<:Real}, ly::AbstractVector{<:Real};
                     color=:red, linewidth=2,
                     show_markers=true,
                     origin_color=:green, dest_color=:blue,
                     markersize=10)
-    lons = dfN.LON[path]
-    lats = dfN.LAT[path]
     handles = Any[]
-    push!(handles, lines!(ax, lons, lats; color=color, linewidth=linewidth))
+    push!(handles, lines!(ax, lx, ly; color=color, linewidth=linewidth))
     if show_markers
-        push!(handles, scatter!(ax, [lons[1]], [lats[1]]; color=origin_color, markersize=markersize))
-        push!(handles, scatter!(ax, [lons[end]], [lats[end]]; color=dest_color, markersize=markersize))
+        valid = findall(!isnan, lx)
+        if !isempty(valid)
+            push!(handles, scatter!(ax, [lx[valid[1]]], [ly[valid[1]]];
+                                    color=origin_color, markersize=markersize))
+            push!(handles, scatter!(ax, [lx[valid[end]]], [ly[valid[end]]];
+                                    color=dest_color, markersize=markersize))
+        end
     end
     return handles
 end
 
 """
+    plotroute!(ax, path::Vector{Int}, dfN::DataFrame; kwargs...) → Vector
+
+Plot a route on a map axis. `path` is an ordered node-index sequence
+(as returned by `tracepath`). Coordinates are looked up in `dfN.LON` / `dfN.LAT`.
+
+# Keyword arguments
+(see coordinate-vector method above)
+"""
+function plotroute!(ax, path::Vector{Int}, dfN::DataFrame;
+                    color=:red, linewidth=2,
+                    show_markers=true,
+                    origin_color=:green, dest_color=:blue,
+                    markersize=10)
+    plotroute!(ax, dfN.LON[path], dfN.LAT[path];
+               color=color, linewidth=linewidth,
+               show_markers=show_markers,
+               origin_color=origin_color, dest_color=dest_color,
+               markersize=markersize)
+end
+
+"""
     plotroute!(ax, paths::Vector{Vector{Int}}, dfN::DataFrame; kwargs...) → Vector{Vector}
 
-Multi-path variant.  Each path is drawn in a different color (cycling through
-`colors`).  Returns a vector of handle vectors, one per path.
+Multi-path variant. Each path is drawn in a different color (cycling through
+`colors`). Returns a vector of handle vectors, one per path.
 
 # Keyword arguments
 - `colors=Makie.wong_colors()` – color palette to cycle through
-- `linewidth=2`
-- `show_markers=true`
-- `markersize=10`
+- `linewidth=2`, `show_markers=true`, `markersize=10`
 """
 function plotroute!(ax, paths::Vector{Vector{Int}}, dfN::DataFrame;
                     colors=Makie.wong_colors(), linewidth=2,
@@ -869,6 +892,68 @@ function plotroute!(ax, paths::Vector{Vector{Int}}, dfN::DataFrame;
         c = colors[mod1(i, length(colors))]
         h = plotroute!(ax, path, dfN;
                        color=c, linewidth=linewidth,
+                       show_markers=show_markers,
+                       origin_color=:green, dest_color=:blue,
+                       markersize=markersize)
+        push!(all_handles, h)
+    end
+    return all_handles
+end
+
+"""
+    plotroute!(ax, route, shipments, parents, dfN; tr=..., kwargs...) → Vector
+
+High-level method. Plots an optimized route directly from the solver output,
+handling the full `rte2loc → rte2lines → render` pipeline internally.
+
+# Arguments
+- `route`: Route vector from `savings` or `twoopt`.
+- `shipments::DataFrame`: Shipments with columns `b` (pickup) and `e` (delivery).
+- `parents::Vector{Vector{Int}}`: Parent pointer matrix from `shortestpaths`.
+- `dfN::DataFrame`: Nodes DataFrame with `LON` and `LAT` columns.
+
+# Keyword arguments
+- `tr=(b=Int[], e=Int[])` – terminal nodes for depot-return VRP (same as `rteTC`)
+- plus all keyword arguments from the coordinate-vector method above
+"""
+function plotroute!(ax, route::AbstractVector{Int}, shipments::DataFrame,
+                    parents::Vector{Vector{Int}}, dfN::DataFrame;
+                    tr=(b=Int[], e=Int[]),
+                    color=:red, linewidth=2,
+                    show_markers=true,
+                    origin_color=:green, dest_color=:blue,
+                    markersize=10)
+    loc_seq = rte2loc(route, shipments, tr)
+    lx, ly = rte2lines(loc_seq, parents, dfN)
+    plotroute!(ax, lx, ly;
+               color=color, linewidth=linewidth,
+               show_markers=show_markers,
+               origin_color=origin_color, dest_color=dest_color,
+               markersize=markersize)
+end
+
+"""
+    plotroute!(ax, routes::Vector, shipments, parents, dfN; tr=..., kwargs...) → Vector{Vector}
+
+Multi-route variant. Each route is drawn in a different color (cycling through `colors`).
+All routes share the same `shipments`, `parents`, and optional terminal `tr`.
+Returns a vector of handle vectors, one per route.
+
+# Keyword arguments
+- `colors=Makie.wong_colors()` – color palette to cycle through
+- `tr=(b=Int[], e=Int[])` – shared terminal nodes (e.g., common depot)
+- `linewidth=2`, `show_markers=true`, `markersize=10`
+"""
+function plotroute!(ax, routes::Vector{<:AbstractVector{Int}}, shipments::DataFrame,
+                    parents::Vector{Vector{Int}}, dfN::DataFrame;
+                    tr=(b=Int[], e=Int[]),
+                    colors=Makie.wong_colors(),
+                    linewidth=2, show_markers=true, markersize=10)
+    all_handles = Vector{Any}[]
+    for (i, route) in enumerate(routes)
+        c = colors[mod1(i, length(colors))]
+        h = plotroute!(ax, route, shipments, parents, dfN;
+                       tr=tr, color=c, linewidth=linewidth,
                        show_markers=show_markers,
                        origin_color=:green, dest_color=:blue,
                        markersize=markersize)

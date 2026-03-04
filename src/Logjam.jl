@@ -71,7 +71,6 @@ networks, route optimization, U.S. geographic data, and map visualization.
 - `rteTC`: Total route cost for pickup-delivery routes.
 - `isorigin`: Identify pickup positions in a route.
 - `rte2loc`: Convert route to location sequence.
-- `rte2lines`: Convert route to plottable line coordinates via shortest paths.
 - `twoopt`: 2-opt route improvement procedure.
 - `mincostinsert`: Insert shipment at minimum cost position.
 - `pairwisesavings`: Calculate savings for shipment pairs.
@@ -125,18 +124,18 @@ export faf5nodes, faf5links, faf5interstate
 export name2lonlat, lonlat2name
 
 # Export map functions and constants
-export makemap, mapbbox, aligntext, isptinbbox, alloclines, plotroads!
+export makemap, mapbbox, aligntext, isptinbbox, alloclines, plotroads!, plotroute!
 export WORLD_LIMITS, US_LIMITS, CUS_LIMITS
 
 # Export road network functions
 export dgc, d1, d2, dists, prune_reindex, thin, addconnectors
-export links2graph, x2ln, cropnetwork, shortestpaths
+export links2graph, x2ln, cropnetwork, shortestpaths, tracepath
 
 # Export OSM functions (require LightOSM + NearestNeighbors extension)
 export osm_roads, stitchnetworks
 
 # Export routing functions
-export segcost, rteTC, isorigin, rte2loc, rte2lines
+export segcost, rteTC, isorigin, rte2loc
 export twoopt, mincostinsert, pairwisesavings, savings
 
 # Include component files

@@ -410,16 +410,10 @@ function rte2lines(route::AbstractVector, P::Vector{Vector{Int}}, dfN::DataFrame
     x_out, y_out = Float64[], Float64[]
     for k in 1:length(route)-1
         src, dst = route[k], route[k+1]
-        curr = dst
-        node_path = [curr]
-        while curr != src
-            curr = P[src][curr]
-            push!(node_path, curr)
-        end
-        coords = dfN[reverse(node_path), [:LON, :LAT]]
-        append!(x_out, coords.LON)
+        path = tracepath(P[src], src, dst)
+        append!(x_out, dfN.LON[path])
         push!(x_out, NaN)
-        append!(y_out, coords.LAT)
+        append!(y_out, dfN.LAT[path])
         push!(y_out, NaN)
     end
     return x_out, y_out
