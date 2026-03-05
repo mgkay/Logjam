@@ -49,6 +49,7 @@ function _osm_roads_impl(bbox::Tuple{Real,Real,Real,Real};
             weight_type=:distance,
             graph_type=:light,
             largest_connected_component=true,
+            download_format=:xml,
         )
     catch e
         error("Overpass query failed for bbox ($xmin, $xmax, $ymin, $ymax). " *
