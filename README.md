@@ -238,10 +238,10 @@ final_route, cost = twoopt(initial_routes[1], cost_fn)
 fig, ax = makemap(cities.LON, cities.LAT)
 plotroads!(ax, links, nodes)
 
+plotroute!(ax, final_route, shipments, parents, nodes; color=:red, linewidth=2.5, show_markers=false)
+
 scatter!(ax, cities.LON, cities.LAT, color=:blue, markersize=10)
 text!(ax, cities.LON, cities.LAT, text=cities.NAME; aligntext(cities.LON, cities.LAT)...)
-
-plotroute!(ax, final_route, shipments, parents, nodes; color=:red, linewidth=2.5, show_markers=false)
 
 ax.title = "Multi-Stop PDP: Savings + 2-Opt\n(5 Shipments, 10 NC Cities, FAF5 Network)"
 display(fig)
@@ -289,11 +289,11 @@ routes = [twoopt(r, cost_fn)[1] for r in routes]
 fig, ax = makemap(stops_lon, stops_lat)
 plotroads!(ax, links, nodes)
 
+plotroute!(ax, routes, shipments, parents, nodes; tr=tr, linewidth=2.5, show_markers=false)
+
 scatter!(ax, stops_lon[2:end], stops_lat[2:end], color=:blue, markersize=12)
 scatter!(ax, [stops_lon[1]], [stops_lat[1]], color=:green, markersize=16, marker=:rect)
 text!(ax, [stops_lon[1]], [stops_lat[1]], text=["Depot"]; aligntext([stops_lon[1]], [stops_lat[1]])...)
-
-plotroute!(ax, routes, shipments, parents, nodes; tr=tr, linewidth=2.5, show_markers=false)
 
 ax.title = "Multi-Vehicle VRP: Savings + 2-Opt\n(9 Deliveries, 3 Vehicles, Gainesville FL)"
 display(fig)
