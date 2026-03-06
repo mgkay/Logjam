@@ -754,7 +754,7 @@ function plotroads!(ax, dfL::DataFrame, dfN::DataFrame;
 
     # Width progression by tier (close zoom fill width, casing is fill + 1.5)
     tier_widths = Dict(
-        1 => (close=2.5,  mid=1.2, far=0.4),
+        1 => (close=1.8,  mid=1.2, far=0.4),
         2 => (close=2.0,  mid=1.0, far=0.3),
         3 => (close=1.6,  mid=0.7, far=0.2),
         4 => (close=1.2,  mid=0.5, far=0.15),
@@ -815,7 +815,7 @@ function plotroads!(ax, dfL::DataFrame, dfN::DataFrame;
             α = tier_alphas[tier]
             r, g, b = tier_colors[tier].casing
             h = lines!(ax, x_coords, y_coords;
-                       linewidth=w.close + 1.5,
+                       linewidth=w.close + 1.2,
                        color=RGBf(r, g, b), alpha=α.close, linecap=:round)
             push!(handles, h)
         end

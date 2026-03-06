@@ -180,9 +180,7 @@ display(fig)
 
 ### Example 4 — Network Analysis and Vehicle Routing
 
-Road network routing in Logjam uses the FAF5 national freight highway network as the foundation. The standard pipeline — `cropnetwork` → `addconnectors` → `links2graph` → `shortestpaths` — prepares a network for any routing task. These two sub-examples demonstrate the pipeline at two scales and two routing problem types.
-
-#### 4a. Large Scale: Multi-Stop Pickup-Delivery (FAF5 Network)
+Road network routing in Logjam uses the FAF5 national freight highway network as the foundation. The standard pipeline — `cropnetwork` → `addconnectors` → `links2graph` → `shortestpaths` — prepares a network for any routing task.
 
 A pickup-delivery problem (PDP) is a routing problem where each shipment has a distinct origin and destination. This example routes five shipments across ten NC cities using the FAF5 highway network. The vehicle does not return to a starting depot — the route connects pickups and deliveries in the optimal sequence.
 
@@ -251,15 +249,15 @@ display(fig)
 
 ![NC Routing Plot](docs/assets/nc_routing_plot.png)
 
-**After-action.** `cropnetwork` extracts the FAF5 subgraph whose bounding box contains the demand points, reducing graph size before solving. `addconnectors` appends artificial connector edges from each demand point to its nearest network node — without these, the demand points would not be reachable via shortest paths. `shortestpaths(g, nrow(cities))` computes shortest-path distances and parent pointers from the last `nrow(cities)` nodes (the connectors), returning a `dist_mat` ready for use as the routing cost matrix. `plotroads!` renders the road network with adaptive zoom-based styling — interstates appear thicker than local roads, and line weights scale with the map's latitude span. `savings` constructs an initial route by iteratively merging the most cost-saving shipment pair, then `twoopt` improves it by reversing sub-sequences. `plotroute!` handles the full rendering pipeline internally: it converts the abstract route to a stop sequence, reconstructs the road-following path for each leg from the parent pointer vectors, and renders the result.
+**After-action.** `cropnetwork` extracts the FAF5 subgraph whose bounding box contains the demand points, reducing graph size before solving. `addconnectors` appends artificial connector edges from each demand point to its nearest network node — without these, the demand points would not be reachable via shortest paths. `shortestpaths(g, nrow(cities))` computes shortest-path distances and parent pointers from the last `nrow(cities)` nodes (the connectors), returning a `dist_mat` ready for use as the routing cost matrix. `plotroads!` renders the road network with FCLASS-based styling inspired by OSM Carto — roads are colored and sized by functional class (interstates in muted blue, arterials in warm yellow, local roads in white/gray), with casings at close zoom for visual clarity. `savings` constructs an initial route by iteratively merging the most cost-saving shipment pair, then `twoopt` improves it by reversing sub-sequences. `plotroute!` handles the full rendering pipeline internally: it converts the abstract route to a stop sequence, reconstructs the road-following path for each leg from the parent pointer vectors, and renders the result.
 
 ---
 
-#### 4b. Local Scale: Single-Hub Delivery (OSM Network)
+### Example 5 — Vehicle Routing (OSM Network)
 
 > **Requires OSM extension:** load `LightOSM` and `NearestNeighbors` before `Logjam`.
 
-In a single-hub vehicle routing problem (VRP), all deliveries originate from one depot and the vehicle returns to the depot after completing the route. This contrasts with the PDP in 4a, where shipments have distinct origins and the vehicle does not return to a start. This example downloads a local OpenStreetMap road network for Gainesville, FL and routes deliveries from a central depot to five locations.
+The `osm_roads` function downloads a local OpenStreetMap road network and integrates it with the same connector pipeline used for FAF5 routing. This example solves a capacitated multi-vehicle VRP in Gainesville, FL — three vehicles with a maximum of three deliveries each share nine stops from a central depot, with each vehicle returning after completing its route.
 
 ```julia
 using LightOSM, NearestNeighbors  # Must precede Logjam to activate OSM extension
@@ -267,54 +265,40 @@ using Logjam
 using GeoMakie, CairoMakie, DataFrames
 
 # Download OSM road network for Gainesville urban core
-# Tight bbox chosen for CairoMakie resolution: (xmin, xmax, ymin, ymax)
-bbox = (-82.365, -82.285, 29.625, 29.685)
+bbox = (-82.365, -82.285, 29.620, 29.685)
 nodes_osm, links_osm = osm_roads(bbox; cache_dir=joinpath(@__DIR__, "data"))
-println("OSM network: $(nrow(nodes_osm)) nodes, $(nrow(links_osm)) links")
 
-# Define depot and 5 delivery locations (LON, LAT)
-depot_lon,  depot_lat  = -82.346, 29.648   # Near UF campus
-dlv_lon = [-82.338, -82.325, -82.310, -82.330, -82.355]
-dlv_lat = [ 29.660,  29.651,  29.643,  29.634,  29.638]
+# Stop coordinates: stop 1 = depot (UF campus), stops 2–10 = deliveries
+stops_lon = [-82.340, -82.360, -82.355, -82.348, -82.305, -82.298, -82.315, -82.340, -82.325, -82.350]
+stops_lat = [ 29.650,  29.675,  29.668,  29.672,  29.662,  29.655,  29.670,  29.635,  29.630,  29.628]
 
-stops_lon = vcat(depot_lon, dlv_lon)
-stops_lat = vcat(depot_lat, dlv_lat)
-n_dlv = length(dlv_lon)
-
-# Attach depot and delivery points to the OSM network
-nodes, links = addconnectors(nodes_osm, links_osm, stops_lon, stops_lat)
-
-# Compute shortest paths between all stops (depot = stop 1, deliveries = stops 2–6)
+# Build network and shortest paths
+nodes, links = addconnectors(nodes_osm, links_osm, stops_lon, stops_lat; add_nf_nf=false)
 g = links2graph(links)
 dist_mat, parents = shortestpaths(g, length(stops_lon))
 
-# Formulate single-hub VRP: all shipments depart from depot (stop 1)
-shipments = DataFrame(
-    b = fill(1, n_dlv),        # All pickups at depot
-    e = collect(2:n_dlv+1)    # Each delivery at a distinct stop
-)
-tr = (b=[1], e=[1])            # Route starts and ends at depot
+# VRP: all deliveries depart from depot (stop 1), max 3 per vehicle
+shipments = DataFrame(b = fill(1, 9), e = 2:10)
+tr = (b=[1], e=[1])
+cost_fn(r) = length(r) > 6 ? Inf : rteTC(r, shipments, dist_mat, tr)
 
-# Construct and improve route
-cost_fn(r) = rteTC(r, shipments, dist_mat, tr)
-initial_routes = savings(cost_fn, shipments)
-final_route, cost = twoopt(initial_routes[1], cost_fn)
-println("Route cost: $(round(cost; digits=2)) miles")
+routes = savings(cost_fn, shipments)
+routes = [twoopt(r, cost_fn)[1] for r in routes]
 
-# Map: local OSM network with optimized delivery route
+# Map: OSM road network with color-coded vehicle routes
 fig, ax = makemap(stops_lon, stops_lat)
-plotroads!(ax, links_osm, nodes_osm)
+plotroads!(ax, links, nodes)
 
-scatter!(ax, dlv_lon, dlv_lat, color=:blue, markersize=12, label="Delivery")
-scatter!(ax, [depot_lon], [depot_lat], color=:green, markersize=16,
-         marker=:rect, label="Depot")
+scatter!(ax, stops_lon[2:end], stops_lat[2:end], color=:blue, markersize=12)
+scatter!(ax, [stops_lon[1]], [stops_lat[1]], color=:green, markersize=16, marker=:rect)
+text!(ax, [stops_lon[1]], [stops_lat[1]], text=["Depot"]; aligntext([stops_lon[1]], [stops_lat[1]])...)
 
-plotroute!(ax, final_route, shipments, parents, nodes; tr=tr, color=(:red, 0.7), linewidth=2.5, show_markers=false)
+plotroute!(ax, routes, shipments, parents, nodes; tr=tr, linewidth=2.5, show_markers=false)
 
-ax.title = "Single-Hub VRP: Savings + 2-Opt\n(5 Deliveries, Gainesville FL, OSM Network)"
+ax.title = "Multi-Vehicle VRP: Savings + 2-Opt\n(9 Deliveries, 3 Vehicles, Gainesville FL)"
 display(fig)
 ```
 
 ![Gainesville VRP Plot](docs/assets/gnv_osm_vrp_plot.png)
 
-**After-action.** `osm_roads` downloads drivable roads from the OpenStreetMap Overpass API for the specified bounding box and caches results as CSV files — subsequent calls with the same (snapped) bbox load from cache rather than re-downloading. The tight bounding box is intentional: CairoMakie renders static images at fixed resolution, so a smaller geographic area produces sharper, more readable road detail. The `tr=(b=[1], e=[1])` argument to `rteTC` and `rte2loc` specifies that the route begins and ends at stop 1 (the depot), making this a proper VRP tour rather than an open path. Setting all pickup indices to 1 (the depot) means each shipment represents a depot-to-customer delivery; the savings heuristic still applies because it evaluates cost reductions from combining deliveries into a single tour. `plotroute!` with the `tr=` argument handles the full pipeline internally — applying the terminal constraints to the stop sequence, reconstructing the road-following path for each leg from the parent pointer vectors, and rendering the complete tour. For scenarios requiring local OSM detail integrated with the national FAF5 network — for example, long-haul routing that transitions to city streets at the destination — Logjam's `stitchnetworks` function creates connector edges between the two networks, returning a unified graph compatible with the standard `links2graph` → `shortestpaths` pipeline.
+**After-action.** `osm_roads` downloads drivable roads from the Overpass API and caches results as CSV files; subsequent calls with the same bbox load from cache. `add_nf_nf=false` disables direct demand-to-demand connectors that would bypass the road network — without this, nearby stops take straight-line shortcuts instead of following OSM roads. The capacity constraint is enforced through the cost function: `length(r) > 6 ? Inf : ...` limits each route to three deliveries (each shipment appears twice in the route as a pickup–delivery pair), causing `savings` to produce multiple routes rather than merging everything into a single tour. `tr=(b=[1], e=[1])` specifies that each route begins and ends at the depot. The multi-route `plotroute!` method accepts a `Vector{Vector{Int}}` and automatically assigns a distinct color per vehicle from the Wong color palette. For scenarios requiring local OSM detail integrated with the national FAF5 network, Logjam’s `stitchnetworks` function creates connector edges between the two networks, returning a unified graph compatible with the standard routing pipeline.
