@@ -69,6 +69,19 @@ end
         @test ax isa GeoAxis
     end
 
+    # Test showgrid keyword
+    @testset "showgrid default off" begin
+        fig, ax, _, _ = makemap(region=:CUS)
+        @test ax.xgridvisible[] == false
+        @test ax.yticklabelsvisible[] == false
+    end
+
+    @testset "showgrid=true" begin
+        fig, ax, _, _ = makemap(region=:CUS; showgrid=true)
+        @test ax.xgridvisible[] == true
+        @test ax.yticklabelsvisible[] == true
+    end
+
     # Test invalid backend error message
     @testset "invalid backend error" begin
         @test_throws ErrorException makemap(backend=:InvalidBackend)
@@ -163,5 +176,120 @@ end
         # Total segments should equal number of customers (3)
         total_segments = sum(count(isnan, x) for x in X)
         @test total_segments == 3
+    end
+end
+
+# Smoke tests for plotroads! function
+@testset "plotroads tests" begin
+    using DataFrames
+
+    # Shared fixture: small 4-node diamond network around Raleigh, NC
+    dfN_test = DataFrame(
+        IDX = [1, 2, 3, 4],
+        LON = [-78.9, -78.5, -78.7, -79.1],
+        LAT = [35.8, 35.8, 36.0, 35.6]
+    )
+    # Links: interstate (FCLASS=1) and other (FCLASS=2), plus a connector
+    dfL_test = DataFrame(
+        SRC    = [1, 2, 3, 1, 1],
+        DST    = [2, 3, 4, 3, 4],
+        DIST   = [1.0, 1.2, 1.5, 0.8, 1.1],
+        FCLASS = [1, 1, 2, 2, 2],
+        SOURCE = ["FAF5", "FAF5", "FAF5", "FAF5", "CONNECTOR"]
+    )
+
+    # Bounding box for makemap
+    x_test = [-79.2, -78.4]
+    y_test = [35.5, 36.1]
+
+    @testset "basic render with makemap" begin
+        fig, ax, _, _ = makemap(x_test, y_test)
+        handles = plotroads!(ax, dfL_test, dfN_test)
+        @test handles isa Vector
+        @test length(handles) > 0
+    end
+
+    @testset "handle count without connectors" begin
+        dfL_faf5 = filter(r -> r.SOURCE != "CONNECTOR", dfL_test)
+        fig, ax, _, _ = makemap(x_test, y_test)
+        handles = plotroads!(ax, dfL_faf5, dfN_test)
+        # Close zoom (<10° latspan): 2 tiers (FCLASS 1,2) × 2 passes (casing+fill) = 4
+        @test length(handles) == 4
+    end
+
+    @testset "handle count with connectors" begin
+        fig, ax, _, _ = makemap(x_test, y_test)
+        handles = plotroads!(ax, dfL_test, dfN_test; show_connectors=true)
+        # 4 road handles + 1 connector = 5
+        @test length(handles) == 5
+    end
+
+    @testset "connectors hidden by default" begin
+        fig, ax, _, _ = makemap(x_test, y_test)
+        handles = plotroads!(ax, dfL_test, dfN_test)
+        # CONNECTOR filtered out: 2 tiers × 2 passes = 4
+        @test length(handles) == 4
+    end
+
+    @testset "empty dfL raises ArgumentError" begin
+        dfL_empty = DataFrame(SRC=Int[], DST=Int[])
+        fig, ax, _, _ = makemap(x_test, y_test)
+        @test_throws ArgumentError plotroads!(ax, dfL_empty, dfN_test)
+    end
+
+    @testset "orphan node reference raises ArgumentError" begin
+        dfL_bad = DataFrame(SRC=[1, 99], DST=[2, 3], SOURCE=["FAF5", "FAF5"])
+        fig, ax, _, _ = makemap(x_test, y_test)
+        @test_throws ArgumentError plotroads!(ax, dfL_bad, dfN_test)
+    end
+
+    @testset "no SOURCE column backward compat" begin
+        dfL_nosrc = DataFrame(SRC=[1, 2, 3], DST=[2, 3, 4], DIST=[1.0, 1.2, 1.5])
+        fig, ax, _, _ = makemap(x_test, y_test)
+        handles = plotroads!(ax, dfL_nosrc, dfN_test)
+        # No SOURCE, no FCLASS → all tier 5; close zoom: 1 casing + 1 fill = 2
+        @test length(handles) == 2
+    end
+end
+
+# Tests for plotroute! function
+@testset "plotroute! tests" begin
+    using DataFrames
+
+    dfN_test = DataFrame(
+        IDX = [1, 2, 3, 4],
+        LON = [-78.9, -78.5, -78.7, -79.1],
+        LAT = [35.8, 35.8, 36.0, 35.6]
+    )
+    x_test = [-79.2, -78.4]
+    y_test = [35.5, 36.1]
+
+    @testset "single path with markers" begin
+        fig, ax, _, _ = makemap(x_test, y_test)
+        handles = plotroute!(ax, [1, 2, 3, 4], dfN_test)
+        @test length(handles) == 3  # line + origin scatter + dest scatter
+    end
+
+    @testset "single path without markers" begin
+        fig, ax, _, _ = makemap(x_test, y_test)
+        handles = plotroute!(ax, [1, 2, 3], dfN_test; show_markers=false)
+        @test length(handles) == 1  # line only
+    end
+
+    @testset "multi-path" begin
+        fig, ax, _, _ = makemap(x_test, y_test)
+        paths = [[1, 2, 3], [1, 4, 3]]
+        all_handles = plotroute!(ax, paths, dfN_test)
+        @test length(all_handles) == 2  # two path groups
+        @test length(all_handles[1]) == 3  # each has line + 2 markers
+        @test length(all_handles[2]) == 3
+    end
+
+    @testset "multi-path without markers" begin
+        fig, ax, _, _ = makemap(x_test, y_test)
+        paths = [[1, 2], [3, 4]]
+        all_handles = plotroute!(ax, paths, dfN_test; show_markers=false)
+        @test length(all_handles) == 2
+        @test length(all_handles[1]) == 1  # line only
     end
 end

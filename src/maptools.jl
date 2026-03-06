@@ -101,6 +101,7 @@ The map can focus on different predefined regions (the world, U.S., or continent
 - `yexpand::Float64`: Expansion factor for the y-axis limits. Default is `0.1`.
 - `doRoadbkgd::Bool`: Whether to include roads as background features if maximum latitude span is less than `maxroadlatspan`. Default is `true`.
 - `maxroadlatspan::Float64`: Maximum latitude span for displaying roads. Default is `30.0`° (allows continental US coverage with FAF5 interstate network).
+- `showgrid::Bool`: Whether to display grid lines and coordinate labels. Default is `false`.
 
 # Returns
 - `fig::Figure`: The figure object containing the map.
@@ -142,7 +143,8 @@ function makemap(x::Union{Nothing, AbstractVector{<:Real}, NTuple{2, <:Real}} = 
                  y::Union{Nothing, AbstractVector{<:Real}, NTuple{2, <:Real}} = nothing;
                  region::Symbol = :World, backend::Symbol = :CairoMakie,
                  xexpand::Real = 0.3, yexpand::Real = 0.1,
-                 doRoadbkgd::Bool = true, maxroadlatspan::Real = 30.0)
+                 doRoadbkgd::Bool = true, maxroadlatspan::Real = 30.0,
+                 showgrid::Bool = false)
 
     # Enforce that x and y must have at least two elements if they are vectors
     if x isa AbstractVector && length(x) < 2
@@ -200,8 +202,13 @@ function makemap(x::Union{Nothing, AbstractVector{<:Real}, NTuple{2, <:Real}} = 
     
     # Create a figure and a geographical axis using the Mercator projection
     fig = Figure()
-    ax = GeoAxis(fig[1, 1]; dest="+proj=merc", limits=limits, autolimitaspect = nothing)
-    ax.xgridstyle, ax.ygridstyle = :dot, :dot  # Set grid style for the axis
+    ax = GeoAxis(fig[1, 1]; dest="+proj=merc", limits=limits, autolimitaspect=nothing,
+                 xgridvisible=showgrid, ygridvisible=showgrid,
+                 xticklabelsvisible=showgrid, yticklabelsvisible=showgrid,
+                 xticksvisible=showgrid, yticksvisible=showgrid)
+    if showgrid
+        ax.xgridstyle, ax.ygridstyle = :dot, :dot
+    end
 
     hborders = []  # Initialize an empty array to hold border handles
 
