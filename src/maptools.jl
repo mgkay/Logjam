@@ -653,7 +653,9 @@ close zoom, single-line with hue tints at medium zoom, minimal at wide zoom.
 - `show_connectors::Bool`: Whether to render CONNECTOR links (default: false).
 
 # Returns
-- `Vector{Lines}`: Handles to plotted line objects (empty categories omitted).
+- `Dict{Symbol, Any}`: Named handles to plotted line objects. Keys: `:fill_1` through
+  `:fill_5` (by FCLASS tier), `:casing_1` through `:casing_5` (close zoom only),
+  `:connector` (if shown). Only non-empty tiers are included.
 
 # Styling
 Roads are styled by FCLASS tier with zoom-adaptive rendering:
@@ -681,17 +683,17 @@ fig, ax = makemap(region=:CUS)
 handles = plotroads!(ax, dfL, dfN)
 display(fig)
 
-# With connectors
-x_fac = [-80.0, -78.5]
-y_fac = [35.5, 36.2]
-dfN_conn, dfL_conn = addconnectors(dfN, dfL, x_fac, y_fac)
-fig, ax = makemap(region=:CUS)
-handles = plotroads!(ax, dfL_conn, dfN_conn; show_connectors=true)
-display(fig)
+# Customize interstate fill color
+handles[:fill_1].color = :darkblue
+
+# Check available handles
+keys(handles)  # e.g., [:fill_1, :fill_2, :casing_1, :casing_2, ...]
 ```
 
 # Notes
 - FCLASS-based styling applies uniformly to FAF5 and OSM roads
+- Returns `Dict{Symbol, Any}` with keys `:fill_N`, `:casing_N` (N=1-5), `:connector`
+- Casing keys only present at close zoom (latspan ≤ 10°)
 - Connectors are hidden by default to avoid visual clutter from synthetic edges
 - Node lookup uses Dict to handle non-sequential OSM node IDs efficiently
 - Compatible with both CairoMakie and GLMakie backends
@@ -810,7 +812,7 @@ function plotroads!(ax, dfL::DataFrame, dfN::DataFrame;
     # 7. Compute adaptive styling and render
     limits = ax.limits[]
     latspan = abs(limits[2][2] - limits[2][1])
-    handles = []
+    handles = Dict{Symbol, Any}()
 
     if latspan <= 10
         # Close zoom: two-pass rendering (casings first, then fills)
@@ -824,7 +826,7 @@ function plotroads!(ax, dfL::DataFrame, dfN::DataFrame;
             h = lines!(ax, x_coords, y_coords;
                        linewidth=w.close + 1.2,
                        color=RGBf(r, g, b), alpha=α.close, linecap=:round)
-            push!(handles, h)
+            handles[Symbol("casing_", tier)] = h
         end
         # Pass 2: fills
         for tier in reverse(tiers)
@@ -836,7 +838,7 @@ function plotroads!(ax, dfL::DataFrame, dfN::DataFrame;
             h = lines!(ax, x_coords, y_coords;
                        linewidth=w.close,
                        color=RGBf(r, g, b), alpha=α.close, linecap=:round)
-            push!(handles, h)
+            handles[Symbol("fill_", tier)] = h
         end
     elseif latspan <= 20
         # Medium zoom: single pass with subtle hue tints
@@ -849,7 +851,7 @@ function plotroads!(ax, dfL::DataFrame, dfN::DataFrame;
             h = lines!(ax, x_coords, y_coords;
                        linewidth=w.mid,
                        color=RGBf(r, g, b), alpha=α.mid, linecap=:round)
-            push!(handles, h)
+            handles[Symbol("fill_", tier)] = h
         end
     else
         # Wide zoom: minimal single-line, faint
@@ -862,7 +864,7 @@ function plotroads!(ax, dfL::DataFrame, dfN::DataFrame;
             h = lines!(ax, x_coords, y_coords;
                        linewidth=w.far,
                        color=RGBf(r, g, b), alpha=α.far, linecap=:round)
-            push!(handles, h)
+            handles[Symbol("fill_", tier)] = h
         end
     end
 
@@ -870,7 +872,7 @@ function plotroads!(ax, dfL::DataFrame, dfN::DataFrame;
     if length(connector_polylines[1]) > 0
         h = lines!(ax, connector_polylines[1], connector_polylines[2];
                    linewidth=0.3, color=(:gray55, 0.15), linestyle=:dash, linecap=:round)
-        push!(handles, h)
+        handles[:connector] = h
     end
 
     return handles

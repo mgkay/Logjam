@@ -202,33 +202,48 @@ end
     x_test = [-79.2, -78.4]
     y_test = [35.5, 36.1]
 
-    @testset "basic render with makemap" begin
+    @testset "basic render returns Dict" begin
         fig, ax, _, _ = makemap(x_test, y_test)
         handles = plotroads!(ax, dfL_test, dfN_test)
-        @test handles isa Vector
+        @test handles isa Dict{Symbol, Any}
         @test length(handles) > 0
     end
 
-    @testset "handle count without connectors" begin
+    @testset "handle keys without connectors" begin
         dfL_faf5 = filter(r -> r.SOURCE != "CONNECTOR", dfL_test)
         fig, ax, _, _ = makemap(x_test, y_test)
         handles = plotroads!(ax, dfL_faf5, dfN_test)
-        # Close zoom (<10° latspan): 2 tiers (FCLASS 1,2) × 2 passes (casing+fill) = 4
+        # Close zoom (<10° latspan): 2 tiers (FCLASS 1,2) with casing+fill each
+        @test haskey(handles, :fill_1)
+        @test haskey(handles, :fill_2)
+        @test haskey(handles, :casing_1)
+        @test haskey(handles, :casing_2)
+        @test !haskey(handles, :connector)
         @test length(handles) == 4
     end
 
-    @testset "handle count with connectors" begin
+    @testset "handle keys with connectors" begin
         fig, ax, _, _ = makemap(x_test, y_test)
         handles = plotroads!(ax, dfL_test, dfN_test; show_connectors=true)
-        # 4 road handles + 1 connector = 5
+        @test haskey(handles, :fill_1)
+        @test haskey(handles, :casing_1)
+        @test haskey(handles, :connector)
         @test length(handles) == 5
     end
 
     @testset "connectors hidden by default" begin
         fig, ax, _, _ = makemap(x_test, y_test)
         handles = plotroads!(ax, dfL_test, dfN_test)
-        # CONNECTOR filtered out: 2 tiers × 2 passes = 4
+        @test !haskey(handles, :connector)
         @test length(handles) == 4
+    end
+
+    @testset "handle customization" begin
+        fig, ax, _, _ = makemap(x_test, y_test)
+        handles = plotroads!(ax, dfL_test, dfN_test)
+        # Verify handles are mutable Makie line objects
+        handles[:fill_1].color = :darkblue
+        @test true  # No error means customization works
     end
 
     @testset "empty dfL raises ArgumentError" begin
@@ -247,8 +262,20 @@ end
         dfL_nosrc = DataFrame(SRC=[1, 2, 3], DST=[2, 3, 4], DIST=[1.0, 1.2, 1.5])
         fig, ax, _, _ = makemap(x_test, y_test)
         handles = plotroads!(ax, dfL_nosrc, dfN_test)
-        # No SOURCE, no FCLASS → all tier 5; close zoom: 1 casing + 1 fill = 2
+        # No SOURCE, no FCLASS → all tier 5; close zoom: casing_5 + fill_5 = 2
         @test length(handles) == 2
+        @test haskey(handles, :fill_5)
+        @test haskey(handles, :casing_5)
+    end
+
+    @testset "wide zoom has no casings" begin
+        # latspan > 20° → no casing keys
+        x_wide = [-125.0, -65.0]
+        y_wide = [24.0, 50.0]
+        fig, ax, _, _ = makemap(x_wide, y_wide)
+        handles = plotroads!(ax, dfL_test, dfN_test)
+        @test haskey(handles, :fill_1)
+        @test !haskey(handles, :casing_1)
     end
 end
 
