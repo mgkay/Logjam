@@ -632,11 +632,12 @@ end
     plotroads!(ax::GeoAxis, dfL::DataFrame, dfN::DataFrame;
                show_connectors::Bool = false) -> Vector{Lines}
 
-Overlay road networks on GeoAxis with adaptive zoom-based styling.
+Overlay road networks on GeoAxis with FCLASS-based styling inspired by OSM Carto.
 
-Renders roads from DataFrames with automatic differentiation by SOURCE category
-(FAF5/OSM/CONNECTOR) and interstate status (FCLASS==1). Uses unified gray color
-palette with adaptive linewidth and alpha based on zoom level.
+Renders roads from DataFrames with differentiation by FCLASS (functional class).
+FAF5 and OSM roads at the same FCLASS receive identical visual treatment. Uses
+muted OSM Carto hues with adaptive zoom-based rendering: two-pass casing at
+close zoom, single-line with hue tints at medium zoom, minimal at wide zoom.
 
 # Arguments
 - `ax::GeoAxis`: Geographic axis from `makemap()` or manual creation.
@@ -645,22 +646,23 @@ palette with adaptive linewidth and alpha based on zoom level.
 - `show_connectors::Bool`: Whether to render CONNECTOR links (default: false).
 
 # Returns
-- `Vector{Lines}`: Handles to plotted line objects, ordered as [FAF5_interstate, FAF5_other, OSM, CONNECTOR] (empty categories omitted).
+- `Vector{Lines}`: Handles to plotted line objects (empty categories omitted).
 
 # Styling
-Roads are styled adaptively based on latitude span (latspan = max_lat - min_lat):
-- **latspan > 20°** (CONUS-scale): Thin lines, lower alpha (zoomed out)
-- **10° < latspan ≤ 20°** (Regional): Medium lines, medium alpha
-- **latspan ≤ 10°** (City/state): Thick lines, higher alpha (zoomed in)
+Roads are styled by FCLASS tier with zoom-adaptive rendering:
+- **latspan > 20°** (CONUS-scale): Minimal single-line, faint
+- **10° < latspan ≤ 20°** (Regional): Single-line with subtle hue tints
+- **latspan ≤ 10°** (City/metro): Full casing + fill with muted OSM Carto hues
 
-All roads use unified `:gray55` color with differentiation via linewidth and alpha.
-Interstates (FCLASS==1 within FAF5) are thicker than other roads at each zoom level.
+FCLASS tiers: 1=Interstate (blue), 2=Freeway (green), 3=Arterial (warm yellow),
+4=Collector (pale yellow), 5+=Local (white/gray). Colors are muted to serve as
+background beneath overlaid data.
 
 # Data Requirements
 - `dfL` must have at least 2 columns: SRC, DST (node IDs as integers)
 - `dfN` must have at least 3 columns: IDX, LON, LAT (coordinates in WGS84)
 - Optional `dfL.SOURCE`: "FAF5", "OSM", or "CONNECTOR" (missing treated as "FAF5")
-- Optional `dfL.FCLASS`: Integer functional class (1 = interstate, FAF5 only)
+- Optional `dfL.FCLASS`: Integer functional class (1-7, per FHWA/OSM mapping)
 
 # Examples
 ```julia
@@ -672,24 +674,20 @@ fig, ax = makemap(region=:CUS)
 handles = plotroads!(ax, dfL, dfN)
 display(fig)
 
-# Customize interstate color
-handles[1].color = (:darkblue, 0.7)
-
 # With connectors
 x_fac = [-80.0, -78.5]
 y_fac = [35.5, 36.2]
 dfN_conn, dfL_conn = addconnectors(dfN, dfL, x_fac, y_fac)
 fig, ax = makemap(region=:CUS)
 handles = plotroads!(ax, dfL_conn, dfN_conn; show_connectors=true)
-handles[end].color = (:red, 0.5)  # Highlight connectors
 display(fig)
 ```
 
 # Notes
-- Interstates are only detected in FAF5 roads (SOURCE=="FAF5" or missing) with FCLASS==1
+- FCLASS-based styling applies uniformly to FAF5 and OSM roads
 - Connectors are hidden by default to avoid visual clutter from synthetic edges
-- Returns handles in deterministic order for user customization
 - Node lookup uses Dict to handle non-sequential OSM node IDs efficiently
+- Compatible with both CairoMakie and GLMakie backends
 """
 function plotroads!(ax, dfL::DataFrame, dfN::DataFrame;
                     show_connectors::Bool = false)
@@ -740,77 +738,132 @@ function plotroads!(ax, dfL::DataFrame, dfN::DataFrame;
         source_col = has_source ? dfL_active.SOURCE : fill(missing, nrow(dfL_active))
     end
 
-    # 5. Detect interstates (within FAF5 only)
+    # 5. FCLASS-based categorization
     has_fclass = "FCLASS" in names(dfL_active)
     fclass_col = has_fclass ? dfL_active.FCLASS : fill(missing, nrow(dfL_active))
 
-    # 6. Categorize links and build polylines
-    categories = ["FAF5_interstate", "FAF5_other", "OSM", "CONNECTOR"]
-    polylines = Dict(cat => (Float64[], Float64[]) for cat in categories)
+    # FCLASS tier mapping: 1=Interstate, 2=Freeway, 3=Arterial, 4=Collector, 5+=Local
+    # Muted OSM Carto hues as RGB tuples (alpha applied per zoom level)
+    tier_colors = Dict(
+        1 => (fill=(0.60, 0.70, 0.82), casing=(0.35, 0.42, 0.52)),  # muted blue
+        2 => (fill=(0.72, 0.82, 0.72), casing=(0.45, 0.55, 0.40)),  # muted green
+        3 => (fill=(0.90, 0.82, 0.70), casing=(0.65, 0.52, 0.30)),  # muted warm yellow
+        4 => (fill=(0.92, 0.90, 0.80), casing=(0.60, 0.58, 0.48)),  # muted pale yellow
+        5 => (fill=(0.95, 0.95, 0.95), casing=(0.65, 0.65, 0.65)),  # white/gray
+    )
 
-    # Reaccess filtered columns
+    # Width progression by tier (close zoom fill width, casing is fill + 1.5)
+    tier_widths = Dict(
+        1 => (close=2.5,  mid=1.2, far=0.4),
+        2 => (close=2.0,  mid=1.0, far=0.3),
+        3 => (close=1.6,  mid=0.7, far=0.2),
+        4 => (close=1.2,  mid=0.5, far=0.15),
+        5 => (close=0.8,  mid=0.3, far=0.1),
+    )
+
+    # Alpha by zoom level
+    tier_alphas = Dict(
+        1 => (close=0.8, mid=0.5, far=0.3),
+        2 => (close=0.7, mid=0.4, far=0.25),
+        3 => (close=0.6, mid=0.35, far=0.2),
+        4 => (close=0.5, mid=0.3, far=0.15),
+        5 => (close=0.4, mid=0.25, far=0.1),
+    )
+
+    # 6. Categorize links into FCLASS tiers and build polylines
+    tiers = [1, 2, 3, 4, 5]
+    polylines = Dict(t => (Float64[], Float64[]) for t in tiers)
+    connector_polylines = (Float64[], Float64[])
+
     src_active = dfL_active[:, 1]
     dst_active = dfL_active[:, 2]
 
     for i in 1:nrow(dfL_active)
         source = coalesce(source_col[i], "FAF5")
 
-        # Determine category
-        if source == "FAF5" && has_fclass && !ismissing(fclass_col[i]) && fclass_col[i] == 1
-            category = "FAF5_interstate"
-        elseif source == "FAF5" || ismissing(source_col[i])
-            category = "FAF5_other"
-        elseif source == "OSM"
-            category = "OSM"
-        elseif source == "CONNECTOR"
-            category = "CONNECTOR"
-        else
-            continue  # Unknown SOURCE value, skip
+        if source == "CONNECTOR"
+            src_lon, src_lat = node_lookup[src_active[i]]
+            dst_lon, dst_lat = node_lookup[dst_active[i]]
+            push!(connector_polylines[1], src_lon, dst_lon, NaN)
+            push!(connector_polylines[2], src_lat, dst_lat, NaN)
+            continue
         end
 
-        # Append coordinates with NaN separator
+        # Map FCLASS to tier (default to 5=Local for missing/unknown)
+        fc = has_fclass && !ismissing(fclass_col[i]) ? fclass_col[i] : 5
+        tier = fc <= 0 ? 5 : (fc >= 5 ? 5 : fc)
+
         src_lon, src_lat = node_lookup[src_active[i]]
         dst_lon, dst_lat = node_lookup[dst_active[i]]
 
-        push!(polylines[category][1], src_lon, dst_lon, NaN)
-        push!(polylines[category][2], src_lat, dst_lat, NaN)
+        push!(polylines[tier][1], src_lon, dst_lon, NaN)
+        push!(polylines[tier][2], src_lat, dst_lat, NaN)
     end
 
-    # 7. Compute adaptive styling
+    # 7. Compute adaptive styling and render
     limits = ax.limits[]
     latspan = abs(limits[2][2] - limits[2][1])
-    base_color = :gray55
-
-    # Build style dictionary for each category
-    styles = Dict{String, NamedTuple}()
-
-    # FAF5 interstate
-    lw = latspan > 20 ? 0.4 : (latspan > 10 ? 0.8 : 1.5)
-    α = latspan > 20 ? 0.3 : (latspan > 10 ? 0.4 : 0.5)
-    styles["FAF5_interstate"] = (linewidth=lw, color=(base_color, α))
-
-    # FAF5 other
-    lw = latspan > 20 ? 0.15 : (latspan > 10 ? 0.3 : 0.6)
-    α = latspan > 20 ? 0.2 : (latspan > 10 ? 0.3 : 0.4)
-    styles["FAF5_other"] = (linewidth=lw, color=(base_color, α))
-
-    # OSM
-    lw = latspan > 20 ? 0.1 : (latspan > 10 ? 0.2 : 0.35)
-    α = latspan > 20 ? 0.15 : (latspan > 10 ? 0.2 : 0.3)
-    styles["OSM"] = (linewidth=lw, color=(base_color, α))
-
-    # CONNECTOR
-    styles["CONNECTOR"] = (linewidth=0.3, color=(base_color, 0.15), linestyle=:dash)
-
-    # 8. Render polylines
     handles = []
-    for category in categories
-        x_coords, y_coords = polylines[category]
-        if length(x_coords) > 0
-            style = styles[category]
-            h = lines!(ax, x_coords, y_coords; style...)
+
+    if latspan <= 10
+        # Close zoom: two-pass rendering (casings first, then fills)
+        # Pass 1: casings (draw lower tiers first so higher tiers overlay)
+        for tier in reverse(tiers)
+            x_coords, y_coords = polylines[tier]
+            length(x_coords) > 0 || continue
+            w = tier_widths[tier]
+            α = tier_alphas[tier]
+            r, g, b = tier_colors[tier].casing
+            h = lines!(ax, x_coords, y_coords;
+                       linewidth=w.close + 1.5,
+                       color=RGBf(r, g, b), alpha=α.close, linecap=:round)
             push!(handles, h)
         end
+        # Pass 2: fills
+        for tier in reverse(tiers)
+            x_coords, y_coords = polylines[tier]
+            length(x_coords) > 0 || continue
+            w = tier_widths[tier]
+            α = tier_alphas[tier]
+            r, g, b = tier_colors[tier].fill
+            h = lines!(ax, x_coords, y_coords;
+                       linewidth=w.close,
+                       color=RGBf(r, g, b), alpha=α.close, linecap=:round)
+            push!(handles, h)
+        end
+    elseif latspan <= 20
+        # Medium zoom: single pass with subtle hue tints
+        for tier in reverse(tiers)
+            x_coords, y_coords = polylines[tier]
+            length(x_coords) > 0 || continue
+            w = tier_widths[tier]
+            α = tier_alphas[tier]
+            r, g, b = tier_colors[tier].fill
+            h = lines!(ax, x_coords, y_coords;
+                       linewidth=w.mid,
+                       color=RGBf(r, g, b), alpha=α.mid, linecap=:round)
+            push!(handles, h)
+        end
+    else
+        # Wide zoom: minimal single-line, faint
+        for tier in reverse(tiers)
+            x_coords, y_coords = polylines[tier]
+            length(x_coords) > 0 || continue
+            w = tier_widths[tier]
+            α = tier_alphas[tier]
+            r, g, b = tier_colors[tier].fill
+            h = lines!(ax, x_coords, y_coords;
+                       linewidth=w.far,
+                       color=RGBf(r, g, b), alpha=α.far, linecap=:round)
+            push!(handles, h)
+        end
+    end
+
+    # Render connectors last (always single pass, dashed)
+    if length(connector_polylines[1]) > 0
+        h = lines!(ax, connector_polylines[1], connector_polylines[2];
+                   linewidth=0.3, color=(:gray55, 0.15), linestyle=:dash, linecap=:round)
+        push!(handles, h)
     end
 
     return handles
