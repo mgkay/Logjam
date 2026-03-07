@@ -4,11 +4,22 @@ CurrentModule = Logjam
 
 # Logjam
 
-Logjam is a Julia package providing tools and data for logistics engineering tasks. It enables users to work with U.S. geographical data and FAF5 road networks, create maps using GeoMakie, and create multi-stop routes using savings-based construction and 2-opt improvement heuristics.
+Logjam is a Julia package for logistics engineering, providing tools for:
+- **Facility Location**: Discrete optimization algorithms for facility location problems, including Uncapacitated Facility Location (UFL) and *p*-Median construction and improvement heuristics.
+- **Transportation Costing**: Formulas for estimating LTL & TL freight rates, calculating minimum charges, and evaluating total logistics costs (TLC).
+- **Network Analysis**: Routing and topology tools for the FAF5 highway network and OpenStreetMap road networks, including shortest paths and automatic facility connectors.
+- **Vehicle Routing**: Algorithms for multi-stop route optimization, featuring savings-based construction and local search improvement methods.
+- **Spatial Data**: A gazetteer of U.S. administrative boundaries and points, including Cities, Counties, ZIP codes (3- and 5-digit), Census tracts, and CBSA/CSA definitions.
+- **Distance Metrics**: Unified distance calculation utilities supporting Rectilinear (*L*₁), Euclidean (*L*₂), and Great Circle (Haversine) metrics.
+- **Mapping**: Geographic visualization with GeoMakie, including FCLASS-based road network rendering with OSM Carto-inspired styling, route overlays, and facility location plots.
 
-## GLMakie Extension
+## Extensions
 
-Logjam uses CairoMakie by default. GLMakie support is provided via a package extension that is automatically loaded when GLMakie is available. For interactive display, load GLMakie before Logjam:
+Logjam uses CairoMakie by default for rendering maps. Two optional extensions are available:
+
+### GLMakie Extension
+
+For interactive display, load GLMakie before Logjam:
 
 ```julia
 using GLMakie  # Triggers LogjamGLMakieExt extension
@@ -17,12 +28,24 @@ using Logjam
 fig, ax = makemap(region=:US, backend=:GLMakie)
 ```
 
+### OSM Extension
+
+For OpenStreetMap road network functionality (`osm_roads`, `stitchnetworks`), load LightOSM and NearestNeighbors before Logjam:
+
+```julia
+using LightOSM, NearestNeighbors  # Triggers LogjamOSMExt extension
+using Logjam
+
+bbox = mapbbox(stops_lon, stops_lat; xexpand=0.1, yexpand=0.1)
+nodes, links = osm_roads((bbox[1]..., bbox[2]...))
+```
+
 ```@index
 ```
 
 ## Map Functions
 
-Functions for creating geographical maps using the Makie ecosystem.
+Functions for creating geographical maps and visualizing road networks using the Makie ecosystem.
 
 ### Constants
 
@@ -32,7 +55,7 @@ US_LIMITS
 CUS_LIMITS
 ```
 
-### Functions
+### Map Creation
 
 ```@docs
 makemap
@@ -41,6 +64,13 @@ aligntext
 bestfit
 isptinbbox
 alloclines
+```
+
+### Road and Route Visualization
+
+```@docs
+plotroads!
+plotroute!
 ```
 
 ## Data Functions
@@ -95,7 +125,7 @@ dists
 
 ## Road Network Functions
 
-Functions for working with road networks.
+Functions for building, manipulating, and routing on road networks. Compatible with both FAF5 and OpenStreetMap data sources.
 
 ```@docs
 prune_reindex
@@ -105,11 +135,21 @@ links2graph
 x2ln
 cropnetwork
 shortestpaths
+tracepath
+```
+
+### OSM Functions
+
+Functions for downloading and integrating OpenStreetMap road networks. Requires the OSM extension (`using LightOSM, NearestNeighbors`).
+
+```@docs
+osm_roads
+stitchnetworks
 ```
 
 ## Routing Functions
 
-Functions for vehicle routing problems.
+Functions for vehicle routing problems, including pickup-and-delivery and capacitated VRP.
 
 ### Route Cost and Representation
 
@@ -127,13 +167,6 @@ mincostinsert
 pairwisesavings
 savings
 twoopt
-```
-
-### Route Visualization
-
-```@docs
-plotroute!
-plotroads!
 ```
 
 ## Location Functions
