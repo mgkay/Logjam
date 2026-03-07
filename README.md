@@ -59,13 +59,13 @@ display(first(places[:, [:NAME, :ST, :LON, :LAT, :POP, :ISCUS]], 4))
 
 ```
 4×6 DataFrame
- Row │ NAME           ST   LON        LAT      POP       ISCUS
-     │ String         Sym  Float64    Float64  Int64     Bool
-─────┼───────────────────────────────────────────────────────────
-   1 │ New York       :NY  -74.0059   40.7128  8336817   true
-   2 │ Los Angeles    :CA  -118.2437  34.0522  3979576   true
-   3 │ Chicago        :IL  -87.6298   41.8781  2693976   true
-   4 │ Houston        :TX  -95.3698   29.7604  2304580   true
+ Row │ NAME            ST      LON       LAT      POP    ISCUS
+     │ String          Symbol  Float64   Float64  Int64  Bool
+─────┼─────────────────────────────────────────────────────────
+   1 │ Albertville     AL      -86.2107  34.2631  22386   true
+   2 │ Alexander City  AL      -85.9371  32.9272  14843   true
+   3 │ Anniston        AL      -85.8109  33.6735  21564   true
+   4 │ Auburn          AL      -85.4895  32.6077  76143   true
 ```
 
 ```julia
@@ -91,8 +91,8 @@ println("Continental US 3-digit ZIPs: $(nrow(z3))")
 
 ```
 10 NC cities with pop > 100k
-Nearest large city: Cary (6.4 mi)
-Continental US 3-digit ZIPs: 899
+Nearest large city: Apex (1.3 mi)
+Continental US 3-digit ZIPs: 882
 ```
 
 **After-action.** The `ISCUS` flag is the standard filter for continental U.S. analysis — it removes Alaska, Hawaii, Puerto Rico, and other territories that would distort national maps. All coordinate columns follow the (LON, LAT) convention throughout Logjam, which means western longitudes are negative. The `st2fips` and `fips2st` functions enable joins between datasets that use different geographic identifiers. `lonlat2name` is used in later examples to reverse-geocode facility hub coordinates into interpretable city names, making model outputs readable without manual lookup. The `name2lonlat` function provides the inverse operation when building scenarios from named locations.
