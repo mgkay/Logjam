@@ -528,13 +528,16 @@ plotting all edges as lines with NaN separators.
 # Example
 ```julia
 using Graphs
-g = SimpleGraph(5)
-add_edge!(g, 1, 2); add_edge!(g, 2, 3)
-lon = [-78.0, -79.0, -80.0, -81.0, -82.0]
-lat = [35.0, 35.5, 36.0, 35.5, 35.0]
+g = SimpleGraph(3)
+add_edge!(g, 1, 2)
+add_edge!(g, 2, 3)
+lon = [-78.0, -79.0, -80.0]
+lat = [35.0, 37.0, 36.0]
 x_line = x2ln(g, lon)
 y_line = x2ln(g, lat)
+fig, ax = makemap(x_line, y_line)
 lines!(ax, x_line, y_line)
+fig
 ```
 """
 function x2ln(g, x)
