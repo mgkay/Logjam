@@ -264,13 +264,14 @@ using LightOSM, NearestNeighbors  # Must precede Logjam to activate OSM extensio
 using Logjam
 using GeoMakie, CairoMakie, DataFrames
 
-# Download OSM road network for Gainesville urban core
-bbox = (-82.365, -82.285, 29.620, 29.685)
-nodes_osm, links_osm = osm_roads(bbox; cache_dir=joinpath(@__DIR__, "data"))
-
 # Stop coordinates: stop 1 = depot (UF campus), stops 2–10 = deliveries
 stops_lon = [-82.340, -82.360, -82.355, -82.348, -82.305, -82.298, -82.315, -82.340, -82.325, -82.350]
 stops_lat = [ 29.650,  29.675,  29.668,  29.672,  29.662,  29.655,  29.670,  29.635,  29.630,  29.628]
+
+# Download OSM road network covering the stop region
+bbox_limits, _ = mapbbox(stops_lon, stops_lat; xexpand=0.1, yexpand=0.1)
+bbox = (bbox_limits[1]..., bbox_limits[2]...)
+nodes_osm, links_osm = osm_roads(bbox; cache_dir=joinpath(@__DIR__, "data"))
 
 # Build network and shortest paths
 nodes, links = addconnectors(nodes_osm, links_osm, stops_lon, stops_lat; add_nf_nf=false)
@@ -301,4 +302,4 @@ display(fig)
 
 ![Gainesville VRP Plot](docs/assets/gnv_osm_vrp_plot.png)
 
-**After-action.** `osm_roads` downloads drivable roads from the Overpass API and caches results as CSV files; subsequent calls with the same bbox load from cache. `add_nf_nf=false` disables direct demand-to-demand connectors that would bypass the road network — without this, nearby stops take straight-line shortcuts instead of following OSM roads. The capacity constraint is enforced through the cost function: `length(r) > 6 ? Inf : ...` limits each route to three deliveries (each shipment appears twice in the route as a pickup–delivery pair), causing `savings` to produce multiple routes rather than merging everything into a single tour. `tr=(b=[1], e=[1])` specifies that each route begins and ends at the depot. The multi-route `plotroute!` method accepts a `Vector{Vector{Int}}` and automatically assigns a distinct color per vehicle from the Wong color palette. For scenarios requiring local OSM detail integrated with the national FAF5 network, Logjam’s `stitchnetworks` function creates connector edges between the two networks, returning a unified graph compatible with the standard routing pipeline.
+**After-action.** `mapbbox` derives a bounding box from the stop coordinates with 10% expansion, ensuring the downloaded OSM region covers all stops with margin. The nested tuple is flattened to `(xmin, xmax, ymin, ymax)` for `osm_roads`, which downloads drivable roads from the Overpass API and caches results as CSV files; subsequent calls with the same bbox load from cache. `add_nf_nf=false` disables direct demand-to-demand connectors that would bypass the road network — without this, nearby stops take straight-line shortcuts instead of following OSM roads. The capacity constraint is enforced through the cost function: `length(r) > 6 ? Inf : ...` limits each route to three deliveries (each shipment appears twice in the route as a pickup–delivery pair), causing `savings` to produce multiple routes rather than merging everything into a single tour. `tr=(b=[1], e=[1])` specifies that each route begins and ends at the depot. The multi-route `plotroute!` method accepts a `Vector{Vector{Int}}` and automatically assigns a distinct color per vehicle from the Wong color palette. For scenarios requiring local OSM detail integrated with the national FAF5 network, Logjam’s `stitchnetworks` function creates connector edges between the two networks, returning a unified graph compatible with the standard routing pipeline.
