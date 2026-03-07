@@ -137,7 +137,6 @@ export osm_roads, stitchnetworks
 # Export routing functions
 export segcost, rteTC, isorigin, rte2loc
 export twoopt, mincostinsert, pairwisesavings, savings
-export rte2lines
 
 # Include component files
 include("loctools.jl")
