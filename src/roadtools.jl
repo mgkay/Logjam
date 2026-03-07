@@ -527,7 +527,7 @@ plotting all edges as lines with NaN separators.
 
 # Example
 ```julia
-using Graphs
+using Graphs, CairoMakie
 g = SimpleGraph(3)
 add_edge!(g, 1, 2)
 add_edge!(g, 2, 3)
