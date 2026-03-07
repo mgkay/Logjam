@@ -486,11 +486,12 @@ function name2lonlat(name::AbstractString, df::DataFrame; st=nothing)
         name, st = parts[1], parts[2]
     end
 
-    # Search with optional state filter
+    # Search with optional state filter (convert st to Symbol if needed)
     if isnothing(st)
         idx = findfirst(r -> r.NAME == name, eachrow(df))
     else
-        idx = findfirst(r -> r.NAME == name && r.ST == st, eachrow(df))
+        st_sym = st isa Symbol ? st : Symbol(st)
+        idx = findfirst(r -> r.NAME == name && r.ST == st_sym, eachrow(df))
     end
 
     isnothing(idx) && error("'$name' not found in DataFrame")
@@ -506,10 +507,17 @@ Find nearest cities to given coordinates (reverse geocoding).
 # Arguments
 - `XY`: n×2 matrix of [LON, LAT] coordinates, or single [LON, LAT] vector.
 - `df`: DataFrame with `:NAME`, `:ST`, `:LON`, `:LAT` columns (e.g., from usplace()).
-- `threshold`: Distance threshold (miles) for "in city" vs "X mi from city" (default: 4.0).
+- `threshold`: Distance threshold (miles) for "in city" vs "X mi DIR of city" (default: 4.0).
 
 # Returns
-- DataFrame with columns `:idx` (nearest city index), `:name`, `:st`, `:dist` (miles), `:desc` (description).
+- DataFrame with columns:
+  - `:idx` nearest city index
+  - `:name` nearest city name
+  - `:st` nearest city state abbreviation
+  - `:dist` distance in miles
+  - `:bearing` radians clockwise from north (0 to 2π)
+  - `:dir` 8-point compass direction (`N`, `NE`, ..., `NW`)
+  - `:desc` human-readable description
 
 # Example
 ```julia
@@ -519,8 +527,9 @@ lonlat2name(xy, cities)
 ```
 """
 function lonlat2name(XY, df::DataFrame; threshold=4.0)
-    # Convert vector to 1×2 matrix
+    # Convert vector to 1x2 matrix
     if XY isa AbstractVector
+        length(XY) == 2 || throw(ArgumentError("XY vector must have length 2 [LON, LAT]."))
         XY = reshape(XY, 1, 2)
     end
 
@@ -534,20 +543,49 @@ function lonlat2name(XY, df::DataFrame; threshold=4.0)
         name = String[],
         st = String[],
         dist = Float64[],
+        bearing = Float64[],
+        dir = String[],
         desc = String[]
     )
+
+    dir_labels = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"]
 
     for i in 1:size(D, 1)
         j = argmin(D[i, :])
         dist = D[i, j]
+        st = String(df.ST[j])
+
+        # Great-circle initial bearing from nearest city to query location
+        lon1, lat1 = deg2rad(df.LON[j]), deg2rad(df.LAT[j])
+        lon2, lat2 = deg2rad(XY[i, 1]), deg2rad(XY[i, 2])
+
+        bearing = mod(
+            atan(
+                cos(lat2) * sin(lon2 - lon1),
+                cos(lat1) * sin(lat2) - sin(lat1) * cos(lat2) * cos(lon2 - lon1)
+            ),
+            2pi
+        )
+
+        bearing_deg = rad2deg(bearing)
+        dir_idx = (Int(floor((bearing_deg + 22.5) / 45.0)) % 8) + 1
+        dir = dir_labels[dir_idx]
 
         desc = if dist < threshold
-            "in $(df.NAME[j]), $(df.ST[j])"
+            "in " * String(df.NAME[j]) * ", " * st
         else
-            "$(round(dist, digits=1)) mi from $(df.NAME[j]), $(df.ST[j])"
+            string(round(dist, digits=1)) * " mi " * dir * " of " * String(df.NAME[j]) * ", " * st
         end
 
-        push!(results, (idx=j, name=df.NAME[j], st=df.ST[j], dist=dist, desc=desc))
+        push!(results, (
+            idx=j,
+            name=String(df.NAME[j]),
+            st=st,
+            dist=dist,
+            bearing=bearing,
+            dir=dir,
+            desc=desc
+        ))
     end
 
     return results

@@ -85,7 +85,7 @@ using Graphs
         @test Set(loc_seq) == Set(1:10)
 
         # Step 9: Convert to plottable lines
-        lx, ly = rte2lines(loc_seq, parents, nodes_conn)
+        lx, ly = Logjam.rte2lines(loc_seq, parents, nodes_conn)
 
         @test length(lx) == length(ly)
         @test length(lx) > 10  # Should have many points (full paths)
@@ -115,3 +115,60 @@ using Graphs
     end
 
 end  # @testset "NC Cities Routing Integration"
+
+@testset "README Example 4 — Visualization Integration" begin
+    using GeoMakie
+
+    # Load and filter NC cities (mirrors README Example 4)
+    cities = filter(r -> (r.STFIP == st2fips(:NC)) && (r.POP > 100_000), usplace())
+    shipments = DataFrame(b = [2, 3, 10, 7, 6], e = [8, 4, 1, 5, 9])
+
+    # Build network
+    nodes_base, links_base = cropnetwork(faf5nodes(), faf5links(), cities.LON, cities.LAT)
+    nodes, links = addconnectors(nodes_base, links_base, cities.LON, cities.LAT)
+    g = links2graph(links)
+    dist_mat, parents = shortestpaths(g, nrow(cities))
+
+    # Solve route
+    cost_fn(r) = rteTC(r, shipments, dist_mat)
+    initial_routes = savings(cost_fn, shipments)
+    final_route, cost = twoopt(initial_routes[1], cost_fn)
+
+    @testset "makemap with data coordinates" begin
+        fig, ax, hborders, limits = makemap(cities.LON, cities.LAT)
+        @test fig isa Figure
+        @test ax isa GeoAxis
+        @test limits isa Tuple
+    end
+
+    @testset "plotroads! returns Dict with tier keys" begin
+        fig, ax = makemap(cities.LON, cities.LAT)
+        handles = plotroads!(ax, links, nodes)
+        @test handles isa Dict{Symbol, Any}
+        @test haskey(handles, :fill_1)  # FAF5 has interstates
+        @test length(handles) >= 2
+    end
+
+    @testset "plotroute! renders route" begin
+        fig, ax = makemap(cities.LON, cities.LAT)
+        plotroads!(ax, links, nodes)
+        route_handles = plotroute!(ax, final_route, shipments, parents, nodes;
+                                   color=:red, linewidth=2.5, show_markers=false)
+        @test length(route_handles) == 1  # line only, no markers
+    end
+
+    @testset "full README Example 4 pipeline" begin
+        fig, ax = makemap(cities.LON, cities.LAT)
+        handles = plotroads!(ax, links, nodes)
+        plotroute!(ax, final_route, shipments, parents, nodes;
+                   color=:red, linewidth=2.5, show_markers=false)
+        scatter!(ax, cities.LON, cities.LAT, color=:blue, markersize=10)
+        text!(ax, cities.LON, cities.LAT, text=cities.NAME;
+              aligntext(cities.LON, cities.LAT)...)
+        ax.title = "Integration Test — README Example 4"
+
+        # Verify figure has content
+        @test length(ax.scene.plots) >= 4  # roads + route + scatter + text
+        @test handles isa Dict{Symbol, Any}
+    end
+end

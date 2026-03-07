@@ -81,7 +81,7 @@ d2([1, 2, 3], [4, 6, 2])  # Returns 6.0
 d2(x₁, x₂) = sqrt(sum((x₁ .- x₂).^2))
 
 """
-    dists(X1, X2, p=2; unit=:mi) -> Matrix{Float64}
+    dists(X1, X2[, p]) -> Matrix{Float64}
 
 Compute distance matrix between two point sets using specified metric.
 
@@ -90,11 +90,10 @@ Compute distance matrix between two point sets using specified metric.
 # Arguments
 - `X1`: m×n matrix of m points in n dimensions
 - `X2`: k×n matrix of k points in n dimensions
-- `p`: Distance metric
+- `p`: Distance metric (default: `2`)
   - `1`: Rectilinear (Manhattan) distance
   - `2`: Euclidean distance (default)
   - `:mi`, `:km`, `:rad`: Great circle distance (requires n=2, lon-lat coordinates)
-- `unit`: Alternative way to specify geographic distance (e.g., `dists(X1, X2; unit=:mi)`)
 
 # Returns
 - `D`: m×k matrix where D[i,j] = distance from X1[i,:] to X2[j,:]
@@ -113,7 +112,7 @@ D = dists(X1, X2, 1)
 cities = [-78.64 35.78; -122.42 37.77]  # Raleigh, SF
 dc = [-77.04 38.91]                      # Washington DC
 D = dists(cities, dc, :mi)               # Statute miles
-D = dists(cities, dc; unit=:km)          # Kilometers (alternative syntax)
+D = dists(cities, dc, :km)               # Kilometers
 ```
 
 See also: [`dgc`](@ref), [`d1`](@ref), [`d2`](@ref)

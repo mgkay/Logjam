@@ -132,7 +132,8 @@ twoopt
 ### Route Visualization
 
 ```@docs
-rte2lines
+plotroute!
+plotroads!
 ```
 
 ## Location Functions

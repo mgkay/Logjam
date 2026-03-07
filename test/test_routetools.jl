@@ -256,7 +256,7 @@ using Graphs
 
         # Simple route: 1 -> 4
         route = [1, 4]
-        lx, ly = rte2lines(route, P, dfN)
+        lx, ly = Logjam.rte2lines(route, P, dfN)
 
         # Should have coordinates for path 1-2-3-4 plus NaN separator
         # Expected: x = [-78, -79, -80, -81, NaN]
@@ -291,7 +291,7 @@ using Graphs
 
         # Route: 1 -> 2 -> 4 (two segments)
         route = [1, 2, 4]
-        lx, ly = rte2lines(route, P, dfN)
+        lx, ly = Logjam.rte2lines(route, P, dfN)
 
         # Should have 2 NaN separators (one per segment)
         @test count(isnan, lx) == 2

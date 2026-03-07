@@ -109,7 +109,7 @@ function osm_roads(bbox::Tuple{Real,Real,Real,Real};
 end
 
 """
-    stitchnetworks(dfN_base, dfL_base, dfN_osm, dfL_osm; tolerance_m=500, fclass_max=3) → (dfN, dfL)
+    stitchnetworks(dfN_base, dfL_base, dfN_osm, dfL_osm; tolerance_m=2000, fclass_max=99) → (dfN, dfL)
 
 Stitch an OSM regional network to an existing combined network (FAF5 or
 FAF5 + prior OSM regions) by creating connector edges between nearby nodes.
@@ -121,9 +121,9 @@ FAF5 + prior OSM regions) by creating connector edges between nearby nodes.
 - `dfL_osm::DataFrame`: Links of the OSM region to attach.
 
 # Keywords
-- `tolerance_m::Real=500`: Maximum connection distance in meters.
-- `fclass_max::Int=3`: Maximum FCLASS on base-network links for eligible
-  connection nodes (default 3 = Principal Arterial and above).
+- `tolerance_m::Real=2000`: Maximum connection distance in meters (~1.2 miles).
+- `fclass_max::Int=99`: Maximum FCLASS on base-network links for eligible
+  connection nodes (default 99 = all road classes).
 
 # Returns
 - `dfN::DataFrame`: Combined nodes (base + OSM + reindexed).
@@ -144,7 +144,7 @@ Requires `LightOSM` and `NearestNeighbors` to be loaded.
 """
 function stitchnetworks(dfN_base::DataFrame, dfL_base::DataFrame,
                         dfN_osm::DataFrame, dfL_osm::DataFrame;
-                        tolerance_m::Real=500, fclass_max::Int=3)
+                        tolerance_m::Real=2000, fclass_max::Int=99)
     if !_osm_available[]
         error("OSM functions require LightOSM and NearestNeighbors. " *
               "Run: using LightOSM, NearestNeighbors, Logjam")
@@ -153,14 +153,29 @@ function stitchnetworks(dfN_base::DataFrame, dfL_base::DataFrame,
                          tolerance_m=tolerance_m, fclass_max=fclass_max)
 end
 
+const _OSM_SNAP_DEG = 0.05
+
+"""
+    _osm_snap_bbox(bbox) → snapped_bbox
+
+Snap bounding box to a fixed grid ($(Logjam._OSM_SNAP_DEG)° steps), rounding
+mins down and maxes up. This ensures nearby queries hit the same cache tile.
+"""
+function _osm_snap_bbox(bbox::Tuple{Real,Real,Real,Real})
+    xmin, xmax, ymin, ymax = bbox
+    s = _OSM_SNAP_DEG
+    return (floor(xmin / s) * s, ceil(xmax / s) * s,
+            floor(ymin / s) * s, ceil(ymax / s) * s)
+end
+
 """
     _osm_cache_path(bbox, cache_dir) → (nodes_path, links_path)
 
-Compute deterministic cache file paths from a bounding box.
-Filenames encode rounded bbox coordinates for human readability.
+Compute deterministic cache file paths from a snapped bounding box.
+Filenames encode the grid-snapped coordinates for human readability.
 """
 function _osm_cache_path(bbox::Tuple{Real,Real,Real,Real}, cache_dir::String)
-    xmin, xmax, ymin, ymax = bbox
+    xmin, xmax, ymin, ymax = _osm_snap_bbox(bbox)
     r(x) = round(x; digits=2)
     tag = "osm_w$(r(xmin))_e$(r(xmax))_s$(r(ymin))_n$(r(ymax))"
     nodes_path = joinpath(cache_dir, tag * "_nodes.csv")
