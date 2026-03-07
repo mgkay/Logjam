@@ -147,19 +147,34 @@ function addconnectors(dfN::DataFrame, dfL::DataFrame, x_prime::Vector, y_prime:
         else
             # Triangulate NF points and extract Delaunay neighbor edges
             nf_pts = collect(zip(Float64.(x_prime), Float64.(y_prime)))
-            tri_nf = triangulate(nf_pts)
-            seen = Set{Tuple{Int,Int}}()
-            for i in 1:n
-                IJ = get_adjacent2vertex(tri_nf, i)
-                idx = collect(reduce(union, [Set(t) for t in IJ]))
-                filter!(j -> j > 0, idx)  # remove ghost vertices
-                for j in idx
-                    edge = minmax(i, j)
-                    if edge ∉ seen
-                        push!(seen, edge)
-                        push!(b_conn, i); push!(e_conn, j)
-                        push!(d_conn, circuity * dgc(nf_pts[i], nf_pts[j]))
+            nf_edges_ok = true
+            try
+                tri_nf = triangulate(nf_pts)
+                seen = Set{Tuple{Int,Int}}()
+                for i in 1:n
+                    IJ = get_adjacent2vertex(tri_nf, i)
+                    idx = collect(reduce(union, [Set(t) for t in IJ]))
+                    filter!(j -> j > 0, idx)  # remove ghost vertices
+                    for j in idx
+                        edge = minmax(i, j)
+                        if edge ∉ seen
+                            push!(seen, edge)
+                            push!(b_conn, i); push!(e_conn, j)
+                            push!(d_conn, circuity * dgc(nf_pts[i], nf_pts[j]))
+                        end
                     end
+                end
+            catch
+                nf_edges_ok = false
+            end
+            if !nf_edges_ok
+                # Fallback for degenerate cases (e.g., collinear points):
+                # sort by distance from first point and connect as a chain
+                order = sortperm([dgc(nf_pts[1], nf_pts[i]) for i in 1:n])
+                for k in 1:(length(order)-1)
+                    i, j = order[k], order[k+1]
+                    push!(b_conn, i); push!(e_conn, j)
+                    push!(d_conn, circuity * dgc(nf_pts[i], nf_pts[j]))
                 end
             end
         end
