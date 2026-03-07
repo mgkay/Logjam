@@ -277,6 +277,10 @@ while preserving connectivity and total distance.
 
 # Example
 ```julia
+# Load and crop network for a small region
+dfN, dfL = faf5nodes(), faf5links()
+dfN, dfL = cropnetwork(dfN, dfL, [-79.5, -78.5], [35.5, 36.0])
+
 # Simple thinning (distance only)
 dfN_thin, dfL_thin = thin(dfN, dfL)
 
@@ -896,9 +900,10 @@ nodes, links = cropnetwork(nodes, links, [-79.0, -78.0], [35.5, 36.0])
 locs_lon, locs_lat = [-78.5, -78.7, -78.3], [35.7, 35.8, 35.6]
 nodes, links = addconnectors(nodes, links, locs_lon, locs_lat)
 
-# Build graph and weight matrix
+# Build graph and explicit weight matrix
 g = links2graph(links)
-weights = sparse(links.SRC, links.DST, links.DIST, nv(g), nv(g))
+n = Graphs.nv(g)
+weights = sparse(links.SRC, links.DST, links.DIST, n, n)
 weights = weights + weights'  # Make symmetric
 
 # Compute paths from the 3 demand points
@@ -976,9 +981,14 @@ node sequence.  Throws an `ArgumentError` if `dest` is unreachable from `origin`
 
 # Example
 ```julia
-g  = links2graph(dfL; weight=:DIST)
+using Graphs
+
+# Build a small network graph
+dfN, dfL = faf5nodes(), faf5links()
+dfN, dfL = cropnetwork(dfN, dfL, [-79.5, -78.5], [35.5, 36.0])
+g = links2graph(dfL)
 ds = Graphs.dijkstra_shortest_paths(g, 1)
-path = tracepath(ds.parents, 1, 42)   # [1, 5, 12, 42]
+path = tracepath(ds.parents, 1, 5)
 ```
 """
 function tracepath(parents::Vector{Int}, origin::Int, dest::Int)

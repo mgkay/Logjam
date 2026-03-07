@@ -281,7 +281,10 @@ totlogcost(5.0, 450.0, 100.0, 0.5, 1000.0, 0.25)
 # Returns: TC = 9000, IC = 625, TLC = 9625
 
 # Using aggshmt output
+using DataFrames
+products = DataFrame(f=[100, 200], s=[8, 10], v=[1000, 1500], h=[0.25, 0.25], a=[0.5, 0.5])
 agg = aggshmt(products)
+q, d = 2.0, 300.0
 c = charge_ltl(q, d, agg.s)
 totlogcost(q, c, agg)
 ```

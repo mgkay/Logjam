@@ -51,7 +51,7 @@ using DataFrames
 locs = [-78.6 35.8; -80.8 35.2; -79.0 36.1; -77.5 35.5; -81.0 35.0; -78.0 36.0]
 
 # Create cost matrix using great circle distances
-C = Dgc(locs, locs)
+C = dists(locs, locs, :mi)
 
 # Define 3 shipments: pickup at locs 1,2,3 and deliver to locs 4,5,6
 sh = DataFrame(b=[1, 2, 3], e=[4, 5, 6])
@@ -200,7 +200,7 @@ using DataFrames
 
 # Define locations and cost matrix
 locs = [-78.6 35.8; -80.8 35.2; -79.0 36.1; -77.5 35.5]
-C = Dgc(locs, locs)
+C = dists(locs, locs, :mi)
 
 # Define 2 shipments
 sh = DataFrame(b=[1, 3], e=[2, 4])
@@ -250,7 +250,7 @@ using DataFrames
 
 # Define locations and cost matrix
 locs = [-78.6 35.8; -80.8 35.2; -79.0 36.1; -77.5 35.5]
-C = Dgc(locs, locs)
+C = dists(locs, locs, :mi)
 
 # Define 2 shipments
 sh = DataFrame(b=[1, 3], e=[2, 4])
@@ -311,7 +311,7 @@ using DataFrames
 locs = [-78.6 35.8; -80.8 35.2; -79.0 36.1; -77.5 35.5]  # 4 locations
 
 # Create cost matrix using great circle distances
-C = Dgc(locs, locs)
+C = dists(locs, locs, :mi)
 
 # Define 2 shipments: pickup at loc 1 deliver to loc 2, pickup at loc 3 deliver to loc 4
 sh = DataFrame(b=[1, 3], e=[2, 4])

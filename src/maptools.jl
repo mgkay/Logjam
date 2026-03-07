@@ -121,13 +121,10 @@ The map can focus on different predefined regions (the world, U.S., or continent
 # Examples
 ```julia-repl
 # Create a world map using CairoMakie
-fig, ax = makemap()
-display(fig)
+fig, ax, hborders, limits = makemap()
 
-# Create a U.S. map with GLMakie backend (requires `using GLMakie` first)
-using GLMakie
-fig, ax, hborders = makemap(region=:US, backend=:GLMakie)
-display(fig)
+# Create a U.S. map
+fig, ax, hborders, limits = makemap(region=:US)
 
 # Create a map focused on a specific region with expanded limits
 using GeoMakie   # Required for scatter! function
@@ -135,8 +132,7 @@ x = [-84.0, -83.0, -82.0]
 y = [41.0, 42.0, 43.0]
 fig, ax, hborders, limits = makemap(x, y)
 scatter!(ax, x, y, markersize=12, color=:red)
-println(limits)
-display(fig)
+fig
 ```
 """
 function makemap(x::Union{Nothing, AbstractVector{<:Real}, NTuple{2, <:Real}} = nothing,
@@ -593,6 +589,8 @@ vector of coordinates per hub, enabling per-hub formatting (e.g., different colo
 
 # Example
 ```julia
+using GeoMakie
+
 k = [100.0, 100.0, 150.0]
 C = [0 3 7 10; 3 0 4 8; 7 4 0 5]
 y, TC, W = ufl(k, C; verbose=false)
@@ -602,14 +600,14 @@ spokes = [-80.5 35.2; -78.5 35.8; -79.2 36.1; -78.0 35.0]
 
 X, Y = alloclines(W, hubs, spokes)
 
-# Per-hub coloring
-colors = [:red, :blue, :green]
+# Plot with makemap
+all_lon = vcat(hubs[:, 1], spokes[:, 1])
+all_lat = vcat(hubs[:, 2], spokes[:, 2])
+fig, ax = makemap(all_lon, all_lat)
 for i in eachindex(X)
-    lines!(ax, X[i], Y[i], color=colors[i])
+    lines!(ax, X[i], Y[i], color=[:red, :blue, :green][i])
 end
-
-# Or single-shot plotting (concatenate all hubs)
-lines!(ax, reduce(vcat, X), reduce(vcat, Y))
+fig
 ```
 """
 function alloclines(W::AbstractMatrix, hub_xy::AbstractMatrix, spoke_xy::AbstractMatrix;
@@ -675,7 +673,7 @@ background beneath overlaid data.
 
 # Examples
 ```julia
-using Logjam, GeoMakie
+using GeoMakie
 
 # Basic FAF5 plot
 dfL, dfN = faf5links(), faf5nodes()
