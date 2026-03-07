@@ -851,4 +851,49 @@ using SimpleWeightedGraphs
         @test tracepath(parents_disc, 1, 2) == [1, 2]
     end
 
+    @testset "dists - edge cases" begin
+        # Single point vs single point
+        X1 = [0.0 0.0]
+        X2 = [3.0 4.0]
+        D = dists(X1, X2)
+        @test D[1,1] ≈ 5.0
+
+        # Distance to self is zero
+        X = [1.0 2.0; 3.0 4.0]
+        D = dists(X, X)
+        @test D[1,1] ≈ 0.0
+        @test D[2,2] ≈ 0.0
+
+        # Geographic distance symmetry
+        cities = [-78.64 35.78; -122.42 37.77]
+        D = dists(cities, cities, :mi)
+        @test D[1,2] ≈ D[2,1] atol=0.1
+
+        # Invalid integer metric
+        @test_throws ErrorException dists(X1, X2, 3)
+
+        # Invalid symbol metric
+        @test_throws ErrorException dists(X1, X2, :invalid)
+    end
+
+    @testset "thin - keep_index merge log validation" begin
+        # 5-node chain: 1-2-3-4-5 (nodes 2,3,4 are degree-2)
+        dfN = DataFrame(IDX = 1:5, LON = [-78.0, -78.5, -79.0, -79.5, -80.0],
+                        LAT = [35.0, 35.0, 35.0, 35.0, 35.0])
+        dfL = DataFrame(SRC = [1, 2, 3, 4], DST = [2, 3, 4, 5],
+                        DIST = [10.0, 15.0, 12.0, 8.0])
+
+        dfN_thin, dfL_thin, merge_log = thin(dfN, dfL; keep_index=true)
+
+        # Should collapse to single link 1→5
+        @test nrow(dfL_thin) == 1
+
+        # Merge log should map new link to all 4 original links
+        @test length(merge_log) == 1
+        @test sort(merge_log[1]) == [1, 2, 3, 4]
+
+        # Total distance preserved
+        @test sum(dfL_thin[:, :DIST]) ≈ sum(dfL[:, :DIST])
+    end
+
 end  # @testset "RoadTools"

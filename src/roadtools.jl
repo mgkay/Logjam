@@ -679,6 +679,11 @@ Convert a links DataFrame to a directed weighted graph, with optional auto-reind
 This method can reindex sparse or non-sequential node IDs to avoid creating very
 large graphs with many unused vertices.
 
+**Note:** When `reindex=:auto` triggers reindexing, a warning is emitted:
+"links2graph reindexed node IDs. Pass return_map=true to get the ID mapping."
+Use `return_map=true` to retrieve the old↔new ID mappings, or `reindex=false`
+to suppress reindexing (requires integer IDs).
+
 # Arguments
 - `dfL`: Links DataFrame with columns [SRC, DST, weight_col, ...].
 - `weight`, `ab_weight`, `ba_weight`, `dir_col`, `oneway_val`: Same as core graph conversion.
