@@ -11,7 +11,9 @@ Logjam is a Julia package for logistics engineering, providing tools for:
 * **Vehicle Routing**: Algorithms for multi-stop route optimization, featuring savings-based construction and local search improvement methods.
 * **Spatial Data**: A gazetteer of U.S. administrative boundaries and points, including Cities, Counties, ZIP codes (3- and 5-digit), Census tracts, and CBSA/CSA definitions.
 * **Distance Metrics**: Unified distance calculation utilities supporting Rectilinear (*L*₁), Euclidean (*L*₂), and Great Circle (Haversine) metrics.
+* **Plotting**: Network visualization (`plotnetwork`) and display helpers (`dcf`) via CairoMakie extension.
 * **Mapping**: Plotting recipes and helper functions for mapping spatial data using GeoMakie.
+* **Data Helpers**: Matrix-to-DataFrame conversion (`mat2df`), formatted printing (`prt`), floating-point snapping (`snapvals`), binary index extraction (`binidx`), and graph–matrix interconversion (`adj2graph`, `graph2mat`).
 
 ## Installation
 
@@ -24,19 +26,15 @@ Pkg.add(url="https://github.com/mgkay/Logjam.git")
 
 ## Dependencies
 
-Logjam uses CairoMakie by default for rendering maps. For interactive display with GLMakie, load it before calling `makemap`:
+Logjam uses Julia package extensions to keep its core lightweight. Features activate automatically when you load the corresponding packages:
 
-```julia
-using GLMakie  # Optional: enables backend=:GLMakie
-using Logjam
-```
-
-For OpenStreetMap road network functionality (`osm_roads`, `stitchnetworks`), load the OSM extension packages before Logjam. The extension activates automatically when both are present:
-
-```julia
-using LightOSM, NearestNeighbors  # Optional: enables OSM functions
-using Logjam
-```
+| Import | What it enables |
+|--------|----------------|
+| `using Logjam` | Core: facility location, transportation costing, distance metrics, road networks, routing, spatial data, data helpers (`mat2df`, `prt`, `snapvals`, `binidx`, `adj2graph`, `graph2mat`). |
+| `using Logjam, CairoMakie` | Adds plotting: `dcf` (display current figure), `plotnetwork` (network diagrams). |
+| `using Logjam, CairoMakie, GeoMakie` | Adds mapping: `makemap`, `plotroads!`, `plotroute!`, `aligntext`. |
+| `using GLMakie` (before Logjam) | Enables interactive map display via `backend=:GLMakie`. |
+| `using LightOSM, NearestNeighbors` (before Logjam) | Enables OSM road network functions (`osm_roads`, `stitchnetworks`). |
 
 ## Worked Examples
 
@@ -105,7 +103,7 @@ Logjam's `makemap` function creates GeoMakie map figures with automatic projecti
 
 ```julia
 using Logjam
-using GeoMakie, CairoMakie, DataFrames
+using CairoMakie, GeoMakie, DataFrames
 
 # Load NC cities with population > 100,000
 cities = filter(r -> r.STFIP == st2fips(:NC) && r.POP > 100_000, usplace())
@@ -123,7 +121,7 @@ hborders[1].color[] = (:steelblue, 0.5)
 scatter!(ax, x, y, color=:red, markersize=12)
 text!(ax, x, y, text=name; aligntext(x, y)...)
 
-display(fig)
+dcf()
 ```
 
 ![NC Cities Plot](docs/assets/nc_cities_plot.png)
@@ -138,7 +136,7 @@ A classic strategic logistics problem: place a fixed number of distribution hubs
 
 ```julia
 using Logjam
-using GeoMakie, CairoMakie, DataFrames
+using CairoMakie, GeoMakie, DataFrames
 
 # Load continental US 3-digit ZIP code centroids
 z3 = filter(r -> r.ISCUS, uszcta3())
@@ -169,7 +167,7 @@ scatter!(ax, hub_xy[:, 1], hub_xy[:, 2], color=colors, markersize=18,
 text!(ax, hub_xy[:, 1], hub_xy[:, 2], text=hubs.name; aligntext(hub_xy[:, 1], hub_xy[:, 2])...)
 
 ax.title = "Optimal Facility Locations (P-Median)\nSelected from 3-Digit ZIP Code Centroids (Population-Weighted)"
-display(fig)
+dcf()
 ```
 
 ![Facility Location Plot](docs/assets/facloc_pmedian_plot.png)
@@ -186,7 +184,7 @@ A pickup and delivery problem (PDP) is a routing problem where each shipment has
 
 ```julia
 using Logjam
-using GeoMakie, CairoMakie, DataFrames
+using CairoMakie, GeoMakie, DataFrames
 
 # Load NC cities with population > 100,000
 cities = filter(r -> r.STFIP == st2fips(:NC) && r.POP > 100_000, usplace())
@@ -244,7 +242,7 @@ scatter!(ax, cities.LON, cities.LAT, color=:blue, markersize=10)
 text!(ax, cities.LON, cities.LAT, text=cities.NAME; aligntext(cities.LON, cities.LAT)...)
 
 ax.title = "Multi-Stop PDP: Savings + 2-Opt\n(5 Shipments, 10 NC Cities, FAF5 Network)"
-display(fig)
+dcf()
 ```
 
 ![NC Routing Plot](docs/assets/nc_routing_plot.png)
@@ -262,7 +260,7 @@ The `osm_roads` function downloads a local OpenStreetMap road network and integr
 ```julia
 using LightOSM, NearestNeighbors  # Must precede Logjam to activate OSM extension
 using Logjam
-using GeoMakie, CairoMakie, DataFrames
+using CairoMakie, GeoMakie, DataFrames
 
 # Stop coordinates: stop 1 = depot (UF campus), stops 2–10 = deliveries
 stops_lon = [-82.340, -82.360, -82.355, -82.348, -82.305, -82.298, -82.315, -82.340, -82.325, -82.350]
@@ -297,7 +295,7 @@ scatter!(ax, [stops_lon[1]], [stops_lat[1]], color=:green, markersize=16, marker
 text!(ax, [stops_lon[1]], [stops_lat[1]], text=["Depot"]; aligntext([stops_lon[1]], [stops_lat[1]])...)
 
 ax.title = "Multi-Vehicle VRP: Savings + 2-Opt\n(9 Deliveries, 3 Vehicles, Gainesville FL)"
-display(fig)
+dcf()
 ```
 
 ![Gainesville VRP Plot](docs/assets/gnv_osm_vrp_plot.png)
