@@ -156,7 +156,10 @@ export osm_roads, stitchnetworks
 
 # Export routing functions
 export segcost, rteTC, isorigin, rte2loc
-export twoopt, mincostinsert, pairwisesavings, savings
+export twoopt, savings
+
+# Public API (accessible as Logjam.func, not auto-imported into namespace)
+public mincostinsert, pairwisesavings, rte2lines
 
 # Include component files
 include("loctools.jl")
