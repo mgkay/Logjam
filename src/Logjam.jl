@@ -96,6 +96,7 @@ using Serialization
 using DataFrames
 using CSV
 using GeoMakie, CairoMakie
+using PrettyTables
 using DelaunayTriangulation
 using Graphs
 using SimpleWeightedGraphs
@@ -123,13 +124,18 @@ export uscbsa, uscsa, st2fips, fips2st
 export faf5nodes, faf5links, faf5interstate
 export name2lonlat, lonlat2name
 
+# Export data helper functions (H1–H4) and relocated functions
+export mat2df, prt, snapvals, binidx
+export isptinbbox, alloclines
+
 # Export map functions and constants
-export makemap, mapbbox, aligntext, isptinbbox, alloclines, plotroads!, plotroute!
+export makemap, mapbbox, aligntext, plotroads!, plotroute!
 export WORLD_LIMITS, US_LIMITS, CUS_LIMITS
 
-# Export road network functions
+# Export road network functions (including H5–H6)
 export dgc, d1, d2, dists, prune_reindex, thin, addconnectors
 export links2graph, x2ln, cropnetwork, shortestpaths, tracepath
+export adj2graph, graph2mat
 
 # Export OSM functions (require LightOSM + NearestNeighbors extension)
 export osm_roads, stitchnetworks

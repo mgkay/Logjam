@@ -590,3 +590,357 @@ function lonlat2name(XY, df::DataFrame; threshold=4.0)
 
     return results
 end
+
+# =============================================================================
+# Helper Functions (H1–H4)
+# =============================================================================
+
+"""
+    mat2df(X::AbstractMatrix, cols::AbstractVector; rows=nothing) -> DataFrame
+
+Convert a matrix to a labeled DataFrame.
+
+# Arguments
+- `X`: Matrix of values.
+- `cols`: Column names (length must equal `size(X, 2)`).
+- `rows`: Optional row labels. If provided (length must equal `size(X, 1)`),
+  inserted as the first column with name `:Row`.
+
+# Example
+```jldoctest
+julia> mat2df([1 2; 3 4], ["A", "B"])
+2×2 DataFrame
+ Row │ A      B
+     │ Int64  Int64
+─────┼──────────────
+   1 │     1      2
+   2 │     3      4
+
+julia> mat2df([1 2; 3 4], ["A", "B"]; rows=["r1", "r2"])
+2×3 DataFrame
+ Row │ Row     A      B
+     │ String  Int64  Int64
+─────┼──────────────────────
+   1 │ r1          1      2
+   2 │ r2          3      4
+```
+"""
+function mat2df(X::AbstractMatrix, cols::AbstractVector; rows::Union{Nothing, AbstractVector}=nothing)
+    if length(cols) != size(X, 2)
+        throw(ArgumentError("length(cols) = $(length(cols)) must equal size(X, 2) = $(size(X, 2))"))
+    end
+    if rows !== nothing && length(rows) != size(X, 1)
+        throw(ArgumentError("length(rows) = $(length(rows)) must equal size(X, 1) = $(size(X, 1))"))
+    end
+    df = DataFrame(X, Symbol.(cols))
+    if rows !== nothing
+        insertcols!(df, 1, :Row => rows)
+    end
+    return df
+end
+
+"""
+    prt(X; rows, cols, title, fracdig, allfrac)
+
+Pretty-print a matrix, vector, or DataFrame with smart formatting.
+
+Uses PrettyTables.jl for formatted display. For matrices, applies smart per-column
+digit detection inspired by MATLOG's `mdisp`: integer columns show 0 decimal places,
+all-fractional columns (all values < 1) show `allfrac` decimal places, and mixed
+columns show `fracdig` decimal places. NaN values display as blank. Numbers ≥ 1,000
+include comma separators.
+
+# Matrix method
+    prt(X::AbstractMatrix; rows=1:size(X,1), cols=1:size(X,2), title="", fracdig=2, allfrac=4)
+
+# Vector method
+    prt(v::AbstractVector; rows=1:length(v), title="")
+
+# DataFrame method
+    prt(df::DataFrame; title="")
+
+# Example
+```julia
+julia> prt([1000 0.1234; 2000 0.5678])
+──── ──── ────────
+   1    2
+──── ──── ────────
+  1  1,000   0.1234
+  2  2,000   0.5678
+──── ──── ────────
+```
+"""
+function prt(X::AbstractMatrix; rows=1:size(X, 1), cols=1:size(X, 2),
+             title::AbstractString="", fracdig::Int=2, allfrac::Int=4)
+    m, n = size(X)
+    if m == 0 || n == 0
+        println("Empty matrix")
+        return
+    end
+
+    # Smart per-column formatting
+    fmts = Vector{Function}(undef, n)
+    for j in 1:n
+        col_vals = X[:, j]
+        real_vals = filter(v -> !isnan(v) && !isinf(v), col_vals)
+
+        if isempty(real_vals)
+            ndig = fracdig
+        elseif all(v -> v == round(v), real_vals)
+            ndig = 0
+        elseif all(v -> abs(v) < 1, real_vals)
+            ndig = allfrac
+        else
+            ndig = fracdig
+        end
+
+        fmts[j] = (v, i, j2) -> begin
+            v isa Real || return string(v)
+            if isnan(v)
+                return ""
+            elseif isinf(v)
+                return string(v)
+            else
+                # Format with appropriate decimal places
+                rounded = round(v, digits=ndig)
+                if ndig == 0
+                    intval = round(Int64, rounded)
+                    # Add comma separators
+                    s = _commasep(intval)
+                else
+                    # Format with fixed decimal places
+                    s = _formatfixed(rounded, ndig)
+                end
+                return s
+            end
+        end
+    end
+
+    # Build formatter vector
+    formatter = fmts
+
+    # Display
+    col_labels = string.(cols)
+    row_lbls = string.(rows)
+    tfmt = TextTableFormat(borders=text_table_borders__compact)
+
+    if isempty(title)
+        pretty_table(X; column_labels=col_labels, row_labels=row_lbls,
+                     formatters=formatter, alignment=:r,
+                     table_format=tfmt, row_label_column_alignment=:r)
+    else
+        pretty_table(X; column_labels=col_labels, row_labels=row_lbls,
+                     formatters=formatter, alignment=:r,
+                     table_format=tfmt, row_label_column_alignment=:r,
+                     title=title)
+    end
+end
+
+function prt(v::AbstractVector; rows=1:length(v), title::AbstractString="")
+    prt(reshape(v, :, 1); rows=rows, cols=[""], title=title)
+end
+
+function prt(df::DataFrame; title::AbstractString="")
+    tfmt = TextTableFormat(borders=text_table_borders__compact)
+    if isempty(title)
+        pretty_table(df; table_format=tfmt, alignment=:r)
+    else
+        pretty_table(df; table_format=tfmt, alignment=:r, title=title)
+    end
+end
+
+# Internal: comma-separate an integer
+function _commasep(n::Integer)
+    s = string(abs(n))
+    parts = String[]
+    while length(s) > 3
+        push!(parts, s[end-2:end])
+        s = s[1:end-3]
+    end
+    push!(parts, s)
+    result = join(reverse(parts), ",")
+    return n < 0 ? "-" * result : result
+end
+
+# Internal: format with fixed decimal places and comma separators
+function _formatfixed(v::Real, ndig::Int)
+    intpart = trunc(Int64, v)
+    fracpart = abs(v - intpart)
+    fracstr = string(round(fracpart, digits=ndig))[2:end]  # ".xxxx"
+    # Pad fractional part if needed
+    while length(fracstr) - 1 < ndig
+        fracstr *= "0"
+    end
+    # Truncate if too long
+    fracstr = fracstr[1:min(ndig+1, length(fracstr))]
+    return _commasep(intpart) * fracstr
+end
+
+"""
+    snapvals(x; atol=1e-8) -> Array
+    snapvals(x, n, m; atol=1e-8) -> Matrix
+
+Snap near-integer and near-zero floating-point values in an array.
+
+Designed for post-processing mathematical programming solutions where solvers
+introduce small numerical artifacts (e.g., 2.9999999997 instead of 3, or
+1.2e-12 instead of 0). Each element is rounded to the nearest integer if within
+`atol`, and values that round to zero are set to exactly `0.0`.
+
+**Caveat:** Snapping may cause constraint violations in some models. When snapped
+values are used in further computation, verify feasibility — particularly for
+models with big-M constraints where rounding a near-zero binary variable to 0
+can violate the associated constraint by a large amount.
+
+# Arguments
+- `x`: Array of numeric values (typically from `value.(x)` after JuMP solve).
+- `n`, `m`: Optional dimensions for reshaping the result.
+- `atol`: Tolerance for snapping (default: `1e-8`).
+
+# Example
+```jldoctest
+julia> snapvals([2.9999999997, 1e-12, 0.5])
+3-element Vector{Float64}:
+ 3.0
+ 0.0
+ 0.5
+
+julia> snapvals([1.0, 2.0, 3.0, 4.0], 2, 2)
+2×2 Matrix{Float64}:
+ 1.0  3.0
+ 2.0  4.0
+```
+"""
+function snapvals(x; atol::Real=1e-8)
+    arr = Array(x)
+    return map(arr) do v
+        r = round(v)
+        y = isapprox(v, r; atol=atol) ? r : v
+        iszero(y) ? 0.0 : Float64(y)
+    end
+end
+
+function snapvals(x, n::Int, m::Int; atol::Real=1e-8)
+    return reshape(snapvals(x; atol=atol), n, m)
+end
+
+"""
+    binidx(x; tol=0.5) -> Array
+
+Extract indices where values exceed a threshold.
+
+Designed for identifying selected binary decision variables in optimization
+solutions. Returns integer indices for vectors, `CartesianIndex` for matrices.
+
+# Arguments
+- `x`: Array of numeric values (typically binary variable solution values).
+- `tol`: Threshold value (default: `0.5`). Returns indices where `x .> tol`.
+
+# Example
+```jldoctest
+julia> binidx([0.0, 1.0, 0.0, 1.0])
+2-element Vector{Int64}:
+ 2
+ 4
+
+julia> binidx([0 1; 1 0])
+2-element Vector{CartesianIndex{2}}:
+ CartesianIndex(2, 1)
+ CartesianIndex(1, 2)
+```
+"""
+function binidx(x::AbstractArray; tol::Real=0.5)
+    return findall(x .> tol)
+end
+
+# =============================================================================
+# Relocated Functions (from MapTools — pure computation, no plotting dependency)
+# =============================================================================
+
+"""
+    isptinbbox(pt, bbox::Tuple{Union{Tuple{<:Real, <:Real}, AbstractVector{<:Real}},
+                               Union{Tuple{<:Real, <:Real}, AbstractVector{<:Real}}}) -> Bool
+
+Determines whether a given point lies within a specified bounding box.
+
+# Arguments
+- `pt`: A tuple or vector of exactly two elements representing the coordinates of the point `(x, y)`.
+- `bbox`: A tuple of two tuples or arrays, each containing two elements representing the bounding box. The first tuple/array defines the x-limits `(xmin, xmax)` and the second tuple/array defines the y-limits `(ymin, ymax)`.
+
+# Returns
+- A `Bool` value:
+  - `true` if the point `pt` lies within the bounding box `bbox`.
+  - `false` otherwise.
+
+# Example
+```jldoctest
+julia> bbox = ((0, 10), (0, 15));
+
+julia> isptinbbox((5, 10), bbox)  # inside
+true
+
+julia> isptinbbox((15, 10), bbox)  # outside
+false
+```
+"""
+function isptinbbox(pt, bbox::Tuple{Union{Tuple{<:Real, <:Real}, AbstractVector{<:Real}},
+                                    Union{Tuple{<:Real, <:Real}, AbstractVector{<:Real}}})
+    if !(pt isa Tuple || pt isa AbstractVector) || length(pt) != 2
+        throw(ArgumentError("The point 'pt' must be a tuple or vector with exactly two elements (x, y)."))
+    end
+    return (pt[1] >= bbox[1][1] && pt[1] <= bbox[1][2] &&
+    pt[2] >= bbox[2][1] && pt[2] <= bbox[2][2])
+end
+
+"""
+    alloclines(W, hub_xy, spoke_xy; tol=sqrt(eps())) -> (X, Y)
+
+Convert allocation matrix to NaN-separated line segments for visualization.
+
+Creates line segments connecting hubs to their allocated spokes. Returns one
+vector of coordinates per hub, enabling per-hub formatting (e.g., different colors).
+
+# Arguments
+- `W`: n×m allocation matrix where W[i,j] indicates allocation weight from hub i to spoke j.
+- `hub_xy`: n×2 matrix of hub coordinates [lon, lat] or [x, y].
+- `spoke_xy`: m×2 matrix of spoke coordinates [lon, lat] or [x, y].
+- `tol`: Threshold for nonzero allocation (default: √eps ≈ 1.5e-8).
+
+# Returns
+- `(X, Y)`: Tuple of `Vector{Vector{Float64}}`, each of length n (one per hub).
+  `X[i]` and `Y[i]` contain NaN-separated coordinates for hub i's allocation lines.
+
+# Example
+```julia
+k = [100.0, 100.0, 150.0]
+C = [0 3 7 10; 3 0 4 8; 7 4 0 5]
+y, TC, W = ufl(k, C; verbose=false)
+
+hubs = [-80.0 35.0; -78.0 36.0; -79.0 35.5]
+spokes = [-80.5 35.2; -78.5 35.8; -79.2 36.1; -78.0 35.0]
+
+X, Y = alloclines(W, hubs, spokes)
+```
+"""
+function alloclines(W::AbstractMatrix, hub_xy::AbstractMatrix, spoke_xy::AbstractMatrix;
+                    tol::Real=sqrt(eps(Float64)))
+    n, m = size(W)
+    size(hub_xy, 1) == n || throw(ArgumentError("hub_xy must have $n rows to match W"))
+    size(spoke_xy, 1) == m || throw(ArgumentError("spoke_xy must have $m rows to match W"))
+    size(hub_xy, 2) == 2 || throw(ArgumentError("hub_xy must be an n×2 matrix"))
+    size(spoke_xy, 2) == 2 || throw(ArgumentError("spoke_xy must be an m×2 matrix"))
+
+    X = [Float64[] for _ in 1:n]
+    Y = [Float64[] for _ in 1:n]
+
+    for i in 1:n
+        for j in 1:m
+            if abs(W[i, j]) > tol
+                append!(X[i], [hub_xy[i, 1], spoke_xy[j, 1], NaN])
+                append!(Y[i], [hub_xy[i, 2], spoke_xy[j, 2], NaN])
+            end
+        end
+    end
+
+    return X, Y
+end

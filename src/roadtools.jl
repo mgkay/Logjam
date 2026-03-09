@@ -1009,3 +1009,72 @@ function tracepath(parents::Vector{Int}, origin::Int, dest::Int)
     return reverse!(path)
 end
 
+# =============================================================================
+# Graph Conversion Helpers (H5–H6)
+# =============================================================================
+
+"""
+    adj2graph(C::AbstractMatrix; directed=true) -> SimpleWeightedDiGraph
+
+Construct a `SimpleWeightedDiGraph` from an adjacency/cost matrix.
+
+Complements `links2graph` (which works from DataFrames). Designed for
+textbook-scale network problems where students work with adjacency matrices.
+
+# Arguments
+- `C`: Square adjacency/cost matrix. `C[i,j]` is the weight of edge i→j.
+  Zero entries indicate no edge.
+- `directed`: If `true` (default), each nonzero `C[i,j]` creates one directed
+  edge i→j. If `false`, each nonzero entry creates edges in both directions
+  with the same weight.
+
+# Example
+```jldoctest
+julia> g = adj2graph([0 5; 3 0]);
+
+julia> Graphs.ne(g)
+2
+
+julia> Graphs.weights(g)[1,2]
+5.0
+```
+"""
+function adj2graph(C::AbstractMatrix; directed::Bool=true)
+    size(C, 1) == size(C, 2) || throw(ArgumentError("Matrix must be square, got $(size(C))"))
+    n = size(C, 1)
+    g = SimpleWeightedDiGraph(n)
+    for i in 1:n
+        for j in 1:n
+            if C[i, j] != 0
+                Graphs.add_edge!(g, i, j, Float64(C[i, j]))
+                if !directed && C[j, i] == 0
+                    Graphs.add_edge!(g, j, i, Float64(C[i, j]))
+                end
+            end
+        end
+    end
+    return g
+end
+
+"""
+    graph2mat(g::AbstractSimpleWeightedGraph) -> Matrix{Float64}
+
+Convert a weighted graph to a dense adjacency matrix.
+
+Inverse of `adj2graph`. Returns an n×n dense matrix where entry `[i,j]`
+is the weight of edge i→j (0 if no edge exists).
+
+# Example
+```jldoctest
+julia> g = adj2graph([0 5; 3 0]);
+
+julia> graph2mat(g)
+2×2 Matrix{Float64}:
+ 0.0  5.0
+ 3.0  0.0
+```
+"""
+function graph2mat(g::AbstractSimpleWeightedGraph)
+    return Matrix(Graphs.weights(g))
+end
+

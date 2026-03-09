@@ -184,3 +184,162 @@ end
     # --- Invalid input ---
     @test_throws ArgumentError lonlat2name([1.0, 2.0, 3.0], cities)
 end
+
+# ─── H1: mat2df ───────────────────────────────────────────────────
+@testset "mat2df" begin
+    @testset "basic conversion" begin
+        df = mat2df([1 2; 3 4], ["A", "B"])
+        @test isa(df, DataFrame)
+        @test names(df) == ["A", "B"]
+        @test df.A == [1, 3]
+        @test df.B == [2, 4]
+    end
+
+    @testset "with row labels" begin
+        df = mat2df([1 2; 3 4], ["A", "B"]; rows=["r1", "r2"])
+        @test names(df) == ["Row", "A", "B"]
+        @test df.Row == ["r1", "r2"]
+    end
+
+    @testset "single-element matrix" begin
+        df = mat2df(reshape([42], 1, 1), ["X"])
+        @test size(df) == (1, 1)
+        @test df.X[1] == 42
+    end
+
+    @testset "mismatched cols" begin
+        @test_throws ArgumentError mat2df([1 2; 3 4], ["A"])
+    end
+
+    @testset "mismatched rows" begin
+        @test_throws ArgumentError mat2df([1 2; 3 4], ["A", "B"]; rows=["r1"])
+    end
+end
+
+# ─── H2: prt ──────────────────────────────────────────────────────
+@testset "prt" begin
+    @testset "integer matrix" begin
+        # Should not error; output goes to stdout
+        prt([1 2; 3 4])
+    end
+
+    @testset "fractional matrix" begin
+        prt([0.1234 0.5678; 0.9012 0.3456])
+    end
+
+    @testset "mixed matrix with commas" begin
+        prt([1.5 2000.75; 3.0 4500.25])
+    end
+
+    @testset "custom headers" begin
+        prt([1.0 2.0; 3.0 4.0]; rows=["W1", "W2"], cols=["C1", "C2"])
+    end
+
+    @testset "NaN handling" begin
+        prt([1.0 NaN; 3.0 4.0])
+    end
+
+    @testset "vector method" begin
+        prt([1, 2, 3])
+    end
+
+    @testset "DataFrame method" begin
+        df = DataFrame(A=[1, 2], B=[3.14, 2.72])
+        prt(df)
+    end
+
+    @testset "empty matrix" begin
+        prt(Matrix{Float64}(undef, 0, 0))
+    end
+
+    @testset "title keyword" begin
+        prt([1 2; 3 4]; title="Test Title")
+    end
+end
+
+# ─── H3: snapvals ────────────────────────────────────────────────
+@testset "snapvals" begin
+    @testset "near-integer snapping" begin
+        result = snapvals([2.9999999997, 1.0000000003, 0.5])
+        @test result ≈ [3.0, 1.0, 0.5]
+    end
+
+    @testset "near-zero snapping" begin
+        result = snapvals([1e-12, -1e-12, 0.5])
+        @test result ≈ [0.0, 0.0, 0.5]
+    end
+
+    @testset "reshape method" begin
+        result = snapvals([1.0, 2.0, 3.0, 4.0], 2, 2)
+        @test size(result) == (2, 2)
+        @test result == [1.0 3.0; 2.0 4.0]
+    end
+
+    @testset "custom tolerance" begin
+        result = snapvals([1.1]; atol=0.2)
+        @test result ≈ [1.0]
+    end
+
+    @testset "empty array" begin
+        result = snapvals(Float64[])
+        @test isempty(result)
+    end
+
+    @testset "already-integer values" begin
+        result = snapvals([1.0, 2.0, 3.0])
+        @test result == [1.0, 2.0, 3.0]
+    end
+
+    @testset "values far from integers unchanged" begin
+        result = snapvals([1.3, 2.7, 0.5])
+        @test result == [1.3, 2.7, 0.5]
+    end
+end
+
+# ─── H4: binidx ──────────────────────────────────────────────────
+@testset "binidx" begin
+    @testset "vector" begin
+        result = binidx([0.0, 1.0, 0.0, 1.0])
+        @test result == [2, 4]
+    end
+
+    @testset "matrix returns CartesianIndex" begin
+        result = binidx([0 1; 1 0])
+        @test CartesianIndex(2, 1) in result
+        @test CartesianIndex(1, 2) in result
+        @test length(result) == 2
+    end
+
+    @testset "custom threshold" begin
+        result = binidx([0.3, 0.7]; tol=0.25)
+        @test result == [1, 2]
+    end
+
+    @testset "no values above threshold" begin
+        result = binidx([0.0, 0.1, 0.2])
+        @test isempty(result)
+    end
+
+    @testset "all values above threshold" begin
+        result = binidx([1.0, 0.9, 0.8])
+        @test result == [1, 2, 3]
+    end
+end
+
+# ─── Relocated: isptinbbox (from maptools) ────────────────────────
+@testset "isptinbbox relocated" begin
+    bbox = ((-180, 180), (-90, 90))
+    @test isptinbbox((0, 0), bbox) == true
+    @test isptinbbox((200, 100), bbox) == false
+end
+
+# ─── Relocated: alloclines (from maptools) ────────────────────────
+@testset "alloclines relocated" begin
+    using SparseArrays
+    hubs = [-80.0 35.0; -78.0 36.0]
+    spokes = [-80.5 35.2; -78.5 35.8; -79.2 36.1]
+    W = sparse([1, 1, 2], [1, 2, 3], [1.0, 1.0, 1.0], 2, 3)
+    X, Y = alloclines(W, hubs, spokes)
+    @test length(X) == 2
+    @test X isa Vector{Vector{Float64}}
+end
