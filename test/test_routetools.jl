@@ -142,7 +142,7 @@ using Graphs
         initial_cost = rteTCh(initial)
 
         # Insert shipment 1
-        new_rte, cost = mincostinsert(1, initial, rteTCh)
+        new_rte, cost = Logjam.mincostinsert(1, initial, rteTCh)
 
         # Should contain both shipments
         @test count(==(1), new_rte) == 2  # Shipment 1 appears twice
@@ -165,7 +165,7 @@ using Graphs
         sh = DataFrame(b=[1, 3], e=[2, 4])
         rteTCh = rte -> rteTC(rte, sh, C)
 
-        iˢ, jˢ, sˢ = pairwisesavings(rteTCh, sh)
+        iˢ, jˢ, sˢ = Logjam.pairwisesavings(rteTCh, sh)
 
         # Should return arrays
         @test length(iˢ) == length(jˢ) == length(sˢ)
