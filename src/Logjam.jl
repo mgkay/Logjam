@@ -95,12 +95,23 @@ module Logjam
 using Serialization
 using DataFrames
 using CSV
-using GeoMakie, CairoMakie
 using PrettyTables
 using DelaunayTriangulation
 using Graphs
 using SimpleWeightedGraphs
 using SparseArrays
+
+# CairoMakie extension support (set by LogjamCairoMakieExt)
+const _cairomakie_available = Ref{Bool}(false)
+const _cairomakie_activate = Ref{Any}(nothing)
+const _dcf_impl = Ref{Any}(nothing)
+const _plotnetwork_impl = Ref{Any}(nothing)
+
+# Map extension support (set by LogjamMapExt when CairoMakie + GeoMakie loaded)
+const _geomakie_available = Ref{Bool}(false)
+const _makemap_impl = Ref{Any}(nothing)
+const _plotroads_impl = Ref{Any}(nothing)
+const _plotroute_impl = Ref{Any}(nothing)
 
 # GLMakie extension support (set by LogjamGLMakieExt when GLMakie is loaded)
 const _glmakie_available = Ref{Bool}(false)
@@ -132,6 +143,9 @@ export isptinbbox, alloclines
 export makemap, mapbbox, aligntext, plotroads!, plotroute!
 export WORLD_LIMITS, US_LIMITS, CUS_LIMITS
 
+# Export helper functions (H7–H8)
+export dcf, plotnetwork
+
 # Export road network functions (including H5–H6)
 export dgc, d1, d2, dists, prune_reindex, thin, addconnectors
 export links2graph, x2ln, cropnetwork, shortestpaths, tracepath
@@ -153,5 +167,42 @@ include("disttools.jl")
 include("roadtools.jl")
 include("routetools.jl")
 include("osmtools.jl")
+
+# ─── Stub functions for CairoMakie extension (H7, H8) ───
+
+"""
+    dcf()
+
+Display current figure. Requires `using CairoMakie`.
+"""
+function dcf()
+    if _cairomakie_available[]
+        _dcf_impl[]()
+    else
+        error("dcf() requires CairoMakie. Run: using CairoMakie")
+    end
+end
+
+"""
+    plotnetwork(C::AbstractMatrix; xy=nothing, weights=true, labels=1:size(C,1))
+
+Plot a network from a cost/adjacency matrix. Requires `using CairoMakie`.
+
+# Arguments
+- `C`: Square cost/adjacency matrix (n×n). Non-zero entries become edges.
+- `xy`: Optional n×2 matrix of node positions. Default: circular layout.
+- `weights`: Whether to display edge weights. Default: `true`.
+- `labels`: Node labels. Default: `1:n`.
+
+# Returns
+- `(fig, xy)`: Figure and node coordinate matrix.
+"""
+function plotnetwork(C::AbstractMatrix; kwargs...)
+    if _cairomakie_available[]
+        return _plotnetwork_impl[](C; kwargs...)
+    else
+        error("plotnetwork() requires CairoMakie. Run: using CairoMakie")
+    end
+end
 
 end # module Logjam

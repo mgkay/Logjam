@@ -1,5 +1,4 @@
 using Test
-using GeoMakie
 
 # Test for WORLD_LIMITS, US_LIMITS, and CUS_LIMITS constants
 @test WORLD_LIMITS == ((-180, 180), (-75, 75))
