@@ -135,8 +135,8 @@ export uscbsa, uscsa, st2fips, fips2st
 export faf5nodes, faf5links, faf5interstate
 export name2lonlat, lonlat2name
 
-# Export data helper functions (H1–H4) and relocated functions
-export mat2df, prt, snapvals, binidx
+# Export data helper functions (H1–H3) and relocated functions
+export mat2df, prt, snapvals
 export isptinbbox, alloclines
 
 # Export map functions and constants
@@ -149,7 +149,6 @@ export dcf, plotnetwork
 # Export road network functions (including H5–H6)
 export dgc, d1, d2, dists, prune_reindex, thin, addconnectors
 export links2graph, x2ln, cropnetwork, shortestpaths, tracepath
-export adj2graph, graph2mat
 
 # Export OSM functions (require LightOSM + NearestNeighbors extension)
 export osm_roads, stitchnetworks

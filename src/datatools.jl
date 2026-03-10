@@ -604,7 +604,7 @@ Convert a matrix to a labeled DataFrame.
 - `X`: Matrix of values.
 - `cols`: Column names (length must equal `size(X, 2)`).
 - `rows`: Optional row labels. If provided (length must equal `size(X, 1)`),
-  inserted as the first column with name `:Row`.
+  inserted as the first column with a blank header.
 
 # Example
 ```jldoctest
@@ -618,7 +618,7 @@ julia> mat2df([1 2; 3 4], ["A", "B"])
 
 julia> mat2df([1 2; 3 4], ["A", "B"]; rows=["r1", "r2"])
 2×3 DataFrame
- Row │ Row     A      B
+ Row │         A      B
      │ String  Int64  Int64
 ─────┼──────────────────────
    1 │ r1          1      2
@@ -634,13 +634,13 @@ function mat2df(X::AbstractMatrix, cols::AbstractVector; rows::Union{Nothing, Ab
     end
     df = DataFrame(X, Symbol.(cols))
     if rows !== nothing
-        insertcols!(df, 1, :Row => rows)
+        insertcols!(df, 1, Symbol("") => rows)
     end
     return df
 end
 
 """
-    prt(X; rows, cols, title, fracdig, allfrac)
+    prt(X; rows, cols, title, fracdig, allfrac, row_title)
 
 Pretty-print a matrix, vector, or DataFrame with smart formatting.
 
@@ -648,18 +648,22 @@ Uses PrettyTables.jl for formatted display. For matrices, applies smart per-colu
 digit detection inspired by MATLOG's `mdisp`: integer columns show 0 decimal places,
 all-fractional columns (all values < 1) show `allfrac` decimal places, and mixed
 columns show `fracdig` decimal places. NaN values display as blank. Numbers ≥ 1,000
-include comma separators.
+include comma separators. The `row_title` keyword places a header in the
+upper-left corner of the table (the row-label column header).
 
 # Matrix method
-    prt(X::AbstractMatrix; rows=1:size(X,1), cols=1:size(X,2), title="", fracdig=2, allfrac=4)
+    prt(X::AbstractMatrix; rows=1:size(X,1), cols=1:size(X,2), title="", fracdig=2, allfrac=4, row_title="", str=false)
 
 # Vector method
-    prt(v::AbstractVector; rows=1:length(v), title="")
+    prt(v::AbstractVector; rows=1:length(v), title="", row_title="", str=false)
 
 # DataFrame method
-    prt(df::DataFrame; title="")
+    prt(df::DataFrame; title="", str=false)
 
-# Example
+With `str=true`, returns the formatted table as a string (separator lines stripped)
+instead of printing. Default behavior prints to stdout and returns `nothing`.
+
+# Examples
 ```julia
 julia> prt([1000 0.1234; 2000 0.5678])
 ──── ──── ────────
@@ -668,84 +672,124 @@ julia> prt([1000 0.1234; 2000 0.5678])
   1  1,000   0.1234
   2  2,000   0.5678
 ──── ──── ────────
+
+julia> prt([1 2; 3 4]; rows=["a","b"], cols=["X","Y"], row_title="ID")
+──── ──── ────
+  ID    X    Y
+──── ──── ────
+   a    1    2
+   b    3    4
+──── ──── ────
 ```
 """
 function prt(X::AbstractMatrix; rows=1:size(X, 1), cols=1:size(X, 2),
-             title::AbstractString="", fracdig::Int=2, allfrac::Int=4)
+             title::AbstractString="", fracdig::Int=2, allfrac::Int=4,
+             row_title::AbstractString="", str::Bool=false)
     m, n = size(X)
     if m == 0 || n == 0
+        str && return ""
         println("Empty matrix")
-        return
+        return nothing
     end
 
-    # Smart per-column formatting
-    fmts = Vector{Function}(undef, n)
+    # Smart per-column digit detection
+    ndigs = Vector{Int}(undef, n)
     for j in 1:n
         col_vals = X[:, j]
         real_vals = filter(v -> !isnan(v) && !isinf(v), col_vals)
 
         if isempty(real_vals)
-            ndig = fracdig
+            ndigs[j] = fracdig
         elseif all(v -> v == round(v), real_vals)
-            ndig = 0
+            ndigs[j] = 0
         elseif all(v -> abs(v) < 1, real_vals)
-            ndig = allfrac
+            ndigs[j] = allfrac
         else
-            ndig = fracdig
-        end
-
-        fmts[j] = (v, i, j2) -> begin
-            v isa Real || return string(v)
-            if isnan(v)
-                return ""
-            elseif isinf(v)
-                return string(v)
-            else
-                # Format with appropriate decimal places
-                rounded = round(v, digits=ndig)
-                if ndig == 0
-                    intval = round(Int64, rounded)
-                    # Add comma separators
-                    s = _commasep(intval)
-                else
-                    # Format with fixed decimal places
-                    s = _formatfixed(rounded, ndig)
-                end
-                return s
-            end
+            ndigs[j] = fracdig
         end
     end
 
-    # Build formatter vector
-    formatter = fmts
+    formatter = (v, i, j) -> begin
+        v isa Real || return string(v)
+        isnan(v) && return ""
+        isinf(v) && return string(v)
+        nd = ndigs[j]
+        rounded = round(v, digits=nd)
+        nd == 0 ? _commasep(round(Int64, rounded)) : _formatfixed(rounded, nd)
+    end
 
     # Display
     col_labels = string.(cols)
     row_lbls = string.(rows)
-    tfmt = TextTableFormat(borders=text_table_borders__compact)
+    tfmt = TextTableFormat(borders=TextTableBorders(' ',' ',' ',' ',' ',' ',' ',' ',' ',' ','─'))
 
-    if isempty(title)
-        pretty_table(X; column_labels=col_labels, row_labels=row_lbls,
-                     formatters=formatter, alignment=:r,
-                     table_format=tfmt, row_label_column_alignment=:r)
+    pt_kw = Dict{Symbol,Any}(
+        :column_labels => col_labels,
+        :row_labels => row_lbls,
+        :formatters => formatter,
+        :alignment => :r,
+        :table_format => tfmt,
+        :row_label_column_alignment => :r,
+    )
+    !isempty(title) && (pt_kw[:title] = title)
+    !isempty(row_title) && (pt_kw[:stubhead_label] = row_title)
+
+    if str
+        buf = IOBuffer()
+        io = IOContext(buf, :displaysize => (typemax(Int), typemax(Int)))
+        pretty_table(io, X; pt_kw...)
+        raw = String(take!(buf))
+        lines = split(raw, '\n')
+        filtered = [l for l in lines if !('─' in l)]
+        return join(filtered, '\n')
     else
-        pretty_table(X; column_labels=col_labels, row_labels=row_lbls,
-                     formatters=formatter, alignment=:r,
-                     table_format=tfmt, row_label_column_alignment=:r,
-                     title=title)
+        io = IOContext(stdout, :displaysize => (typemax(Int), typemax(Int)))
+        pretty_table(io, X; pt_kw...)
+        return nothing
     end
 end
 
-function prt(v::AbstractVector; rows=1:length(v), title::AbstractString="")
-    prt(reshape(v, :, 1); rows=rows, cols=[""], title=title)
+function prt(v::AbstractVector; rows=1:length(v), title::AbstractString="",
+             row_title::AbstractString="", str::Bool=false)
+    prt(reshape(v, :, 1); rows=rows, cols=[""], title=title, row_title=row_title, str=str)
 end
 
-function prt(df::DataFrame; title::AbstractString="")
-    tfmt = TextTableFormat(borders=text_table_borders__compact)
-    if isempty(title)
-        pretty_table(df; table_format=tfmt, alignment=:r)
+function prt(df::DataFrame; title::AbstractString="", str::Bool=false)
+    # Separate string columns (used as row labels) from numeric columns
+    str_cols = [c for c in names(df) if eltype(df[!, c]) <: AbstractString]
+    num_cols = [c for c in names(df) if !(eltype(df[!, c]) <: AbstractString)]
+
+    if isempty(num_cols)
+        # All string columns — pass through without formatting
+        tfmt = TextTableFormat(borders=TextTableBorders(' ',' ',' ',' ',' ',' ',' ',' ',' ',' ','─'))
+        pt_kw = Dict{Symbol,Any}(
+            :table_format => tfmt,
+            :alignment => :r,
+            :column_labels => names(df),
+        )
+        !isempty(title) && (pt_kw[:title] = title)
+        if str
+            buf = IOBuffer()
+            io = IOContext(buf, :displaysize => (typemax(Int), typemax(Int)))
+            pretty_table(io, Matrix(df); pt_kw...)
+            raw = String(take!(buf))
+            lines = split(raw, '\n')
+            filtered = [l for l in lines if !('─' in l)]
+            return join(filtered, '\n')
+        else
+            io = IOContext(stdout, :displaysize => (typemax(Int), typemax(Int)))
+            pretty_table(io, Matrix(df); pt_kw...)
+            return nothing
+        end
+    elseif isempty(str_cols)
+        # All numeric — use matrix prt with column names
+        prt(Matrix(df); cols=names(df), title=title, str=str)
     else
-        pretty_table(df; table_format=tfmt, alignment=:r, title=title)
+        # Mixed: first string column as row labels, rest through matrix prt
+        row_labels = df[!, str_cols[1]]
+        remaining = [c for c in names(df) if c != str_cols[1]]
+        num_remaining = [c for c in remaining if !(eltype(df[!, c]) <: AbstractString)]
+        prt(Matrix(df[!, num_remaining]); rows=row_labels, cols=num_remaining, title=title, str=str)
     end
 end
 
@@ -824,34 +868,6 @@ function snapvals(x, n::Int, m::Int; atol::Real=1e-8)
     return reshape(snapvals(x; atol=atol), n, m)
 end
 
-"""
-    binidx(x; tol=0.5) -> Array
-
-Extract indices where values exceed a threshold.
-
-Designed for identifying selected binary decision variables in optimization
-solutions. Returns integer indices for vectors, `CartesianIndex` for matrices.
-
-# Arguments
-- `x`: Array of numeric values (typically binary variable solution values).
-- `tol`: Threshold value (default: `0.5`). Returns indices where `x .> tol`.
-
-# Example
-```jldoctest
-julia> binidx([0.0, 1.0, 0.0, 1.0])
-2-element Vector{Int64}:
- 2
- 4
-
-julia> binidx([0 1; 1 0])
-2-element Vector{CartesianIndex{2}}:
- CartesianIndex(2, 1)
- CartesianIndex(1, 2)
-```
-"""
-function binidx(x::AbstractArray; tol::Real=0.5)
-    return findall(x .> tol)
-end
 
 # =============================================================================
 # Relocated Functions (from MapTools — pure computation, no plotting dependency)

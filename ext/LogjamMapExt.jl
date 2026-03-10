@@ -121,7 +121,7 @@ end
 # =============================================================================
 # plotroads! implementation
 # =============================================================================
-function _plotroads_impl(ax, dfL::DataFrame, dfN::DataFrame;
+function _plotroads_impl(ax, dfN::DataFrame, dfL::DataFrame;
                          show_connectors::Bool = false)
     # 1. Input validation
     nrow(dfL) > 0 || throw(ArgumentError("dfL must have at least one row"))
@@ -183,19 +183,19 @@ function _plotroads_impl(ax, dfL::DataFrame, dfN::DataFrame;
     )
 
     tier_widths = Dict(
-        1 => (close=1.8,  mid=1.2, far=0.4),
-        2 => (close=2.0,  mid=1.0, far=0.3),
-        3 => (close=1.6,  mid=0.7, far=0.2),
-        4 => (close=1.2,  mid=0.5, far=0.15),
-        5 => (close=0.8,  mid=0.3, far=0.1),
+        1 => (close=1.0,  mid=0.7, far=0.25),
+        2 => (close=0.9,  mid=0.6, far=0.2),
+        3 => (close=0.7,  mid=0.4, far=0.12),
+        4 => (close=0.5,  mid=0.3, far=0.08),
+        5 => (close=0.3,  mid=0.15, far=0.05),
     )
 
     tier_alphas = Dict(
-        1 => (close=0.8, mid=0.5, far=0.3),
-        2 => (close=0.7, mid=0.4, far=0.25),
-        3 => (close=0.6, mid=0.35, far=0.2),
-        4 => (close=0.5, mid=0.3, far=0.15),
-        5 => (close=0.4, mid=0.25, far=0.1),
+        1 => (close=0.6, mid=0.4, far=0.25),
+        2 => (close=0.5, mid=0.35, far=0.2),
+        3 => (close=0.4, mid=0.25, far=0.15),
+        4 => (close=0.35, mid=0.2, far=0.1),
+        5 => (close=0.3, mid=0.15, far=0.08),
     )
 
     # 6. Categorize links into FCLASS tiers and build polylines
@@ -240,7 +240,7 @@ function _plotroads_impl(ax, dfL::DataFrame, dfN::DataFrame;
             α = tier_alphas[tier]
             r, g, b = tier_colors[tier].casing
             h = lines!(ax, x_coords, y_coords;
-                       linewidth=w.close + 1.2,
+                       linewidth=w.close + 0.6,
                        color=RGBf(r, g, b), alpha=α.close, linecap=:round)
             handles[Symbol("casing_", tier)] = h
         end

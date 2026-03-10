@@ -197,8 +197,8 @@ end
 
     @testset "with row labels" begin
         df = mat2df([1 2; 3 4], ["A", "B"]; rows=["r1", "r2"])
-        @test names(df) == ["Row", "A", "B"]
-        @test df.Row == ["r1", "r2"]
+        @test names(df) == ["", "A", "B"]
+        @test df[!, ""] == ["r1", "r2"]
     end
 
     @testset "single-element matrix" begin
@@ -255,6 +255,64 @@ end
     @testset "title keyword" begin
         prt([1 2; 3 4]; title="Test Title")
     end
+
+    @testset "row_title keyword" begin
+        prt([1 2; 3 4]; rows=["a", "b"], cols=["X", "Y"], row_title="ID")
+    end
+
+    @testset "row_title with vector method" begin
+        prt([10, 20, 30]; rows=["A", "B", "C"], row_title="Item")
+    end
+
+    @testset "str=true returns string" begin
+        s = prt([1 2; 3 4]; str=true)
+        @test isa(s, String)
+        @test !isempty(s)
+        @test !occursin('─', s)        # separators stripped
+        @test occursin("1", s)
+        @test occursin("4", s)
+    end
+
+    @testset "str=false returns nothing" begin
+        result = prt([1 2; 3 4])
+        @test result === nothing
+    end
+
+    @testset "str=true preserves alignment spaces" begin
+        s = prt([1000 2; 3 4000]; str=true)
+        @test occursin("1,000", s)
+        @test occursin("4,000", s)
+        @test occursin(' ', s)          # spaces preserved
+    end
+
+    @testset "str=true with custom headers" begin
+        s = prt([1.5 2.5; 3.5 4.5]; rows=["a","b"], cols=["X","Y"], str=true)
+        @test occursin("X", s)
+        @test occursin("Y", s)
+        @test occursin("a", s)
+        @test occursin("b", s)
+    end
+
+    @testset "str=true vector method" begin
+        s = prt([10, 20, 30]; str=true)
+        @test isa(s, String)
+        @test !occursin('─', s)
+        @test occursin("10", s)
+    end
+
+    @testset "str=true DataFrame method" begin
+        df = DataFrame(City=["Raleigh", "Charlotte"], Pop=[467665, 874579])
+        s = prt(df; str=true)
+        @test isa(s, String)
+        @test !occursin('─', s)
+        @test occursin("Raleigh", s)
+        @test occursin("467,665", s)
+    end
+
+    @testset "str=true empty matrix" begin
+        s = prt(Matrix{Float64}(undef, 0, 0); str=true)
+        @test s == ""
+    end
 end
 
 # ─── H3: snapvals ────────────────────────────────────────────────
@@ -296,35 +354,6 @@ end
     end
 end
 
-# ─── H4: binidx ──────────────────────────────────────────────────
-@testset "binidx" begin
-    @testset "vector" begin
-        result = binidx([0.0, 1.0, 0.0, 1.0])
-        @test result == [2, 4]
-    end
-
-    @testset "matrix returns CartesianIndex" begin
-        result = binidx([0 1; 1 0])
-        @test CartesianIndex(2, 1) in result
-        @test CartesianIndex(1, 2) in result
-        @test length(result) == 2
-    end
-
-    @testset "custom threshold" begin
-        result = binidx([0.3, 0.7]; tol=0.25)
-        @test result == [1, 2]
-    end
-
-    @testset "no values above threshold" begin
-        result = binidx([0.0, 0.1, 0.2])
-        @test isempty(result)
-    end
-
-    @testset "all values above threshold" begin
-        result = binidx([1.0, 0.9, 0.8])
-        @test result == [1, 2, 3]
-    end
-end
 
 # ─── Relocated: isptinbbox (from maptools) ────────────────────────
 @testset "isptinbbox relocated" begin

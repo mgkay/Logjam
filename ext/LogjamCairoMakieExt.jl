@@ -35,16 +35,27 @@ function _plotnetwork_impl(C::AbstractMatrix; xy=nothing, weights=true, labels=1
     ax = Axis(fig[1,1], aspect=DataAspect())
     hidedecorations!(ax)
 
-    # Draw edges
+    # Draw edges with arrowheads
     for i in 1:n
         for j in 1:n
             if C[i,j] != 0
-                linesegments!(ax, [Point2f(xy[i,1], xy[i,2]), Point2f(xy[j,1], xy[j,2])];
-                             color=:gray60, linewidth=1.5)
+                dx = xy[j,1] - xy[i,1]
+                dy = xy[j,2] - xy[i,2]
+                arrows!(ax, [xy[i,1]], [xy[i,2]], [dx], [dy];
+                        color=:gray60, linewidth=1.5,
+                        arrowsize=12, lengthscale=1.0)
                 if weights
                     mx = (xy[i,1] + xy[j,1]) / 2
                     my = (xy[i,2] + xy[j,2]) / 2
-                    text!(ax, mx, my; text=string(C[i,j]), fontsize=10, align=(:center, :center))
+                    # Offset label perpendicular to edge direction
+                    len = sqrt(dx^2 + dy^2)
+                    if len > 0
+                        nx = -dy / len * 0.06 * maximum(abs.(xy))
+                        ny =  dx / len * 0.06 * maximum(abs.(xy))
+                    else
+                        nx, ny = 0.0, 0.0
+                    end
+                    text!(ax, mx + nx, my + ny; text=string(C[i,j]), fontsize=10, align=(:center, :center))
                 end
             end
         end

@@ -13,7 +13,7 @@ Logjam is a Julia package for logistics engineering, providing tools for:
 * **Distance Metrics**: Unified distance calculation utilities supporting Rectilinear (*L*₁), Euclidean (*L*₂), and Great Circle (Haversine) metrics.
 * **Plotting**: Network visualization (`plotnetwork`) and display helpers (`dcf`) via CairoMakie extension.
 * **Mapping**: Plotting recipes and helper functions for mapping spatial data using GeoMakie.
-* **Data Helpers**: Matrix-to-DataFrame conversion (`mat2df`), formatted printing (`prt`), floating-point snapping (`snapvals`), binary index extraction (`binidx`), and graph–matrix interconversion (`adj2graph`, `graph2mat`).
+* **Data Helpers**: Matrix-to-DataFrame conversion (`mat2df`), formatted printing (`prt`), and floating-point snapping (`snapvals`).
 
 ## Installation
 
@@ -26,15 +26,15 @@ Pkg.add(url="https://github.com/mgkay/Logjam.git")
 
 ## Dependencies
 
-Logjam uses Julia package extensions to keep its core lightweight. Features activate automatically when you load the corresponding packages:
+Logjam uses Julia package extensions to keep its core lightweight. Features activate automatically based on which packages are loaded:
 
-| Import | What it enables |
-|--------|----------------|
-| `using Logjam` | Core: facility location, transportation costing, distance metrics, road networks, routing, spatial data, data helpers (`mat2df`, `prt`, `snapvals`, `binidx`, `adj2graph`, `graph2mat`). |
-| `using Logjam, CairoMakie` | Adds plotting: `dcf` (display current figure), `plotnetwork` (network diagrams). |
-| `using Logjam, CairoMakie, GeoMakie` | Adds mapping: `makemap`, `plotroads!`, `plotroute!`, `aligntext`. |
-| `using GLMakie` (before Logjam) | Enables interactive map display via `backend=:GLMakie`. |
-| `using LightOSM, NearestNeighbors` (before Logjam) | Enables OSM road network functions (`osm_roads`, `stitchnetworks`). |
+| `using` statement | Features enabled |
+|---|---|
+| `using Logjam` | Core: facility location, costing, distances, road networks, routing, spatial data, data helpers. |
+| `using Logjam, CairoMakie` | + plotting: `dcf`, `plotnetwork`. |
+| `using Logjam, CairoMakie, GeoMakie` | + mapping: `makemap`, `plotroads!`, `plotroute!`, `aligntext`. |
+| `using GLMakie; using Logjam` | + interactive map display via `backend=:GLMakie`. |
+| `using LightOSM, NearestNeighbors; using Logjam` | + OSM roads: `osm_roads`, `stitchnetworks`. |
 
 ## Worked Examples
 
@@ -69,7 +69,7 @@ display(first(places[:, [:NAME, :ST, :LON, :LAT, :POP, :ISCUS]], 4))
 ```julia
 # FIPS conversion: state symbol ↔ FIPS code
 fips_nc = st2fips(:NC)           # 37
-sym_nc  = fips2st(fips_nc)       # :NC
+fips2st(fips_nc)                 # :NC
 
 # Filter to NC cities with population over 100,000
 nc_large = filter(r -> r.STFIP == fips_nc && r.POP > 100_000, places)
@@ -109,12 +109,10 @@ using CairoMakie, GeoMakie, DataFrames
 cities = filter(r -> r.STFIP == st2fips(:NC) && r.POP > 100_000, usplace())
 x, y, name = cities.LON, cities.LAT, cities.NAME
 
-# Create map — auto-fits region to data; draws FAF5 interstates by default.
-# Returns: fig (Figure), ax (GeoAxis), hborders (road/border handles), limits (bbox).
-fig, ax, hborders, limits = makemap(x, y)
+# Create map — auto-fits region to data; draws FAF5 interstates by default
+fig, ax, hborders, _ = makemap(x, y)
 ax.title = "North Carolina Cities with Population > 100,000"
 
-# Customize the built-in interstate overlay (hborders[1])
 hborders[1].color[] = (:steelblue, 0.5)
 
 # Plot city locations and labels
@@ -132,7 +130,7 @@ dcf()
 
 ### Example 3 — Facility Location
 
-A classic strategic logistics problem: place a fixed number of distribution hubs to minimize total weighted distance to customers. Using U.S. 3-digit ZIP code centroids as demand points and population as demand weight, the *p*-median model selects six hubs that minimize total people-miles. This example introduces `dists` for distance matrix construction and `pmedian`, `alloclines`, and `lonlat2name` for the full facility location workflow.
+A classic strategic logistics problem: place a fixed number of distribution hubs to minimize total weighted distance to customers. Using U.S. 3-digit ZIP code centroids as demand points and population as demand weight, the *p*-median model selects six hubs that minimize total people-miles. This example introduces `dists` for distance matrix construction, `pmedian`, `alloclines`, and `lonlat2name` for the full facility location workflow, and `prt` for formatted matrix display.
 
 ```julia
 using Logjam
@@ -151,6 +149,24 @@ y, TC, W = pmedian(6, C; verbose=false)
 # Reverse-geocode hub coordinates to nearest large city
 hubs = lonlat2name(XY[y, :], filter(r -> r.POP >= 50_000 && r.ISCUS, usplace()))
 
+# Display hub locations (prt auto-formats coordinates)
+prt(XY[y, :]; rows=hubs.name, cols=["LON", "LAT"], row_title="Hubs")
+```
+
+```
+ ─────────────── ───────── ───────
+           Hubs       LON     LAT
+ ─────────────── ───────── ───────
+           Gary    -87.35   41.60
+  Warner Robins    -83.62   32.61
+     Plainfield    -74.42   40.63
+       Pasadena   -118.13   34.15
+         Yakima   -120.51   46.60
+         Dallas    -96.77   32.78
+ ─────────────── ───────── ───────
+```
+
+```julia
 # Map: continental US with allocation lines and hub markers
 fig, ax = makemap(region=:CUS)
 
@@ -172,11 +188,11 @@ dcf()
 
 ![Facility Location Plot](docs/assets/facloc_pmedian_plot.png)
 
-**After-action.** `dists(XY, XY, :mi)` computes a full pairwise great-circle distance matrix in miles; the `:mi` symbol selects miles, `:km` selects kilometers, and `:gc` returns dimensionless radians. Broadcasting `.* z3.POP'` weights each column by the destination's population, converting the distance matrix into a cost matrix in people-miles. `pmedian` returns the hub indices `y`, total cost `TC`, and the allocation matrix `W` (a sparse indicator mapping each demand point to its nearest hub). `alloclines` converts `W` into NaN-separated line segment vectors per hub, which `lines!` renders efficiently without a loop per connection. `lonlat2name` reverse-geocodes the hub coordinates to the nearest large city, providing interpretable labels. For problems where the number of facilities is itself a decision, Logjam provides UFL heuristics — `ufladd`, `ufldrop`, `uflxchg`, and `ufl` — that optimize both facility selection and count.
+**After-action.** `dists(XY, XY, :mi)` computes a full pairwise great-circle distance matrix in miles; the `:mi` symbol selects miles, `:km` selects kilometers, and `:gc` returns dimensionless radians. Broadcasting `.* z3.POP'` weights each column by the destination's population, converting the distance matrix into a cost matrix in people-miles. `pmedian` returns the hub indices `y`, total cost `TC`, and the allocation matrix `W` (a sparse indicator mapping each demand point to its nearest hub). `alloclines` converts `W` into NaN-separated line segment vectors per hub, which `lines!` renders efficiently without a loop per connection. `lonlat2name` reverse-geocodes the hub coordinates to the nearest large city, providing interpretable labels. `prt` displays the hub coordinate matrix as a formatted table with city-name row labels, automatic decimal detection, and comma-separated large numbers. For problems where the number of facilities is itself a decision, Logjam provides UFL heuristics — `ufladd`, `ufldrop`, `uflxchg`, and `ufl` — that optimize both facility selection and count.
 
 ---
 
-## Example 4 — Pickup and Delivery Routing
+### Example 4 — Pickup and Delivery Routing
 
 Road network routing in Logjam uses the FAF5 national freight highway network as the foundation. The standard pipeline — `cropnetwork` → `addconnectors` → `links2graph` → `shortestpaths` — prepares a network for any routing task.
 
@@ -188,58 +204,96 @@ using CairoMakie, GeoMakie, DataFrames
 
 # Load NC cities with population > 100,000
 cities = filter(r -> r.STFIP == st2fips(:NC) && r.POP > 100_000, usplace())
+
+# City index (alphabetical order from filter)
+prt(DataFrame(Index = 1:nrow(cities), City = cities.NAME))
 ```
 
-**City Index** (alphabetical order from `filter`):
-
-| Index | City | | Index | City |
-|:-----:|------|---|:-----:|------|
-| 1 | Cary | | 6 | Greensboro |
-| 2 | Charlotte | | 7 | High Point |
-| 3 | Concord | | 8 | Raleigh |
-| 4 | Durham | | 9 | Wilmington |
-| 5 | Fayetteville | | 10 | Winston-Salem |
+```
+ ─────── ───────────────
+  Index            City
+ ─────── ───────────────
+      1            Cary
+      2       Charlotte
+      3         Concord
+      4          Durham
+      5    Fayetteville
+      6      Greensboro
+      7      High Point
+      8         Raleigh
+      9      Wilmington
+     10   Winston-Salem
+ ─────── ───────────────
+```
 
 ```julia
 # Define 5 shipments with distinct origins and destinations
-shipments = DataFrame(
+sh = DataFrame(                  # shipments
     b = [2, 3, 10, 7, 6],   # Pickup city index
     e = [8, 4,  1, 5, 9]    # Delivery city index
 )
+
+# Shipment manifest with city names
+prt(DataFrame(
+    Shipment = 1:nrow(sh),
+    Origin = cities.NAME[sh.b],
+    Destination = cities.NAME[sh.e]))
 ```
 
-**Shipment Manifest:**
-
-| Shipment | Origin | Destination |
-|:--------:|--------|-------------|
-| 1 | Charlotte (2) | Raleigh (8) |
-| 2 | Concord (3) | Durham (4) |
-| 3 | Winston-Salem (10) | Cary (1) |
-| 4 | High Point (7) | Fayetteville (5) |
-| 5 | Greensboro (6) | Wilmington (9) |
+```
+ ────────── ─────────────── ──────────────
+  Shipment          Origin    Destination
+ ────────── ─────────────── ──────────────
+         1       Charlotte        Raleigh
+         2         Concord         Durham
+         3   Winston-Salem           Cary
+         4      High Point   Fayetteville
+         5      Greensboro     Wilmington
+ ────────── ─────────────── ──────────────
+```
 
 ```julia
 # Build road network: crop FAF5 to region, attach city connectors
-nodes_base, links_base = cropnetwork(faf5nodes(), faf5links(), cities.LON, cities.LAT)
-nodes, links = addconnectors(nodes_base, links_base, cities.LON, cities.LAT)
+x, y = cities.LON, cities.LAT
+dfN, dfL = addconnectors(cropnetwork(faf5nodes(), faf5links(), x, y)..., x, y)  # nodes, links
+D, P = shortestpaths(links2graph(dfL), nrow(cities))  # distance, parents
 
-# Compute shortest paths between all city connector nodes
-g = links2graph(links)
-dist_mat, parents = shortestpaths(g, nrow(cities))
+# Display highway distance matrix (miles) with abbreviated city names
+cnames = [length(n) > 7 ? first(n, 4) * "." : n for n in cities.NAME]
+prt(round.(Int, D); rows=cnames, cols=cnames, row_title="City")
+```
 
+```
+ ───────── ────── ─────── ───────── ──────── ─────── ─────── ─────── ───────── ─────── ───────
+     City   Cary   Char.   Concord   Durham   Faye.   Gree.   High.   Raleigh   Wilm.   Wins.
+ ───────── ────── ─────── ───────── ──────── ─────── ─────── ─────── ───────── ─────── ───────
+     Cary      0     165       138       25      60      79      91         8     130     104
+    Char.    165       0        25      140     130      92      80       157     196      80
+  Concord    138      25         0      129     119      80      68       131     185      67
+   Durham     25     140       129        0      85      54      66        25     155      79
+    Faye.     60     130       119       85       0     119     131        68      92     144
+    Gree.     79      92        80       54     119       0      15        80     189      27
+    High.     91      80        68       66     131      15       0        92     201      31
+  Raleigh      8     157       131       25      68      80      92         0     137     104
+    Wilm.    130     196       185      155      92     189     201       137       0     221
+    Wins.    104      80        67       79     144      27      31       104     221       0
+ ───────── ────── ─────── ───────── ──────── ─────── ─────── ─────── ───────── ─────── ───────
+```
+
+```julia
 # Construct route with savings heuristic, then improve with 2-opt
-cost_fn(r) = rteTC(r, shipments, dist_mat)
-initial_routes = savings(cost_fn, shipments)
-final_route, cost = twoopt(initial_routes[1], cost_fn)
+rteTCh(r) = rteTC(r, sh, D)  # route total cost handle
+rte = savings(rteTCh, sh)    # route
+rte, cost = twoopt(rte[1], rteTCh)
 
 # Map: NC region with road network overlay and optimized route
-fig, ax = makemap(cities.LON, cities.LAT)
-plotroads!(ax, links, nodes)
+fig, ax = makemap(x, y)
+plotroads!(ax, dfN, dfL)
 
-plotroute!(ax, final_route, shipments, parents, nodes; color=:red, linewidth=2.5, show_markers=false)
+plotroute!(ax, rte, sh, P, dfN; color=:red, linewidth=2.5, show_markers=false)
 
-scatter!(ax, cities.LON, cities.LAT, color=:blue, markersize=10)
-text!(ax, cities.LON, cities.LAT, text=cities.NAME; aligntext(cities.LON, cities.LAT)...)
+scatter!(ax, x, y, color=:blue, markersize=10)
+text!(ax, x, y, text=cities.NAME; aligntext(x, y)...)
 
 ax.title = "Multi-Stop PDP: Savings + 2-Opt\n(5 Shipments, 10 NC Cities, FAF5 Network)"
 dcf()
@@ -247,7 +301,7 @@ dcf()
 
 ![NC Routing Plot](docs/assets/nc_routing_plot.png)
 
-**After-action.** `cropnetwork` extracts the FAF5 subgraph whose bounding box contains the demand points, reducing graph size before solving. `addconnectors` appends artificial connector edges from each demand point to its nearest network node — without these, the demand points would not be reachable via shortest paths. `shortestpaths(g, nrow(cities))` computes shortest-path distances and parent pointers from the last `nrow(cities)` nodes (the connectors), returning a `dist_mat` ready for use as the routing cost matrix. `plotroads!` renders the road network with FCLASS-based styling inspired by OSM Carto — roads are colored and sized by functional class (interstates in muted blue, arterials in warm yellow, local roads in white/gray), with casings at close zoom for visual clarity. `savings` constructs an initial route by iteratively merging the most cost-saving shipment pair, then `twoopt` improves it by reversing sub-sequences. `plotroute!` handles the full rendering pipeline internally: it converts the abstract route to a stop sequence, reconstructs the road-following path for each leg from the parent pointer vectors, and renders the result.
+**After-action.** `cropnetwork` extracts the FAF5 subgraph covering the demand points, reducing graph size before solving. `addconnectors` appends connector edges from each demand point to its nearest network node. `shortestpaths` computes shortest-path distances `D` and parent pointers `P` from the connector nodes. `prt` displays the distance matrix with city-name rows/columns and the `row_title` keyword in the upper-left corner; it also generates the city index and shipment manifest from inline DataFrames. `plotroads!` renders the road network with FCLASS-based styling — roads are colored and sized by functional class (interstates in muted blue, arterials in warm yellow, local roads in white/gray). `savings` constructs an initial route by iteratively merging the most cost-saving shipment pair, then `twoopt` improves it by reversing sub-sequences. `plotroute!` reconstructs the road-following path for each leg from the parent pointers and renders the result.
 
 ---
 
@@ -263,36 +317,35 @@ using Logjam
 using CairoMakie, GeoMakie, DataFrames
 
 # Stop coordinates: stop 1 = depot (UF campus), stops 2–10 = deliveries
-stops_lon = [-82.340, -82.360, -82.355, -82.348, -82.305, -82.298, -82.315, -82.340, -82.325, -82.350]
-stops_lat = [ 29.650,  29.675,  29.668,  29.672,  29.662,  29.655,  29.670,  29.635,  29.630,  29.628]
+x = [-82.340, -82.360, -82.355, -82.348, -82.305, -82.298, -82.315, -82.340, -82.325, -82.350]
+y = [ 29.650,  29.675,  29.668,  29.672,  29.662,  29.655,  29.670,  29.635,  29.630,  29.628]
 
 # Download OSM road network covering the stop region
-bbox_limits, _ = mapbbox(stops_lon, stops_lat; xexpand=0.1, yexpand=0.1)
+bbox_limits, _ = mapbbox(x, y; xexpand=0.1, yexpand=0.1)
 bbox = (bbox_limits[1]..., bbox_limits[2]...)
-nodes_osm, links_osm = osm_roads(bbox; cache_dir=joinpath(@__DIR__, "data"))
+dfN0, dfL0 = osm_roads(bbox; cache_dir=joinpath(@__DIR__, "data"))  # nodes, links
 
 # Build network and shortest paths
-nodes, links = addconnectors(nodes_osm, links_osm, stops_lon, stops_lat; add_nf_nf=false)
-g = links2graph(links)
-dist_mat, parents = shortestpaths(g, length(stops_lon))
+dfN, dfL = addconnectors(dfN0, dfL0, x, y; add_nf_nf=false)
+D, P = shortestpaths(links2graph(dfL), length(x))  # distance, parents
 
 # VRP: all deliveries depart from depot (stop 1), max 3 per vehicle
-shipments = DataFrame(b = fill(1, 9), e = 2:10)
-tr = (b=[1], e=[1])
-cost_fn(r) = length(r) > 6 ? Inf : rteTC(r, shipments, dist_mat, tr)
+sh = DataFrame(b = fill(1, 9), e = 2:10)  # shipments
+tr = (b=[1], e=[1])                        # truck
+rteTCh(r) = length(r) > 6 ? Inf : rteTC(r, sh, D, tr)  # route total cost handle
 
-routes = savings(cost_fn, shipments)
-routes = [twoopt(r, cost_fn)[1] for r in routes]
+rte = savings(rteTCh, sh)  # route
+rte = [twoopt(r, rteTCh)[1] for r in rte]
 
 # Map: OSM road network with color-coded vehicle routes
-fig, ax = makemap(stops_lon, stops_lat)
-plotroads!(ax, links, nodes)
+fig, ax = makemap(x, y)
+plotroads!(ax, dfN, dfL)
 
-plotroute!(ax, routes, shipments, parents, nodes; tr=tr, linewidth=2.5, show_markers=false)
+plotroute!(ax, rte, sh, P, dfN; tr=tr, linewidth=2.5, show_markers=false)
 
-scatter!(ax, stops_lon[2:end], stops_lat[2:end], color=:blue, markersize=12)
-scatter!(ax, [stops_lon[1]], [stops_lat[1]], color=:green, markersize=16, marker=:rect)
-text!(ax, [stops_lon[1]], [stops_lat[1]], text=["Depot"]; aligntext([stops_lon[1]], [stops_lat[1]])...)
+scatter!(ax, x[2:end], y[2:end], color=:blue, markersize=12)
+scatter!(ax, [x[1]], [y[1]], color=:green, markersize=16, marker=:rect)
+text!(ax, [x[1]], [y[1]], text=["Depot"]; aligntext([x[1]], [y[1]])...)
 
 ax.title = "Multi-Vehicle VRP: Savings + 2-Opt\n(9 Deliveries, 3 Vehicles, Gainesville FL)"
 dcf()
@@ -300,4 +353,4 @@ dcf()
 
 ![Gainesville VRP Plot](docs/assets/gnv_osm_vrp_plot.png)
 
-**After-action.** `mapbbox` derives a bounding box from the stop coordinates with 10% expansion, ensuring the downloaded OSM region covers all stops with margin. The nested tuple is flattened to `(xmin, xmax, ymin, ymax)` for `osm_roads`, which downloads drivable roads from the Overpass API and caches results as CSV files; subsequent calls with the same bbox load from cache. `add_nf_nf=false` disables direct demand-to-demand connectors that would bypass the road network — without this, nearby stops take straight-line shortcuts instead of following OSM roads. The capacity constraint is enforced through the cost function: `length(r) > 6 ? Inf : ...` limits each route to three deliveries (each shipment appears twice in the route as a pickup–delivery pair), causing `savings` to produce multiple routes rather than merging everything into a single tour. `tr=(b=[1], e=[1])` specifies that each route begins and ends at the depot. The multi-route `plotroute!` method accepts a `Vector{Vector{Int}}` and automatically assigns a distinct color per vehicle from the Wong color palette. For scenarios requiring local OSM detail integrated with the national FAF5 network, Logjam’s `stitchnetworks` function creates connector edges between the two networks, returning a unified graph compatible with the standard routing pipeline.
+**After-action.** `mapbbox` derives a bounding box with 10% expansion to ensure the downloaded OSM region covers all stops. `osm_roads` downloads drivable roads from the Overpass API and caches results as CSV; subsequent calls with the same bbox load from cache. `add_nf_nf=false` disables direct demand-to-demand connectors that would bypass the road network. The capacity constraint is enforced through the cost function: `length(r) > 6 ? Inf` limits each route to three deliveries (each shipment appears as a pickup–delivery pair), causing `savings` to produce multiple routes. `tr=(b=[1], e=[1])` specifies that each route begins and ends at the depot. The multi-route `plotroute!` method automatically assigns a distinct color per vehicle from the Wong palette. For scenarios requiring local OSM detail integrated with the national FAF5 network, `stitchnetworks` creates connector edges between the two networks, returning a unified graph compatible with the standard routing pipeline.

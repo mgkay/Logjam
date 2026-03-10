@@ -438,7 +438,7 @@ function bestfit(ang, Δ)
 end
 
 """
-    plotroads!(ax::GeoAxis, dfL::DataFrame, dfN::DataFrame;
+    plotroads!(ax::GeoAxis, dfN::DataFrame, dfL::DataFrame;
                show_connectors::Bool = false) -> Vector{Lines}
 
 Overlay road networks on GeoAxis with FCLASS-based styling inspired by OSM Carto.
@@ -450,8 +450,8 @@ close zoom, single-line with hue tints at medium zoom, minimal at wide zoom.
 
 # Arguments
 - `ax::GeoAxis`: Geographic axis from `makemap()` or manual creation.
-- `dfL::DataFrame`: Links with required SRC (col 1), DST (col 2); optional SOURCE, FCLASS.
 - `dfN::DataFrame`: Nodes with required IDX (col 1), LON (col 2), LAT (col 3).
+- `dfL::DataFrame`: Links with required SRC (col 1), DST (col 2); optional SOURCE, FCLASS.
 - `show_connectors::Bool`: Whether to render CONNECTOR links (default: false).
 
 # Returns
@@ -461,9 +461,9 @@ close zoom, single-line with hue tints at medium zoom, minimal at wide zoom.
 
 # Styling
 Roads are styled by FCLASS tier with zoom-adaptive rendering:
-- **latspan > 20°** (CONUS-scale): Minimal single-line, faint
-- **10° < latspan ≤ 20°** (Regional): Single-line with subtle hue tints
-- **latspan ≤ 10°** (City/metro): Full casing + fill with muted OSM Carto hues
+- **latspan > 20°** (CONUS-scale): Minimal single-line, faint (lw 0.25–0.05)
+- **10° < latspan ≤ 20°** (Regional): Single-line with subtle hue tints (lw 0.7–0.15)
+- **latspan ≤ 10°** (City/metro): Casing + fill with muted OSM Carto hues (lw 1.0–0.3)
 
 FCLASS tiers: 1=Interstate (blue), 2=Freeway (green), 3=Arterial (warm yellow),
 4=Collector (pale yellow), 5+=Local (white/gray). Colors are muted to serve as
@@ -480,9 +480,9 @@ background beneath overlaid data.
 using GeoMakie
 
 # Basic FAF5 plot
-dfL, dfN = faf5links(), faf5nodes()
+dfN, dfL = faf5nodes(), faf5links()
 fig, ax = makemap(region=:CUS)
-handles = plotroads!(ax, dfL, dfN)
+handles = plotroads!(ax, dfN, dfL)
 display(fig)
 
 # Customize interstate fill color
@@ -500,9 +500,9 @@ keys(handles)  # e.g., [:fill_1, :fill_2, :casing_1, :casing_2, ...]
 - Node lookup uses Dict to handle non-sequential OSM node IDs efficiently
 - Compatible with both CairoMakie and GLMakie backends
 """
-function plotroads!(ax, dfL::DataFrame, dfN::DataFrame; kwargs...)
+function plotroads!(ax, dfN::DataFrame, dfL::DataFrame; kwargs...)
     if _geomakie_available[]
-        return _plotroads_impl[](ax, dfL, dfN; kwargs...)
+        return _plotroads_impl[](ax, dfN, dfL; kwargs...)
     else
         error("plotroads!() requires CairoMakie and GeoMakie. Run: using CairoMakie, GeoMakie")
     end

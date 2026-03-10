@@ -143,7 +143,7 @@ end  # @testset "NC Cities Routing Integration"
 
     @testset "plotroads! returns Dict with tier keys" begin
         fig, ax = makemap(cities.LON, cities.LAT)
-        handles = plotroads!(ax, links, nodes)
+        handles = plotroads!(ax, nodes, links)
         @test handles isa Dict{Symbol, Any}
         @test haskey(handles, :fill_1)  # FAF5 has interstates
         @test length(handles) >= 2
@@ -151,7 +151,7 @@ end  # @testset "NC Cities Routing Integration"
 
     @testset "plotroute! renders route" begin
         fig, ax = makemap(cities.LON, cities.LAT)
-        plotroads!(ax, links, nodes)
+        plotroads!(ax, nodes, links)
         route_handles = plotroute!(ax, final_route, shipments, parents, nodes;
                                    color=:red, linewidth=2.5, show_markers=false)
         @test length(route_handles) == 1  # line only, no markers
@@ -159,7 +159,7 @@ end  # @testset "NC Cities Routing Integration"
 
     @testset "full README Example 4 pipeline" begin
         fig, ax = makemap(cities.LON, cities.LAT)
-        handles = plotroads!(ax, links, nodes)
+        handles = plotroads!(ax, nodes, links)
         plotroute!(ax, final_route, shipments, parents, nodes;
                    color=:red, linewidth=2.5, show_markers=false)
         scatter!(ax, cities.LON, cities.LAT, color=:blue, markersize=10)

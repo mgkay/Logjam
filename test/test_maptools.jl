@@ -203,7 +203,7 @@ end
 
     @testset "basic render returns Dict" begin
         fig, ax, _, _ = makemap(x_test, y_test)
-        handles = plotroads!(ax, dfL_test, dfN_test)
+        handles = plotroads!(ax, dfN_test, dfL_test)
         @test handles isa Dict{Symbol, Any}
         @test length(handles) > 0
     end
@@ -211,7 +211,7 @@ end
     @testset "handle keys without connectors" begin
         dfL_faf5 = filter(r -> r.SOURCE != "CONNECTOR", dfL_test)
         fig, ax, _, _ = makemap(x_test, y_test)
-        handles = plotroads!(ax, dfL_faf5, dfN_test)
+        handles = plotroads!(ax, dfN_test, dfL_faf5)
         # Close zoom (<10° latspan): 2 tiers (FCLASS 1,2) with casing+fill each
         @test haskey(handles, :fill_1)
         @test haskey(handles, :fill_2)
@@ -223,7 +223,7 @@ end
 
     @testset "handle keys with connectors" begin
         fig, ax, _, _ = makemap(x_test, y_test)
-        handles = plotroads!(ax, dfL_test, dfN_test; show_connectors=true)
+        handles = plotroads!(ax, dfN_test, dfL_test; show_connectors=true)
         @test haskey(handles, :fill_1)
         @test haskey(handles, :casing_1)
         @test haskey(handles, :connector)
@@ -232,14 +232,14 @@ end
 
     @testset "connectors hidden by default" begin
         fig, ax, _, _ = makemap(x_test, y_test)
-        handles = plotroads!(ax, dfL_test, dfN_test)
+        handles = plotroads!(ax, dfN_test, dfL_test)
         @test !haskey(handles, :connector)
         @test length(handles) == 4
     end
 
     @testset "handle customization" begin
         fig, ax, _, _ = makemap(x_test, y_test)
-        handles = plotroads!(ax, dfL_test, dfN_test)
+        handles = plotroads!(ax, dfN_test, dfL_test)
         # Verify handles are mutable Makie line objects
         handles[:fill_1].color = :darkblue
         @test true  # No error means customization works
@@ -248,19 +248,19 @@ end
     @testset "empty dfL raises ArgumentError" begin
         dfL_empty = DataFrame(SRC=Int[], DST=Int[])
         fig, ax, _, _ = makemap(x_test, y_test)
-        @test_throws ArgumentError plotroads!(ax, dfL_empty, dfN_test)
+        @test_throws ArgumentError plotroads!(ax, dfN_test, dfL_empty)
     end
 
     @testset "orphan node reference raises ArgumentError" begin
         dfL_bad = DataFrame(SRC=[1, 99], DST=[2, 3], SOURCE=["FAF5", "FAF5"])
         fig, ax, _, _ = makemap(x_test, y_test)
-        @test_throws ArgumentError plotroads!(ax, dfL_bad, dfN_test)
+        @test_throws ArgumentError plotroads!(ax, dfN_test, dfL_bad)
     end
 
     @testset "no SOURCE column backward compat" begin
         dfL_nosrc = DataFrame(SRC=[1, 2, 3], DST=[2, 3, 4], DIST=[1.0, 1.2, 1.5])
         fig, ax, _, _ = makemap(x_test, y_test)
-        handles = plotroads!(ax, dfL_nosrc, dfN_test)
+        handles = plotroads!(ax, dfN_test, dfL_nosrc)
         # No SOURCE, no FCLASS → all tier 5; close zoom: casing_5 + fill_5 = 2
         @test length(handles) == 2
         @test haskey(handles, :fill_5)
@@ -272,7 +272,7 @@ end
         x_wide = [-125.0, -65.0]
         y_wide = [24.0, 50.0]
         fig, ax, _, _ = makemap(x_wide, y_wide)
-        handles = plotroads!(ax, dfL_test, dfN_test)
+        handles = plotroads!(ax, dfN_test, dfL_test)
         @test haskey(handles, :fill_1)
         @test !haskey(handles, :casing_1)
     end

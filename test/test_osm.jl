@@ -166,7 +166,7 @@ const GAINESVILLE_BBOX = (-82.45, -82.20, 29.55, 29.75)
         lons = dfN_stitched.LON
         lats = dfN_stitched.LAT
         fig, ax = makemap(lons, lats)
-        handles = plotroads!(ax, dfL_stitched, dfN_stitched)
+        handles = plotroads!(ax, dfN_stitched, dfL_stitched)
         @test length(handles) > 0
     end
 
