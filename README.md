@@ -11,7 +11,7 @@ Logjam is a Julia package for logistics engineering, providing tools for:
 * **Vehicle Routing**: Algorithms for multi-stop route optimization, featuring savings-based construction and local search improvement methods.
 * **Spatial Data**: A gazetteer of U.S. administrative boundaries and points, including Cities, Counties, ZIP codes (3- and 5-digit), Census tracts, and CBSA/CSA definitions.
 * **Distance Metrics**: Unified distance calculation utilities supporting Rectilinear (*L*₁), Euclidean (*L*₂), and Great Circle (Haversine) metrics.
-* **Plotting**: Network visualization (`plotnetwork`) and display helpers (`dcf`) via CairoMakie extension.
+* **Plotting**: Display helper (`dcf`) via CairoMakie extension.
 * **Mapping**: Plotting recipes and helper functions for mapping spatial data using GeoMakie.
 * **Data Helpers**: Matrix-to-DataFrame conversion (`mat2df`), formatted printing (`prt`), and floating-point snapping (`snapvals`).
 
@@ -31,7 +31,7 @@ Logjam uses Julia package extensions to keep its core lightweight. Features acti
 | `using` statement | Features enabled |
 |---|---|
 | `using Logjam` | Core: facility location, costing, distances, road networks, routing, spatial data, data helpers. |
-| `using Logjam, CairoMakie` | + plotting: `dcf`, `plotnetwork`. |
+| `using Logjam, CairoMakie` | + plotting: `dcf`. |
 | `using Logjam, CairoMakie, GeoMakie` | + mapping: `makemap`, `plotroads!`, `plotroute!`, `aligntext`. |
 | `using GLMakie; using Logjam` | + interactive map display via `backend=:GLMakie`. |
 | `using LightOSM, NearestNeighbors; using Logjam` | + OSM roads: `osm_roads`, `stitchnetworks`. |
