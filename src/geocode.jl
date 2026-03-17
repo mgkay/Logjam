@@ -28,6 +28,14 @@ const _state_abbrev_set = Set(values(_state_names))
 const _designator_suffixes = ["cdp", "municipality", "afb", "city", "town",
                                "village", "borough", "plantation"]
 
+"""
+    _tighten(v) -> Vector
+
+Convert `Vector{Union{T,Missing}}` to `Vector{T}` when no values are missing.
+"""
+_tighten(v::AbstractVector{Union{T,Missing}}) where T = any(ismissing, v) ? v : collect(T, v)
+_tighten(v::AbstractVector) = v
+
 # =============================================================================
 # Name Matching Engine
 # =============================================================================
@@ -556,10 +564,10 @@ function loc2lonlat(v::Vector{<:AbstractString}; state=nothing, country::Symbol=
 
     return DataFrame(
         INPUT = v,
-        LON = lons,
-        LAT = lats,
+        LON = _tighten(lons),
+        LAT = _tighten(lats),
         GC_SOURCE = sources,
-        GC_UNCERT = uncerts,
+        GC_UNCERT = _tighten(uncerts),
         GC_STATUS = statuses
     )
 end
@@ -625,10 +633,10 @@ function loc2lonlat(df::DataFrame; street::Symbol=:STREET, city::Symbol=:CITY,
     _save_cache(cache_dir, cache)
 
     result = copy(df)
-    result.LON = lons
-    result.LAT = lats
+    result.LON = _tighten(lons)
+    result.LAT = _tighten(lats)
     result.GC_SOURCE = sources
-    result.GC_UNCERT = uncerts
+    result.GC_UNCERT = _tighten(uncerts)
     result.GC_STATUS = statuses
     return result
 end
