@@ -36,6 +36,29 @@ end
     
     @test offset_result.first == :offset  # Ensure the second Pair is the :offset one
     @test length(offset_result.second) == 2  # Now, check the length of the offset array
+
+    # idx keyword: single index returns scalar align/offset
+    r1 = aligntext(x, y; idx=1)
+    a1, o1 = first(r1), last(r1)
+    @test a1.first == :align
+    @test a1.second isa Tuple{Symbol,Symbol}
+    @test o1.second isa Tuple{Real,Real}
+    # Should match the full result at index 1
+    @test a1.second == align_result.second[1]
+    @test o1.second == offset_result.second[1]
+
+    # idx keyword: vector index returns vectors
+    r12 = aligntext(x, y; idx=[1,2])
+    a12 = first(r12)
+    @test length(a12.second) == 2
+
+    # idx with more points: alignment considers all points
+    x3 = [0.0, 1.0, 0.5]
+    y3 = [0.0, 0.0, 1.0]
+    full = Dict(aligntext(x3, y3))
+    sub = Dict(aligntext(x3, y3; idx=1))
+    @test sub[:align] == full[:align][1]
+    @test sub[:offset] == full[:offset][1]
 end
 
 # Test for isptinbbox function

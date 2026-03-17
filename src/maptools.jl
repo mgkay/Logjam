@@ -148,7 +148,7 @@ end
 """
     aligntext(x::Union{Real, AbstractVector{<:Real}, Tuple{Vararg{Real}}},
               y::Union{Real, AbstractVector{<:Real}, Tuple{Vararg{Real}}};
-              offsetamt::Real=1, mindistratio::Real=1.5) -> Pair, Pair
+              offsetamt::Real=1, mindistratio::Real=1.5, idx=nothing) -> Pair, Pair
 
 Determines text alignment and offset positions for given points.
 
@@ -159,6 +159,7 @@ This function attempts to calculate the best alignment and offset positions for 
 - `y`: Scalar, vector, or tuple representing the y-coordinates for the points.
 - `offsetamt`: Scalar value specifying the amount of offset to apply to the text labels. This controls the distance by which the text is shifted away from the point. Default is `1`.
 - `mindistratio`: Scalar value that sets the minimum distance ratio used to decide the best alignment for text labels relative to adjacent points. Default is `1.5`.
+- `idx`: Optional index or index vector. When provided, alignment is computed using all points but only results for the specified indices are returned. Useful for labeling a subset of points (e.g., a depot) while considering all points for placement.
 
 # Returns
 - `:align => alignout`: A `Pair` where `:align` is associated with an array of 2-tuples representing horizontal and vertical alignment symbols (e.g., `(:left, :bottom)`, `(:center, :top)`) corresponding to each point.
@@ -183,7 +184,7 @@ display(fig)
 """
 function aligntext(x::Union{Real, AbstractVector{<:Real}, Tuple{Vararg{Real}}},
                    y::Union{Real, AbstractVector{<:Real}, Tuple{Vararg{Real}}};
-                   offsetamt::Real=1, mindistratio::Real=1.5)
+                   offsetamt::Real=1, mindistratio::Real=1.5, idx=nothing)
 
     # Convert scalars to single-element vectors for consistent handling
     if x isa Real
@@ -237,16 +238,16 @@ function aligntext(x::Union{Real, AbstractVector{<:Real}, Tuple{Vararg{Real}}},
             tri = triangulate(unique_pts)
             for ui in 1:n_unique
                 IJ = get_adjacent2vertex(tri, ui)
-                idx = collect(reduce(union, [Set(t) for t in IJ]))
-                filter!(j -> j > 0, idx)   # Remove ghost vertices
-                d = [d2(unique_pts[ui], unique_pts[j]) for j in idx]
+                nbrs = collect(reduce(union, [Set(t) for t in IJ]))
+                filter!(j -> j > 0, nbrs)   # Remove ghost vertices
+                d = [d2(unique_pts[ui], unique_pts[j]) for j in nbrs]
                 sidx = sortperm(d)
-                d, idx = d[sidx], idx[sidx]
+                d, nbrs = d[sidx], nbrs[sidx]
                 if (d[2]/d[1] > mindistratio) ||
                     (length(d) > 2 ? (d[3]/(d[1] + d[2]) > mindistratio) : false)
-                    base_angles[ui] = arcang(unique_pts[ui], unique_pts[idx[1]]) - 180
+                    base_angles[ui] = arcang(unique_pts[ui], unique_pts[nbrs[1]]) - 180
                 else
-                    ang = [arcang(unique_pts[ui], unique_pts[j]) for j in idx]
+                    ang = [arcang(unique_pts[ui], unique_pts[j]) for j in nbrs]
                     ang = sort(ang)
                     δ = diff([-180; ang; 180])
                     δ = [δ[2:end-1]; δ[1] + δ[end]]
@@ -281,7 +282,11 @@ function aligntext(x::Union{Real, AbstractVector{<:Real}, Tuple{Vararg{Real}}},
             end
         end
 
-        return :align => alignout, :offset => offsetout
+        if isnothing(idx)
+            return :align => alignout, :offset => offsetout
+        else
+            return :align => alignout[idx], :offset => offsetout[idx]
+        end
     end
 end
 
