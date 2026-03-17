@@ -359,7 +359,8 @@ plotroute!(ax, rte, sh, P, dfN; tr=tr, linewidth=2.5, show_markers=false)
 
 scatter!(ax, x[2:end], y[2:end], color=:blue, markersize=12)
 scatter!(ax, [x[1]], [y[1]], color=:green, markersize=16, marker=:rect)
-text!(ax, [x[1]], [y[1]], text=["Depot"]; aligntext([x[1]], [y[1]])...)
+a = Dict(aligntext(x, y))
+text!(ax, [x[1]], [y[1]], text=["Depot"]; align=a[:align][1], offset=a[:offset][1])
 
 ax.title = "Multi-Vehicle VRP: Savings + 2-Opt\n(9 Deliveries, 3 Vehicles, Gainesville FL)"
 dcf()
