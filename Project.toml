@@ -1,6 +1,6 @@
 name = "Logjam"
 uuid = "1d8a39d3-b73b-4a5b-b39c-beddb3604916"
-version = "0.2.2"
+version = "0.2.4"
 authors = ["Michael G. Kay <kay@ncsu.edu>"]
 description = "Logistics toolkit for facility location, transportation costing, freight road networks (FAF5), route optimization, U.S. geographic data, and GeoMakie visualizations"
 
@@ -16,8 +16,8 @@ SparseArrays = "2f01184e-e22b-5df5-ae63-d93ebab69eaf"
 
 [weakdeps]
 CairoMakie = "13f3f980-e62b-5c42-98c6-ff1f3baf88f0"
-GeoMakie = "db073c08-6b98-4ee5-b6a4-5efafb3259c6"
 GLMakie = "e9467ef8-e4e7-5192-8a1a-b1aee30e663a"
+GeoMakie = "db073c08-6b98-4ee5-b6a4-5efafb3259c6"
 HTTP = "cd3eb016-35fb-5094-929b-558a96fad6f3"
 JSON3 = "0f8b85d8-7281-11e9-16c2-39a750bddbf1"
 LightOSM = "d1922b25-af4e-4ba3-84af-fe9bea896051"
@@ -25,8 +25,8 @@ NearestNeighbors = "b8a86587-4115-5ab1-83bc-aa920d37bbce"
 
 [extensions]
 LogjamCairoMakieExt = "CairoMakie"
-LogjamMapExt = ["CairoMakie", "GeoMakie"]
 LogjamGLMakieExt = "GLMakie"
+LogjamMapExt = ["CairoMakie", "GeoMakie"]
 LogjamNominatimExt = ["HTTP", "JSON3"]
 LogjamOSMExt = ["LightOSM", "NearestNeighbors"]
 
@@ -36,22 +36,22 @@ CairoMakie = "0.12 - 0.15"
 DataFrames = "1.6 - 1"
 DelaunayTriangulation = "1.1 - 1"
 GLMakie = "0.10 - 0.13"
-HTTP = "1"
-JSON3 = "1"
 GeoMakie = "0.7"
 Graphs = "1.9 - 1"
-PrettyTables = "2 - 3"
+HTTP = "1"
+JSON3 = "1"
 LightOSM = "0.3"
 NearestNeighbors = "0.4"
+PrettyTables = "2 - 3"
 SimpleWeightedGraphs = "1.4 - 1"
 SparseArrays = "1.12.0"
 julia = "1.12"
 
 [extras]
 CairoMakie = "13f3f980-e62b-5c42-98c6-ff1f3baf88f0"
+GeoMakie = "db073c08-6b98-4ee5-b6a4-5efafb3259c6"
 HTTP = "cd3eb016-35fb-5094-929b-558a96fad6f3"
 JSON3 = "0f8b85d8-7281-11e9-16c2-39a750bddbf1"
-GeoMakie = "db073c08-6b98-4ee5-b6a4-5efafb3259c6"
 LightOSM = "d1922b25-af4e-4ba3-84af-fe9bea896051"
 NearestNeighbors = "b8a86587-4115-5ab1-83bc-aa920d37bbce"
 SimpleWeightedGraphs = "47aef6b3-ad0c-573a-a1e2-d07658019622"
