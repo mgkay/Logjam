@@ -586,7 +586,7 @@ function prt(X::AbstractMatrix; rows=1:size(X, 1), cols=1:size(X, 2),
     pt_kw = Dict{Symbol,Any}(
         :column_labels => col_labels,
         :row_labels => row_lbls,
-        :formatters => formatter,
+        :formatters => [formatter],
         :alignment => :r,
         :table_format => tfmt,
         :row_label_column_alignment => :r,
