@@ -323,10 +323,10 @@ using CairoMakie, GeoMakie, DataFrames
 
 # Stop addresses: depot (UF campus) + 9 delivery locations in Gainesville, FL
 stops = DataFrame(
-    STREET = ["1580 Stadium Rd", "1620 W University Ave", "3500 SW Archer Rd",
-              "200 NW 13th St", "3000 NE Waldo Rd", "4001 NW 43rd St",
-              "1800 SW 13th St", "1230 NE 23rd Ave", "2900 SW 34th St",
-              "620 NW 8th Ave"],
+    STREET = ["1580 Stadium Rd", "1620 W University Ave", "1400 NW 8th Ave",
+              "2010 NW 6th St", "111 E University Ave", "25 SE 2nd Pl",
+              "300 E University Ave", "1600 SW Archer Rd", "1200 SW 16th Ave",
+              "2300 SW Williston Rd"],
     CITY = fill("Gainesville", 10),
     STATE = fill(:FL, 10)
 )
