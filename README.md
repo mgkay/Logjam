@@ -10,6 +10,7 @@ Logjam is a Julia package for logistics engineering, providing tools for:
 * **Network Analysis**: Routing and topology tools for the FAF5 highway network, including shortest paths and automatic facility connectors.
 * **Vehicle Routing**: Algorithms for multi-stop route optimization, featuring savings-based construction and local search improvement methods.
 * **Spatial Data**: A gazetteer of U.S. administrative boundaries and points, including Cities, Counties, ZIP codes (3- and 5-digit), Census tracts, and CBSA/CSA definitions.
+* **Geocoding**: Forward (`loc2lonlat`) and reverse (`lonlat2loc`) geocoding with tiered resolution — street addresses via Nominatim, city/place names, postal codes, and counties from built-in reference data.
 * **Distance Metrics**: Unified distance calculation utilities supporting Rectilinear (*L*₁), Euclidean (*L*₂), and Great Circle (Haversine) metrics.
 * **Plotting**: Display helper (`dcf`) via CairoMakie extension.
 * **Mapping**: Plotting recipes and helper functions for mapping spatial data using GeoMakie.
@@ -30,11 +31,12 @@ Logjam uses Julia package extensions to keep its core lightweight. Features acti
 
 | `using` statement | Features enabled |
 |---|---|
-| `using Logjam` | Core: facility location, costing, distances, road networks, routing, spatial data, data helpers. |
+| `using Logjam` | Core: facility location, costing, distances, road networks, routing, spatial data, geocoding, data helpers. |
 | `using Logjam, CairoMakie` | + plotting: `dcf`. |
 | `using Logjam, CairoMakie, GeoMakie` | + mapping: `makemap`, `plotroads!`, `plotroute!`, `aligntext`. |
 | `using GLMakie; using Logjam` | + interactive map display via `backend=:GLMakie`. |
 | `using LightOSM, NearestNeighbors; using Logjam` | + OSM roads: `osm_roads`, `stitchnetworks`. |
+| `using HTTP, JSON3; using Logjam` | + address geocoding: `loc2lonlat` address tier via Nominatim. |
 
 ## Worked Examples
 
@@ -44,7 +46,7 @@ The examples below are ordered for incremental capability building — each one 
 
 ### Example 1 — Spatial Data
 
-Logjam includes a built-in U.S. gazetteer covering cities (`usplace`), counties (`uscounty`), 3- and 5-digit ZIP codes (`uszcta3`, `uszcta5`), CBSAs (`uscbsa`), and CSAs (`uscsa`). All tables share a consistent schema: FIPS codes for joining, LON/LAT coordinates following the Logjam convention (longitude first), and population counts where available. This example demonstrates loading and filtering place data, FIPS code conversion, and geographic name lookup.
+Logjam includes a built-in U.S. gazetteer covering cities (`usplace`), counties (`uscounty`), 3- and 5-digit ZIP codes (`uszcta3`, `uszcta5`), CBSAs (`uscbsa`), and CSAs (`uscsa`). All tables share a consistent schema: FIPS codes for joining, LON/LAT coordinates following the Logjam convention (longitude first), and population counts where available. This example demonstrates loading and filtering place data, FIPS code conversion, and geocoding.
 
 ```julia
 using Logjam
@@ -76,11 +78,12 @@ nc_large = filter(r -> r.STFIP == fips_nc && r.POP > 100_000, places)
 println("$(nrow(nc_large)) NC cities with pop > 100k")
 
 # Forward geocoding: city name to coordinates
-raleigh_xy = name2lonlat("Raleigh, NC", places)   # [-78.64, 35.78]
+geo = loc2lonlat("Raleigh", state=:NC)
+println("Raleigh: ($(round(geo.lon; digits=2)), $(round(geo.lat; digits=2))), source=$(geo.source)")
 
 # Reverse geocoding: coordinates to nearest named place
-nearest = lonlat2name([-78.85 35.73], filter(r -> r.POP > 50_000 && r.ISCUS, places))
-println("Nearest large city: $(nearest.name[1]) ($(round(nearest.dist[1]; digits=1)) mi)")
+nearest = lonlat2loc(-78.85, 35.73, filter(r -> r.POP > 50_000 && r.ISCUS, places))
+println("Nearest large city: $(nearest.desc)")
 
 # Load continental US 3-digit ZIP centroids
 z3 = filter(r -> r.ISCUS, uszcta3())
@@ -89,11 +92,12 @@ println("Continental US 3-digit ZIPs: $(nrow(z3))")
 
 ```
 10 NC cities with pop > 100k
-Nearest large city: Apex (1.3 mi)
+Raleigh: (-78.64, 35.78), source=PLACE
+Nearest large city: in Apex
 Continental US 3-digit ZIPs: 882
 ```
 
-**After-action.** The `ISCUS` flag is the standard filter for continental U.S. analysis — it removes Alaska, Hawaii, Puerto Rico, and other territories that would distort national maps. All coordinate columns follow the (LON, LAT) convention throughout Logjam, which means western longitudes are negative. The `st2fips` and `fips2st` functions enable joins between datasets that use different geographic identifiers. `lonlat2name` is used in later examples to reverse-geocode facility hub coordinates into interpretable city names, making model outputs readable without manual lookup. The `name2lonlat` function provides the inverse operation when building scenarios from named locations.
+**After-action.** The `ISCUS` flag is the standard filter for continental U.S. analysis — it removes Alaska, Hawaii, Puerto Rico, and other territories that would distort national maps. All coordinate columns follow the (LON, LAT) convention throughout Logjam, which means western longitudes are negative. The `st2fips` and `fips2st` functions enable joins between datasets that use different geographic identifiers. `loc2lonlat` provides forward geocoding — from place names, postal codes, or street addresses to coordinates — and returns source attribution and distance uncertainty along with each result. `lonlat2loc` is the reverse: given a coordinate, it finds the nearest named place and reports whether the point is "in" the place (using an area-based radius) or a distance and direction away; it is used in later examples to label facility hub coordinates with interpretable city names.
 
 ---
 
@@ -110,10 +114,10 @@ cities = filter(r -> r.STFIP == st2fips(:NC) && r.POP > 100_000, usplace())
 x, y, name = cities.LON, cities.LAT, cities.NAME
 
 # Create map — auto-fits region to data; draws FAF5 interstates by default
-fig, ax, hborders, _ = makemap(x, y)
+fig, ax, hb = makemap(x, y)
 ax.title = "North Carolina Cities with Population > 100,000"
 
-hborders[1].color[] = (:steelblue, 0.5)
+hb[1].color[] = (:steelblue, 0.5)
 
 # Plot city locations and labels
 scatter!(ax, x, y, color=:red, markersize=12)
@@ -124,13 +128,13 @@ dcf()
 
 ![NC Cities Plot](docs/assets/nc_cities_plot.png)
 
-**After-action.** `makemap` detects when coordinates fall within the continental U.S. and automatically overlays the FAF5 interstate network as a geographic reference. The `hborders` return value exposes the road and border line handles for post-hoc styling, as shown above for the interstate color. `aligntext(x, y)` returns a named tuple of keyword arguments (`:align`, `:offset`) that are splatted into `text!` via `...`, automatically positioning each label to avoid overlap with its marker.
+**After-action.** `makemap` detects when coordinates fall within the continental U.S. and automatically overlays the FAF5 interstate network as a geographic reference. The `hb` return value (third element) exposes the road and border line handles for post-hoc styling, as shown above for the interstate color. `aligntext(x, y)` returns a named tuple of keyword arguments (`:align`, `:offset`) that are splatted into `text!` via `...`, automatically positioning each label to avoid overlap with its marker.
 
 ---
 
 ### Example 3 — Facility Location
 
-A classic strategic logistics problem: place a fixed number of distribution hubs to minimize total weighted distance to customers. Using U.S. 3-digit ZIP code centroids as demand points and population as demand weight, the *p*-median model selects six hubs that minimize total people-miles. This example introduces `dists` for distance matrix construction, `pmedian`, `alloclines`, and `lonlat2name` for the full facility location workflow, and `prt` for formatted matrix display.
+A classic strategic logistics problem: place a fixed number of distribution hubs to minimize total weighted distance to customers. Using U.S. 3-digit ZIP code centroids as demand points and population as demand weight, the *p*-median model selects six hubs that minimize total people-miles. This example introduces `dists` for distance matrix construction, `pmedian`, `alloclines`, and `lonlat2loc` for the full facility location workflow, and `prt` for formatted matrix display.
 
 ```julia
 using Logjam
@@ -147,7 +151,7 @@ C = dists(XY, XY, :mi) .* z3.POP'
 y, TC, W = pmedian(6, C; verbose=false)
 
 # Reverse-geocode hub coordinates to nearest large city
-hubs = lonlat2name(XY[y, :], filter(r -> r.POP >= 50_000 && r.ISCUS, usplace()))
+hubs = lonlat2loc(XY[y, :], filter(r -> r.POP >= 50_000 && r.ISCUS, usplace()))
 
 # Display hub locations (prt auto-formats coordinates)
 prt(XY[y, :]; rows=hubs.name, cols=["LON", "LAT"], row_title="Hubs")
@@ -188,7 +192,7 @@ dcf()
 
 ![Facility Location Plot](docs/assets/facloc_pmedian_plot.png)
 
-**After-action.** `dists(XY, XY, :mi)` computes a full pairwise great-circle distance matrix in miles; the `:mi` symbol selects miles, `:km` selects kilometers, and `:gc` returns dimensionless radians. Broadcasting `.* z3.POP'` weights each column by the destination's population, converting the distance matrix into a cost matrix in people-miles. `pmedian` returns the hub indices `y`, total cost `TC`, and the allocation matrix `W` (a sparse indicator mapping each demand point to its nearest hub). `alloclines` converts `W` into NaN-separated line segment vectors per hub, which `lines!` renders efficiently without a loop per connection. `lonlat2name` reverse-geocodes the hub coordinates to the nearest large city, providing interpretable labels. `prt` displays the hub coordinate matrix as a formatted table with city-name row labels, automatic decimal detection, and comma-separated large numbers. For problems where the number of facilities is itself a decision, Logjam provides UFL heuristics — `ufladd`, `ufldrop`, `uflxchg`, and `ufl` — that optimize both facility selection and count.
+**After-action.** `dists(XY, XY, :mi)` computes a full pairwise great-circle distance matrix in miles; the `:mi` symbol selects miles, `:km` selects kilometers, and `:gc` returns dimensionless radians. Broadcasting `.* z3.POP'` weights each column by the destination's population, converting the distance matrix into a cost matrix in people-miles. `pmedian` returns the hub indices `y`, total cost `TC`, and the allocation matrix `W` (a sparse indicator mapping each demand point to its nearest hub). `alloclines` converts `W` into NaN-separated line segment vectors per hub, which `lines!` renders efficiently without a loop per connection. `lonlat2loc` reverse-geocodes the hub coordinates to the nearest large city, providing interpretable labels. `prt` displays the hub coordinate matrix as a formatted table with city-name row labels, automatic decimal detection, and comma-separated large numbers. For problems where the number of facilities is itself a decision, Logjam provides UFL heuristics — `ufladd`, `ufldrop`, `uflxchg`, and `ufl` — that optimize both facility selection and count.
 
 ---
 
@@ -307,23 +311,33 @@ dcf()
 
 ### Example 5 — Vehicle Routing (OSM Network)
 
-> **Requires OSM extension:** load `LightOSM` and `NearestNeighbors` before `Logjam`.
+> **Requires OSM extension** (`LightOSM`, `NearestNeighbors`) **and Nominatim extension** (`HTTP`, `JSON3`).
 
-The `osm_roads` function downloads a local OpenStreetMap road network and integrates it with the same connector pipeline used for FAF5 routing. This example solves a capacitated multi-vehicle VRP in Gainesville, FL — three vehicles with a maximum of three deliveries each share nine stops from a central depot, with each vehicle returning after completing its route.
+The `osm_roads` function downloads a local OpenStreetMap road network and integrates it with the same connector pipeline used for FAF5 routing. This example solves a capacitated multi-vehicle VRP in Gainesville, FL — three vehicles with a maximum of three deliveries each share nine stops from a central depot, with each vehicle returning after completing its route. Stop locations are specified as street addresses and geocoded to coordinates using `loc2lonlat`.
 
 ```julia
-using LightOSM, NearestNeighbors  # Must precede Logjam to activate OSM extension
+using LightOSM, NearestNeighbors  # OSM extension
+using HTTP, JSON3                  # Nominatim geocoding extension
 using Logjam
 using CairoMakie, GeoMakie, DataFrames
 
-# Stop coordinates: stop 1 = depot (UF campus), stops 2–10 = deliveries
-x = [-82.340, -82.360, -82.355, -82.348, -82.305, -82.298, -82.315, -82.340, -82.325, -82.350]
-y = [ 29.650,  29.675,  29.668,  29.672,  29.662,  29.655,  29.670,  29.635,  29.630,  29.628]
+# Stop addresses: depot (UF campus) + 9 delivery locations in Gainesville, FL
+stops = DataFrame(
+    STREET = ["1580 Stadium Rd", "1620 W University Ave", "3500 SW Archer Rd",
+              "200 NW 13th St", "3000 NE Waldo Rd", "4001 NW 43rd St",
+              "1800 SW 13th St", "1230 NE 23rd Ave", "2900 SW 34th St",
+              "620 NW 8th Ave"],
+    CITY = fill("Gainesville", 10),
+    STATE = fill(:FL, 10)
+)
+
+# Geocode addresses to (lon, lat) — Nominatim with city/state fallback
+gc = loc2lonlat(stops)
+x, y = gc.LON, gc.LAT
 
 # Download OSM road network covering the stop region
-bbox_limits, _ = mapbbox(x, y; xexpand=0.1, yexpand=0.1)
-bbox = (bbox_limits[1]..., bbox_limits[2]...)
-dfN0, dfL0 = osm_roads(bbox; cache_dir=joinpath(@__DIR__, "data"))  # nodes, links
+bb = mapbbox(x, y; xexpand=0.1, yexpand=0.1)[1]
+dfN0, dfL0 = osm_roads((bb[1]..., bb[2]...); cache_dir=joinpath(@__DIR__, "data"))
 
 # Build network and shortest paths
 dfN, dfL = addconnectors(dfN0, dfL0, x, y; add_nf_nf=false)
@@ -353,4 +367,4 @@ dcf()
 
 ![Gainesville VRP Plot](docs/assets/gnv_osm_vrp_plot.png)
 
-**After-action.** `mapbbox` derives a bounding box with 10% expansion to ensure the downloaded OSM region covers all stops. `osm_roads` downloads drivable roads from the Overpass API and caches results as CSV; subsequent calls with the same bbox load from cache. `add_nf_nf=false` disables direct demand-to-demand connectors that would bypass the road network. The capacity constraint is enforced through the cost function: `length(r) > 6 ? Inf` limits each route to three deliveries (each shipment appears as a pickup–delivery pair), causing `savings` to produce multiple routes. `tr=(b=[1], e=[1])` specifies that each route begins and ends at the depot. The multi-route `plotroute!` method automatically assigns a distinct color per vehicle from the Wong palette. For scenarios requiring local OSM detail integrated with the national FAF5 network, `stitchnetworks` creates connector edges between the two networks, returning a unified graph compatible with the standard routing pipeline.
+**After-action.** `loc2lonlat` geocodes the stop addresses via Nominatim's structured query API; results are cached to CSV so subsequent runs skip the API calls. If an address cannot be resolved, the function falls back to the city/state centroid and flags the result as `PARTIAL`. The geocoded coordinates then feed into the standard OSM routing pipeline. `mapbbox` derives a bounding box with 10% expansion to ensure the downloaded OSM region covers all stops. `osm_roads` downloads drivable roads from the Overpass API and caches results as CSV; subsequent calls with the same bbox load from cache. `add_nf_nf=false` disables direct demand-to-demand connectors that would bypass the road network. The capacity constraint is enforced through the cost function: `length(r) > 6 ? Inf` limits each route to three deliveries (each shipment appears as a pickup–delivery pair), causing `savings` to produce multiple routes. `tr=(b=[1], e=[1])` specifies that each route begins and ends at the depot. The multi-route `plotroute!` method automatically assigns a distinct color per vehicle from the Wong palette. For scenarios requiring local OSM detail integrated with the national FAF5 network, `stitchnetworks` creates connector edges between the two networks, returning a unified graph compatible with the standard routing pipeline.

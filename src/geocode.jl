@@ -645,6 +645,41 @@ Compute "in" radius in miles: sqrt(ALAND / π).
 _in_radius(aland) = sqrt(aland / π)
 
 """
+    lonlat2loc(lon::Real, lat::Real, df::DataFrame; threshold=nothing)
+
+Find nearest place to a (lon, lat) coordinate pair (reverse geocoding).
+
+Returns a named tuple with fields: name, st, dist, bearing, dir, desc.
+
+# Example
+```julia
+cities = usplace()
+lonlat2loc(-78.6382, 35.7796, cities)
+```
+"""
+function lonlat2loc(lon::Real, lat::Real, df::DataFrame; threshold=nothing)
+    return lonlat2loc([lon, lat], df; threshold=threshold)
+end
+
+"""
+    lonlat2loc(x::AbstractVector{<:Real}, y::AbstractVector{<:Real}, df::DataFrame; threshold=nothing)
+
+Find nearest places to coordinate vectors (reverse geocoding).
+
+Returns DataFrame with columns: idx, name, st, dist, bearing, dir, desc.
+
+# Example
+```julia
+cities = usplace()
+lonlat2loc([-78.6382, -80.8431], [35.7796, 35.2271], cities)
+```
+"""
+function lonlat2loc(x::AbstractVector{<:Real}, y::AbstractVector{<:Real}, df::DataFrame; threshold=nothing)
+    length(x) == length(y) || throw(ArgumentError("x and y must have the same length"))
+    return lonlat2loc(hcat(x, y), df; threshold=threshold)
+end
+
+"""
     lonlat2loc(xy::AbstractVector, df::DataFrame; threshold=nothing)
 
 Find nearest place to a [LON, LAT] coordinate (reverse geocoding).

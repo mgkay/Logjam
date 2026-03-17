@@ -231,6 +231,38 @@ using DataFrames
         @test r.status == "OK"
     end
 
+    # ── lonlat2loc scalar pair method ──────────────────────────────────
+    @testset "lonlat2loc scalar pair" begin
+        idx = findfirst(row -> row.NAME == "Raleigh" && row.ST == :NC, eachrow(cities))
+        lon, lat = cities[idx, :LON], cities[idx, :LAT]
+        r = lonlat2loc(lon, lat, cities)
+        @test occursin("in Raleigh", r.desc)
+        # Should match vector method
+        r2 = lonlat2loc([lon, lat], cities)
+        @test r.name == r2.name
+        @test r.dist == r2.dist
+    end
+
+    # ── lonlat2loc vector pair method ────────────────────────────────
+    @testset "lonlat2loc vector pair" begin
+        x = [-78.6382, -80.8431]
+        y = [35.7796, 35.2271]
+        result = lonlat2loc(x, y, cities)
+        @test result isa DataFrame
+        @test nrow(result) == 2
+        @test result.name[1] == "Raleigh"
+        @test result.name[2] == "Charlotte"
+        # Should match matrix method
+        result2 = lonlat2loc(hcat(x, y), cities)
+        @test result.name == result2.name
+        @test result.dist == result2.dist
+    end
+
+    # ── lonlat2loc vector pair length mismatch ───────────────────────
+    @testset "lonlat2loc vector pair mismatch" begin
+        @test_throws ArgumentError lonlat2loc([1.0, 2.0], [3.0], cities)
+    end
+
     # ── lonlat2loc DataFrame method ──────────────────────────────────────
     @testset "lonlat2loc DataFrame" begin
         df_in = DataFrame(LON=[-78.6382, -80.8431], LAT=[35.7796, 35.2271])
