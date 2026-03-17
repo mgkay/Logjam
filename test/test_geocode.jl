@@ -1,6 +1,7 @@
 # =============================================================================
 # Tests for geocode.jl — Core geocoding (no network dependency)
 # =============================================================================
+using DataFrames
 
 @testset "Geocoding — loc2lonlat & lonlat2loc" begin
 
