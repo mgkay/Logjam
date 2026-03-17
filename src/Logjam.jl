@@ -42,8 +42,8 @@ networks, route optimization, U.S. geographic data, and map visualization.
 - `faf5nodes`: Returns DataFrame of FAF5 road network nodes.
 - `faf5links`: Returns DataFrame of FAF5 road network links.
 - `faf5interstate`: Returns interstate polyline vectors for map backgrounds.
-- `name2lonlat`: Convert city name to coordinates.
-- `lonlat2name`: Find nearest cities (reverse geocoding).
+- `loc2lonlat`: Forward geocoding — addresses, cities, postal codes, counties to coordinates.
+- `lonlat2loc`: Reverse geocoding — coordinates to nearest place with area-based "in" radius.
 
 ## Map Functions
 - `makemap`: Creates a map visualization for predefined or user-defined regions.
@@ -121,6 +121,10 @@ const _osm_available = Ref{Bool}(false)
 const _osm_download = Ref{Any}(nothing)
 const _osm_stitch = Ref{Any}(nothing)
 
+# Nominatim extension support (set by LogjamNominatimExt when HTTP + JSON3 are loaded)
+const _nominatim_available = Ref{Bool}(false)
+const _nominatim_geocode = Ref{Any}(nothing)
+
 # Export facility location functions
 export ufladd, ufldrop, uflxchg, ufl, pmedian, randX
 
@@ -132,7 +136,7 @@ export totlogcost, aggshmt, transport_costs
 export usplace, uscounty, uscentract, uscenblkgrp, uszcta5, uszcta3
 export uscbsa, uscsa, st2fips, fips2st
 export faf5nodes, faf5links, faf5interstate
-export name2lonlat, lonlat2name
+export loc2lonlat, lonlat2loc
 
 # Export data helper functions (H1–H3) and relocated functions
 export mat2df, prt, snapvals
@@ -168,6 +172,7 @@ include("disttools.jl")
 include("roadtools.jl")
 include("routetools.jl")
 include("osmtools.jl")
+include("geocode.jl")
 
 # ─── Stub functions for CairoMakie extension (H7, H8) ───
 
