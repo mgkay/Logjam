@@ -40,7 +40,7 @@ Logjam uses Julia package extensions to keep its core lightweight. Features acti
 
 ## Worked Examples
 
-The examples below are ordered for incremental capability building — each one introduces a focused set of Logjam functions that later examples build upon. The full capability set is described in the overview bullets above. All examples are available as a runnable Jupyter notebook: [logjam_examples.ipynb](https://github.com/mgkay/Logjam/blob/main/examples/logjam_examples.ipynb).
+The examples below are ordered for incremental capability building — each one introduces a focused set of Logjam functions that later examples build upon. The full capability set is described in the overview bullets above. All examples are available as a runnable Jupyter notebook: [logjam_examples.ipynb](https://raw.githubusercontent.com/mgkay/Logjam/main/examples/logjam_examples.ipynb).
 
 ---
 
