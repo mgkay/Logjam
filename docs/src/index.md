@@ -186,6 +186,8 @@ rte2loc
 ### Route Construction and Improvement
 
 ```@docs
+mincostinsert
+pairwisesavings
 savings
 twoopt
 ```
