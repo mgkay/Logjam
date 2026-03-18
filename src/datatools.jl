@@ -581,18 +581,33 @@ function prt(X::AbstractMatrix; rows=1:size(X, 1), cols=1:size(X, 2),
     # Display
     col_labels = string.(cols)
     row_lbls = string.(rows)
-    tfmt = TextTableFormat(borders=TextTableBorders(' ',' ',' ',' ',' ',' ',' ',' ',' ',' ','─'))
 
     pt_kw = Dict{Symbol,Any}(
-        :column_labels => col_labels,
-        :row_labels => row_lbls,
         :formatters => [formatter],
         :alignment => :r,
-        :table_format => tfmt,
-        :row_label_column_alignment => :r,
     )
-    !isempty(title) && (pt_kw[:title] = title)
-    !isempty(row_title) && (pt_kw[:stubhead_label] = row_title)
+
+    if pkgversion(PrettyTables) >= v"3"
+        tfmt = TextTableFormat(borders=TextTableBorders(' ',' ',' ',' ',' ',' ',' ',' ',' ',' ','─'))
+        pt_kw[:column_labels] = col_labels
+        pt_kw[:row_labels] = row_lbls
+        pt_kw[:table_format] = tfmt
+        pt_kw[:row_label_column_alignment] = :r
+        !isempty(title) && (pt_kw[:title] = title)
+        !isempty(row_title) && (pt_kw[:stubhead_label] = row_title)
+    else
+        tf = TextFormat(up_right_corner=' ', up_left_corner=' ',
+            bottom_left_corner=' ', bottom_right_corner=' ',
+            up_intersection=' ', left_intersection=' ',
+            right_intersection=' ', middle_intersection=' ',
+            bottom_intersection=' ', column=' ', row='─')
+        pt_kw[:header] = col_labels
+        pt_kw[:row_names] = row_lbls
+        pt_kw[:tf] = tf
+        pt_kw[:row_name_alignment] = :r
+        !isempty(title) && (pt_kw[:title] = title)
+        !isempty(row_title) && (pt_kw[:row_name_column_title] = row_title)
+    end
 
     if str
         buf = IOBuffer()
