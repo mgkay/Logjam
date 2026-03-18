@@ -10,12 +10,13 @@ Logjam is a Julia package for logistics engineering, providing tools for:
 - **Network Analysis**: Routing and topology tools for the FAF5 highway network and OpenStreetMap road networks, including shortest paths and automatic facility connectors.
 - **Vehicle Routing**: Algorithms for multi-stop route optimization, featuring savings-based construction and local search improvement methods.
 - **Spatial Data**: A gazetteer of U.S. administrative boundaries and points, including Cities, Counties, ZIP codes (3- and 5-digit), Census tracts, and CBSA/CSA definitions.
+- **Geocoding**: Forward geocoding (`loc2lonlat`) from place names, postal codes, or street addresses to coordinates, and reverse geocoding (`lonlat2loc`) from coordinates to nearest named places. Street-address geocoding uses the Nominatim API via an optional extension.
 - **Distance Metrics**: Unified distance calculation utilities supporting Rectilinear (*L*₁), Euclidean (*L*₂), and Great Circle (Haversine) metrics.
 - **Mapping**: Geographic visualization with GeoMakie, including FCLASS-based road network rendering with OSM Carto-inspired styling, route overlays, and facility location plots.
 
 ## Extensions
 
-Logjam uses CairoMakie by default for rendering maps. Two optional extensions are available:
+Logjam uses CairoMakie by default for rendering maps. Three optional extensions are available:
 
 ### GLMakie Extension
 
@@ -40,6 +41,18 @@ bbox = mapbbox(stops_lon, stops_lat; xexpand=0.1, yexpand=0.1)
 nodes, links = osm_roads((bbox[1]..., bbox[2]...))
 ```
 
+### Nominatim Extension
+
+For street-address geocoding via the OpenStreetMap Nominatim API, load HTTP and JSON3 before Logjam:
+
+```julia
+using HTTP, JSON3  # Triggers LogjamNominatimExt extension
+using Logjam
+
+stops = DataFrame(STREET=["123 Main St"], CITY=["Raleigh"], STATE=[:NC])
+gc = loc2lonlat(stops)  # Geocodes via Nominatim with city/state fallback
+```
+
 ```@index
 ```
 
@@ -61,7 +74,6 @@ CUS_LIMITS
 makemap
 mapbbox
 aligntext
-bestfit
 isptinbbox
 alloclines
 ```
@@ -110,6 +122,17 @@ lonlat2loc
 faf5nodes
 faf5links
 faf5interstate
+```
+
+## Display and Formatting
+
+Functions for formatted output and figure display.
+
+```@docs
+prt
+dcf
+mat2df
+snapvals
 ```
 
 ## Distance Functions
@@ -163,8 +186,6 @@ rte2loc
 ### Route Construction and Improvement
 
 ```@docs
-mincostinsert
-pairwisesavings
 savings
 twoopt
 ```
