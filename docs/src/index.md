@@ -100,8 +100,8 @@ fips2st
 ### Geocoding
 
 ```@docs
-name2lonlat
-lonlat2name
+loc2lonlat
+lonlat2loc
 ```
 
 ### FAF5 Road Network Data
