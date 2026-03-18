@@ -161,7 +161,7 @@ export segcost, rteTC, isorigin, rte2loc
 export twoopt, savings, mincostinsert, pairwisesavings
 
 # Public API (accessible as Logjam.func, not auto-imported into namespace)
-public mincostinsert, pairwisesavings, rte2lines
+public rte2lines
 
 # Include component files
 include("loctools.jl")
