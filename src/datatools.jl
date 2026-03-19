@@ -591,7 +591,10 @@ function prt(X::AbstractMatrix; rows=1:size(X, 1), cols=1:size(X, 2),
         io = IOContext(buf, :displaysize => (typemax(Int), typemax(Int)))
         _print_table(io, X; column_labels=col_labels, row_labels=row_lbls,
                      formatter=formatter, title=title, stubhead_label=row_title)
-        return String(take!(buf))
+        raw = String(take!(buf))
+        lines = split(raw, '\n')
+        filtered = [l for l in lines if !isempty(l) && !all(c -> c == '─', l)]
+        return join(filtered, '\n') * '\n'
     else
         io = IOContext(stdout, :displaysize => (typemax(Int), typemax(Int)))
         _print_table(io, X; column_labels=col_labels, row_labels=row_lbls,
@@ -616,7 +619,10 @@ function prt(df::DataFrame; title::AbstractString="", str::Bool=false)
             buf = IOBuffer()
             io = IOContext(buf, :displaysize => (typemax(Int), typemax(Int)))
             _print_table(io, Matrix(df); column_labels=string.(names(df)), title=title)
-            return String(take!(buf))
+            raw = String(take!(buf))
+            lines = split(raw, '\n')
+            filtered = [l for l in lines if !isempty(l) && !all(c -> c == '─', l)]
+            return join(filtered, '\n') * '\n'
         else
             io = IOContext(stdout, :displaysize => (typemax(Int), typemax(Int)))
             _print_table(io, Matrix(df); column_labels=string.(names(df)), title=title)
