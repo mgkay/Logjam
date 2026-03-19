@@ -5,6 +5,7 @@
 # Build n×m sparse allocation matrix W where W[i,j]=1 if facility i serves customer j
 function _build_alloc(y, C)
     n, m = size(C)
+    all(1 .<= y .<= n) || error("Facility indices y must be in range 1:$n")
     alloc = [y[argmin(C[y, j])] for j in 1:m]
     return sparse(alloc, 1:m, 1.0, n, m)
 end
