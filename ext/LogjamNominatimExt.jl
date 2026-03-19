@@ -8,7 +8,7 @@ using JSON3
 const _last_request_time = Ref{Float64}(0.0)
 const _min_request_interval = 1.0  # seconds (Nominatim policy)
 
-const _user_agent = "Logjam.jl (educational use; https://github.com/ncsu-ise/Logjam.jl)"
+const _user_agent = "Logjam.jl (educational use; https://github.com/mgkay/Logjam)"
 
 function __init__()
     Logjam._nominatim_available[] = true
