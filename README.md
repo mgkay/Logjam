@@ -25,6 +25,13 @@ using Pkg
 Pkg.add(url="https://github.com/mgkay/Logjam.git")
 ```
 
+To run all examples in the README and the example notebook, install the additional packages:
+
+```julia
+Pkg.add(["CairoMakie", "GeoMakie", "DataFrames",
+         "HTTP", "JSON3", "LightOSM", "NearestNeighbors"])
+```
+
 ## Dependencies
 
 Logjam uses Julia package extensions to keep its core lightweight. Features activate automatically based on which packages are loaded:
