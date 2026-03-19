@@ -348,7 +348,11 @@ Loads and returns data from a CSV file in the "data" directory.
 """
 function loadcsvdata(fn)
     try
-        data_dir = joinpath(dirname(@__FILE__), "..", "data")
+        if startswith(fn, "faf5_")
+            data_dir = artifact"faf5"
+        else
+            data_dir = joinpath(dirname(@__FILE__), "..", "data")
+        end
         return CSV.read(joinpath(data_dir, fn * ".csv"), DataFrame)
     catch e
         println("Failed to load CSV data: ", e)

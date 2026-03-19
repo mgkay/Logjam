@@ -92,6 +92,8 @@ networks, route optimization, U.S. geographic data, and map visualization.
 module Logjam
 
 # Import all required packages
+using Artifacts
+using LazyArtifacts
 using Serialization
 using DataFrames
 using CSV

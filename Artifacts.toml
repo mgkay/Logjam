@@ -1,0 +1,7 @@
+[faf5]
+lazy = true
+git-tree-sha1 = "8fd56e9691a40fa2d3198604eda049ed79d2bc8b"
+
+    [[faf5.download]]
+    sha256 = "4b92b56ee8f3898329146cf92721c79cac54aa358cf14d5c1782d5ddc62bb28d"
+    url = "https://github.com/mgkay/Logjam/releases/download/data-faf5-v1/faf5.tar.gz"
