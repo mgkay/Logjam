@@ -504,7 +504,7 @@ end
 
 Pretty-print a matrix, vector, or DataFrame with smart formatting.
 
-Uses PrettyTables.jl for formatted display. For matrices, applies smart per-column
+Formatted display with right-aligned columns. For matrices, applies smart per-column
 digit detection inspired by MATLOG's `mdisp`: integer columns show 0 decimal places,
 all-fractional columns (all values < 1) show `allfrac` decimal places, and mixed
 columns show `fracdig` decimal places. NaN values display as blank. Numbers ≥ 1,000
@@ -582,30 +582,16 @@ function prt(X::AbstractMatrix; rows=1:size(X, 1), cols=1:size(X, 2),
     col_labels = string.(cols)
     row_lbls = string.(rows)
 
-    tfmt = TextTableFormat(borders=TextTableBorders(' ',' ',' ',' ',' ',' ',' ',' ',' ',' ','─'))
-
-    pt_kw = Dict{Symbol,Any}(
-        :column_labels => col_labels,
-        :row_labels => row_lbls,
-        :formatters => [formatter],
-        :alignment => :r,
-        :table_format => tfmt,
-        :row_label_column_alignment => :r,
-    )
-    !isempty(title) && (pt_kw[:title] = title)
-    !isempty(row_title) && (pt_kw[:stubhead_label] = row_title)
-
     if str
         buf = IOBuffer()
         io = IOContext(buf, :displaysize => (typemax(Int), typemax(Int)))
-        pretty_table(io, X; pt_kw...)
-        raw = String(take!(buf))
-        lines = split(raw, '\n')
-        filtered = [l for l in lines if !('─' in l)]
-        return join(filtered, '\n')
+        _print_table(io, X; column_labels=col_labels, row_labels=row_lbls,
+                     formatter=formatter, title=title, stubhead_label=row_title)
+        return String(take!(buf))
     else
         io = IOContext(stdout, :displaysize => (typemax(Int), typemax(Int)))
-        pretty_table(io, X; pt_kw...)
+        _print_table(io, X; column_labels=col_labels, row_labels=row_lbls,
+                     formatter=formatter, title=title, stubhead_label=row_title)
         return nothing
     end
 end
@@ -622,24 +608,14 @@ function prt(df::DataFrame; title::AbstractString="", str::Bool=false)
 
     if isempty(num_cols)
         # All string columns — pass through without formatting
-        tfmt = TextTableFormat(borders=TextTableBorders(' ',' ',' ',' ',' ',' ',' ',' ',' ',' ','─'))
-        pt_kw = Dict{Symbol,Any}(
-            :table_format => tfmt,
-            :alignment => :r,
-            :column_labels => names(df),
-        )
-        !isempty(title) && (pt_kw[:title] = title)
         if str
             buf = IOBuffer()
             io = IOContext(buf, :displaysize => (typemax(Int), typemax(Int)))
-            pretty_table(io, Matrix(df); pt_kw...)
-            raw = String(take!(buf))
-            lines = split(raw, '\n')
-            filtered = [l for l in lines if !('─' in l)]
-            return join(filtered, '\n')
+            _print_table(io, Matrix(df); column_labels=string.(names(df)), title=title)
+            return String(take!(buf))
         else
             io = IOContext(stdout, :displaysize => (typemax(Int), typemax(Int)))
-            pretty_table(io, Matrix(df); pt_kw...)
+            _print_table(io, Matrix(df); column_labels=string.(names(df)), title=title)
             return nothing
         end
     elseif isempty(str_cols)
@@ -651,6 +627,70 @@ function prt(df::DataFrame; title::AbstractString="", str::Bool=false)
         remaining = [c for c in names(df) if c != str_cols[1]]
         num_remaining = [c for c in remaining if !(eltype(df[!, c]) <: AbstractString)]
         prt(Matrix(df[!, num_remaining]); rows=row_labels, cols=num_remaining, title=title, str=str)
+    end
+end
+
+# Internal: lightweight table printer replacing PrettyTables
+function _print_table(io::IO, X::AbstractMatrix;
+                      column_labels::Vector{String}=String[],
+                      row_labels::Vector{String}=String[],
+                      formatter=nothing,
+                      title::String="",
+                      stubhead_label::String="")
+    m, n = size(X)
+
+    # Format all cells
+    cells = Matrix{String}(undef, m, n)
+    for j in 1:n, i in 1:m
+        cells[i, j] = formatter !== nothing ? string(formatter(X[i, j], i, j)) : string(X[i, j])
+    end
+
+    # Column widths from data and headers
+    col_widths = [maximum(length(cells[i, j]) for i in 1:m; init=0) for j in 1:n]
+    if !isempty(column_labels)
+        for j in 1:n
+            col_widths[j] = max(col_widths[j], length(column_labels[j]))
+        end
+    end
+
+    # Row label width
+    has_rows = !isempty(row_labels)
+    rl_width = 0
+    if has_rows
+        rl_width = maximum(length(l) for l in row_labels; init=0)
+        if !isempty(stubhead_label)
+            rl_width = max(rl_width, length(stubhead_label))
+        end
+    end
+
+    # Title
+    if !isempty(title)
+        println(io, title)
+    end
+
+    # Header row
+    if !isempty(column_labels)
+        if has_rows
+            print(io, lpad(stubhead_label, rl_width))
+        end
+        for j in 1:n
+            print(io, "  ", lpad(column_labels[j], col_widths[j]))
+        end
+        println(io)
+        # Separator
+        total_w = sum(col_widths) + 2 * n + (has_rows ? rl_width : 0)
+        println(io, '─'^total_w)
+    end
+
+    # Data rows
+    for i in 1:m
+        if has_rows
+            print(io, lpad(row_labels[i], rl_width))
+        end
+        for j in 1:n
+            print(io, "  ", lpad(cells[i, j], col_widths[j]))
+        end
+        println(io)
     end
 end
 

@@ -95,7 +95,6 @@ module Logjam
 using Serialization
 using DataFrames
 using CSV
-using PrettyTables
 using DelaunayTriangulation
 using Graphs
 using SimpleWeightedGraphs
