@@ -221,7 +221,7 @@ function ufl(k, C; verbose = true)
     while !done
         y, TC, _ = uflxchg(k, C, y′)
         verbose && println(" Xchg: ", TC)
-        if Set(y) !== Set(y′)
+        if Set(y) != Set(y′)
             y′, TC′, _ = ufladd(k, C; y)
             verbose && println("  Add: ", TC′)
             y′′, TC′′, _ = ufldrop(k, C; y)

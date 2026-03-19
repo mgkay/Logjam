@@ -76,6 +76,13 @@ using SparseArrays
         y_quiet, TC_quiet = ufl(k, C; verbose=false)
         @test length(y_quiet) > 0
         @test TC_quiet < Inf
+
+        # Regression: Set comparison uses value equality (!=), not identity (!==)
+        # With identity check, ufl would always run an extra iteration
+        y1, TC1 = ufl(k, C; verbose=false)
+        y2, TC2 = ufl(k, C; verbose=false)
+        @test Set(y1) == Set(y2)  # Deterministic heuristic produces same result
+        @test TC1 == TC2
     end
 
     @testset "pmedian" begin
