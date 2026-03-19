@@ -342,9 +342,11 @@ end
 """
     loadcsvdata(fn::String) -> DataFrame
 
-Loads and returns data from a CSV file in the "data" directory.
+Loads and returns data from a CSV file. FAF5 files (names starting with `faf5_`)
+are resolved via `LazyArtifacts` and downloaded on first use; all other files are
+loaded from the bundled `data/` directory.
 
-- `fn`: String representing the filename (without extension) of the data to be loaded.
+- `fn`: Filename without extension (e.g., `"faf5_nodes"`, `"usplace"`).
 """
 function loadcsvdata(fn)
     try
@@ -530,20 +532,16 @@ instead of printing. Default behavior prints to stdout and returns `nothing`.
 # Examples
 ```julia
 julia> prt([1000 0.1234; 2000 0.5678])
-──── ──── ────────
-   1    2
-──── ──── ────────
+       1        2
+────────────────────
   1  1,000   0.1234
   2  2,000   0.5678
-──── ──── ────────
 
 julia> prt([1 2; 3 4]; rows=["a","b"], cols=["X","Y"], row_title="ID")
-──── ──── ────
   ID    X    Y
-──── ──── ────
+──────────────
    a    1    2
    b    3    4
-──── ──── ────
 ```
 """
 function prt(X::AbstractMatrix; rows=1:size(X, 1), cols=1:size(X, 2),
