@@ -117,17 +117,35 @@ D = dists(cities, dc, :km)               # Kilometers
 
 See also: [`dgc`](@ref), [`d1`](@ref), [`d2`](@ref)
 """
-dists(X1::AbstractMatrix, X2::AbstractMatrix) = [d2(i, j) for i in eachrow(X1), j in eachrow(X2)]
+function dists(X1::AbstractMatrix, X2::AbstractMatrix)
+    D = Matrix{Float64}(undef, size(X1, 1), size(X2, 1))
+    @inbounds for j in axes(X2, 1), i in axes(X1, 1)
+        D[i, j] = d2(@view(X1[i, :]), @view(X2[j, :]))
+    end
+    return D
+end
 
 # Integer p: Manhattan (p=1) or Euclidean (p=2)
 function dists(X1::AbstractMatrix, X2::AbstractMatrix, p::Int)
-    p == 1 && return [d1(i, j) for i in eachrow(X1), j in eachrow(X2)]
-    p == 2 && return [d2(i, j) for i in eachrow(X1), j in eachrow(X2)]
-    error("For integer p, only p=1 (rectilinear) and p=2 (Euclidean) supported. Use p=:mi/:km/:rad for geographic.")
+    if p == 1
+        D = Matrix{Float64}(undef, size(X1, 1), size(X2, 1))
+        @inbounds for j in axes(X2, 1), i in axes(X1, 1)
+            D[i, j] = d1(@view(X1[i, :]), @view(X2[j, :]))
+        end
+        return D
+    elseif p == 2
+        return dists(X1, X2)
+    else
+        error("For integer p, only p=1 (rectilinear) and p=2 (Euclidean) supported. Use p=:mi/:km/:rad for geographic.")
+    end
 end
 
 # Symbol p: Geographic distance
 function dists(X1::AbstractMatrix, X2::AbstractMatrix, p::Symbol)
     p ∈ [:mi, :km, :rad] || error("Geographic distance requires p ∈ [:mi, :km, :rad]")
-    return [dgc(i, j; unit=p) for i in eachrow(X1), j in eachrow(X2)]
+    D = Matrix{Float64}(undef, size(X1, 1), size(X2, 1))
+    @inbounds for j in axes(X2, 1), i in axes(X1, 1)
+        D[i, j] = dgc(@view(X1[i, :]), @view(X2[j, :]); unit=p)
+    end
+    return D
 end
