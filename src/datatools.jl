@@ -357,7 +357,7 @@ function loadcsvdata(fn)
         end
         return CSV.read(joinpath(data_dir, fn * ".csv"), DataFrame)
     catch e
-        println("Failed to load CSV data: ", e)
+        @error "Failed to load CSV data" exception=(e, catch_backtrace())
         throw(e)
     end
 end
