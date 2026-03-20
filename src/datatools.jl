@@ -630,11 +630,38 @@ function prt(df::DataFrame; title::AbstractString="", str::Bool=false)
         # All numeric — use matrix prt with column names
         prt(Matrix(df); cols=names(df), title=title, str=str)
     else
-        # Mixed: first string column as row labels, rest through matrix prt
-        row_labels = df[!, str_cols[1]]
-        remaining = [c for c in names(df) if c != str_cols[1]]
-        num_remaining = [c for c in remaining if !(eltype(df[!, c]) <: AbstractString)]
-        prt(Matrix(df[!, num_remaining]); rows=row_labels, cols=num_remaining, title=title, str=str)
+        # Mixed string/numeric — format numeric columns, then display all as string matrix
+        col_names = names(df)
+        M = Matrix{String}(undef, nrow(df), ncol(df))
+        for (j, c) in enumerate(col_names)
+            if eltype(df[!, c]) <: AbstractString
+                M[:, j] = df[!, c]
+            else
+                col_vals = df[!, c]
+                real_vals = [v for v in col_vals if v isa Real && !isnan(v) && !isinf(v)]
+                nd = isempty(real_vals) ? 2 :
+                     all(v -> v == round(v), real_vals) ? 0 :
+                     all(v -> abs(v) < 1, real_vals) ? 4 : 2
+                M[:, j] = [begin
+                    !(v isa Real) ? string(v) :
+                    isnan(v) ? "" : isinf(v) ? string(v) :
+                    nd == 0 ? _commasep(round(Int64, v)) : _formatfixed(round(v, digits=nd), nd)
+                end for v in col_vals]
+            end
+        end
+        if str
+            buf = IOBuffer()
+            io = IOContext(buf, :displaysize => (typemax(Int), typemax(Int)))
+            _print_table(io, M; column_labels=string.(col_names), title=title)
+            raw = String(take!(buf))
+            lines = split(raw, '\n')
+            filtered = [l for l in lines if !isempty(l) && !all(c -> c == '─', l)]
+            return join(filtered, '\n') * '\n'
+        else
+            io = IOContext(stdout, :displaysize => (typemax(Int), typemax(Int)))
+            _print_table(io, M; column_labels=string.(col_names), title=title)
+            return nothing
+        end
     end
 end
 
