@@ -18,6 +18,8 @@ Logjam is a Julia package for logistics engineering, providing tools for:
 
 ## Installation
 
+Requires Julia 1.12+ (due to GeoMakie 0.7).
+
 To install Logjam, use the following command in your Julia REPL:
 
 ```julia
