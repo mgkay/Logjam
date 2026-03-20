@@ -14,7 +14,7 @@ function loaddata(fn)
         data_dir = joinpath(dirname(@__FILE__), "..", "data")
         return open(deserialize, joinpath(data_dir, fn * ".jls"))
     catch e
-        println("Failed to load data: ", e)
+        @error "Failed to load data" exception=(e, catch_backtrace())
         throw(e)
     end
 end
