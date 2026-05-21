@@ -368,3 +368,43 @@ dcf()
 ![Gainesville VRP Plot](docs/assets/gnv_osm_vrp_plot.png)
 
 **After-action.** `loc2lonlat` geocodes the stop addresses via Nominatim's structured query API; results are cached to CSV so subsequent runs skip the API calls. If an address cannot be resolved, the function falls back to the city/state centroid and flags the result as `PARTIAL`. The geocoded coordinates then feed into the standard OSM routing pipeline. `mapbbox` derives a bounding box with 10% expansion to ensure the downloaded OSM region covers all stops. `osm_roads` downloads drivable roads from the Overpass API and caches results as CSV; subsequent calls with the same bbox load from cache. `add_nf_nf=false` disables direct demand-to-demand connectors that would bypass the road network. The capacity constraint is enforced through the cost function: `length(r) > 6 ? Inf` limits each route to three deliveries (each shipment appears as a pickup–delivery pair), causing `savings` to produce multiple routes. `tr=(b=[1], e=[1])` specifies that each route begins and ends at the depot. The multi-route `plotroute!` method automatically assigns a distinct color per vehicle from the Wong palette. For scenarios requiring local OSM detail integrated with the national FAF5 network, `stitchnetworks` creates connector edges between the two networks, returning a unified graph compatible with the standard routing pipeline.
+
+---
+
+### Example 6 — Transport Costing
+
+`minTLC` solves for the optimal shipment size and total logistics cost given per-shipment parameters and a carrier profile. This example iterates `minTLC` over a two-row shipment DataFrame whose rows differ only in unit value, demonstrating how the TL/LTL mode choice flips with cargo value.
+
+```julia
+using Logjam
+using DataFrames
+
+# Two shipments differing in unit value; carrier and LTL PPI fixed
+sh_df = DataFrame(
+    f = [20.0, 20.0],
+    s = [40/9, 40/9],
+    a = [1.0, 1.0],
+    v = [85_000.0, 25_000.0],
+    h = [0.30, 0.30],
+    d = [532.0, 532.0]
+)
+tr      = (r=2.00*131/102.7, Kwt=25.0, Kcu=2750.0, ppi=131.0)
+ppi_ltl = 177.4
+
+# Compute optimal shipment size and cost per row
+res = [minTLC(sh_df[i, :], tr, ppi_ltl) for i in 1:nrow(sh_df)]
+sh_df[!, :qᵒ]    = [r.qᵒ    for r in res]
+sh_df[!, :TLCᵒ]  = [r.TLCᵒ  for r in res]
+sh_df[!, :isLTL] = [r.isLTL for r in res]
+
+prt(sh_df)
+```
+
+```
+    f     s  a       v       h    d    qᵒ       TLCᵒ  isLTL
+───────────────────────────────────────────────────────────
+1  20  4.44  1  85,000  0.3000  532  0.27  47,801.01      1
+2  20  4.44  1  25,000  0.3000  532  1.90  28,536.25      0
+```
+
+**After-action.** Both rows share the same carrier and lane (`d=532` mi), but row 1's high unit value (`v=85,000 $/ton`) makes inventory cost dominant, so `minTLC` selects a small LTL shipment (`qᵒ=0.27` ton, `isLTL=1`). Row 2's lower unit value allows a full truckload (`qᵒ=1.90` ton, `isLTL=0`) to win on freight cost. The comprehension `[minTLC(sh_df[i, :], tr, ppi_ltl) for i in 1:nrow(sh_df)]` passes each `DataFrameRow` directly to `minTLC`'s struct-form overload, which internally dispatches through `charge_tl`, `charge_ltl`, `maxpayld`, and `totlogcost`. The three result fields (`qᵒ`, `TLCᵒ`, `isLTL`) are then broadcast back as DataFrame columns via `[!, :col] = [...]` assignment. `prt` auto-formats mixed numeric and boolean columns: it applies comma separators to large integers and four-decimal display to floats, choosing column widths automatically.
