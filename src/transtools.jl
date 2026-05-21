@@ -65,7 +65,7 @@ function rate_ltl(q, s, d; ppi=104.2)
 end
 
 """
-    mincharge_tl(r::Real=2.00; ppi=102.7) -> Float64
+    mincharge_tl(; ppi=102.7) -> Float64
 
 Calculate TL minimum charge (independent of distance).
 
@@ -74,7 +74,6 @@ Represents fixed costs of loading/unloading at origin and destination. The const
 with distance, fitted from industry tariff data using methods similar to Kay & Warsing (2009).
 
 # Arguments
-- `r`: TL revenue per loaded truck-mile (\$/mi). Default: 2.00 (2004 baseline).
 - `ppi`: TL Producer Price Index (default: 102.7, 2004 baseline).
 
 # Returns
@@ -82,13 +81,13 @@ with distance, fitted from industry tariff data using methods similar to Kay & W
 
 # Formula
 ```
-MC_TL = (r/2) × 45  or  MC_TL = (ppi/102.7) × 45
+MC_TL = (ppi/102.7) × 45
 ```
 
 # Example
 ```julia
-mincharge_tl()  # Uses default r=2.00 → 45.0
-mincharge_tl(2.11; ppi=108.6)  # 2005 rates → 47.6
+mincharge_tl()  # Uses default ppi=102.7 → 45.0
+mincharge_tl(; ppi=108.6)  # 2005 rates → 47.6
 ```
 
 # References
@@ -96,7 +95,7 @@ mincharge_tl(2.11; ppi=108.6)  # 2005 rates → 47.6
   NC State University. Empirical derivation methodology: Kay & Warsing (2009),
   Int. J. Logistics Research and Applications, 12(3):165–193
 """
-function mincharge_tl(r::Real=2.00; ppi=102.7)
+function mincharge_tl(; ppi=102.7)
     return (ppi / 102.7) * 45
 end
 
@@ -180,7 +179,7 @@ charge_tl(30.0, 500.0, 8.0)  # Needs 2 trucks → ~2000
 function charge_tl(q, d, s; r=2.00, Kwt=25.0, Kcu=2750.0, ppi=102.7)
     q_max = min(Kwt, s * Kcu / 2000)
     num_trucks = ceil(Int, q / q_max)
-    charge_per_truck = max(r * d, mincharge_tl(r; ppi=ppi))
+    charge_per_truck = max(r * d, mincharge_tl(; ppi=ppi))
     return num_trucks * charge_per_truck
 end
 

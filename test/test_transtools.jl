@@ -40,19 +40,14 @@ using DataFrames
     end
 
     @testset "mincharge_tl" begin
-        # Test default values
-        mc = mincharge_tl()
-        @test mc ≈ 45.0  # Default: (102.7/102.7) * 45 = 45
+        # T0.1: default ppi → 45.0
+        @test mincharge_tl() ≈ 45.0
 
-        # Test with custom PPI
-        mc_adj = mincharge_tl(2.00; ppi=108.6)
-        @test mc_adj > 45.0  # Higher PPI → higher charge
-        @test mc_adj ≈ (108.6 / 102.7) * 45
+        # T0.2: explicit default ppi → 45.0
+        @test mincharge_tl(; ppi=102.7) ≈ 45.0
 
-        # Test that r parameter doesn't affect result (it's unused)
-        mc1 = mincharge_tl(2.00; ppi=102.7)
-        mc2 = mincharge_tl(3.00; ppi=102.7)
-        @test mc1 == mc2
+        # T0.3: adjusted ppi → proportional result
+        @test mincharge_tl(; ppi=108.6) ≈ 45.0 * (108.6 / 102.7) rtol=1e-4
     end
 
     @testset "mincharge_ltl" begin
