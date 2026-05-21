@@ -39,6 +39,16 @@ using DataFrames
         @test r_adj > r_base  # Higher PPI → higher rate
     end
 
+    @testset "rate_ltl struct-form (T1.1)" begin
+        sh_nt = (f=10_000, s=4.444, a=0.10, v=25_000, h=0.30, d=500)
+        sh_df = DataFrame([sh_nt])[1, :]
+        ppi_ltl = 104.2
+        # T1.1a: NamedTuple
+        @test rate_ltl(1.0, sh_nt, ppi_ltl) ≈ rate_ltl(1.0, sh_nt.s, sh_nt.d; ppi=ppi_ltl) rtol=1e-4
+        # T1.1b: DataFrameRow
+        @test rate_ltl(1.0, sh_df, ppi_ltl) ≈ rate_ltl(1.0, sh_nt.s, sh_nt.d; ppi=ppi_ltl) rtol=1e-4
+    end
+
     @testset "mincharge_tl" begin
         # T0.1: default ppi → 45.0
         @test mincharge_tl() ≈ 45.0
@@ -48,6 +58,15 @@ using DataFrames
 
         # T0.3: adjusted ppi → proportional result
         @test mincharge_tl(; ppi=108.6) ≈ 45.0 * (108.6 / 102.7) rtol=1e-4
+    end
+
+    @testset "mincharge_tl struct-form (T1.5)" begin
+        tr = (r=2.00, Kwt=25.0, Kcu=2750.0, ppi=102.7)
+        # T1.5a: struct-form matches scalar with same ppi
+        @test mincharge_tl(tr) ≈ mincharge_tl(; ppi=tr.ppi) rtol=1e-4
+        # T1.5b: tr.r is not read — changing r does not affect result
+        tr_alt = (r=99.9, Kwt=tr.Kwt, Kcu=tr.Kcu, ppi=tr.ppi)
+        @test mincharge_tl(tr_alt) == mincharge_tl(tr)
     end
 
     @testset "mincharge_ltl" begin
@@ -92,6 +111,16 @@ using DataFrames
         @test c_light > c_heavy  # Need more trucks when cube-limited
     end
 
+    @testset "charge_tl struct-form (T1.2)" begin
+        sh_nt = (f=10_000, s=4.444, a=0.10, v=25_000, h=0.30, d=500)
+        sh_df = DataFrame([sh_nt])[1, :]
+        tr = (r=2.00, Kwt=25.0, Kcu=2750.0, ppi=102.7)
+        # T1.2a: NamedTuple
+        @test charge_tl(1.0, sh_nt, tr) ≈ charge_tl(1.0, sh_nt.d, sh_nt.s; r=tr.r, Kwt=tr.Kwt, Kcu=tr.Kcu, ppi=tr.ppi) rtol=1e-4
+        # T1.2b: DataFrameRow
+        @test charge_tl(1.0, sh_df, tr) ≈ charge_tl(1.0, sh_nt.d, sh_nt.s; r=tr.r, Kwt=tr.Kwt, Kcu=tr.Kcu, ppi=tr.ppi) rtol=1e-4
+    end
+
     @testset "charge_ltl" begin
         # Test typical shipment
         c = charge_ltl(0.5, 250.0, 8.0)
@@ -110,6 +139,16 @@ using DataFrames
         @test isinf(c_invalid)
     end
 
+    @testset "charge_ltl struct-form (T1.3)" begin
+        sh_nt = (f=10_000, s=4.444, a=0.10, v=25_000, h=0.30, d=500)
+        sh_df = DataFrame([sh_nt])[1, :]
+        ppi_ltl = 104.2
+        # T1.3a: NamedTuple
+        @test charge_ltl(1.0, sh_nt, ppi_ltl) ≈ charge_ltl(1.0, sh_nt.d, sh_nt.s; ppi=ppi_ltl) rtol=1e-4
+        # T1.3b: DataFrameRow
+        @test charge_ltl(1.0, sh_df, ppi_ltl) ≈ charge_ltl(1.0, sh_nt.d, sh_nt.s; ppi=ppi_ltl) rtol=1e-4
+    end
+
     @testset "maxpayld" begin
         # Test weight-limited
         q = maxpayld(25.0, 25.0, 2750.0)
@@ -126,6 +165,16 @@ using DataFrames
         @test length(q_vec) == 4
         @test q_vec[1] < 25.0  # Cube-limited
         @test q_vec[4] == 25.0  # Weight-limited
+    end
+
+    @testset "maxpayld struct-form (T1.4)" begin
+        sh_nt = (f=10_000, s=4.444, a=0.10, v=25_000, h=0.30, d=500)
+        sh_df = DataFrame([sh_nt])[1, :]
+        tr = (r=2.00, Kwt=25.0, Kcu=2750.0, ppi=102.7)
+        # T1.4a: NamedTuple (exact equality — pure arithmetic)
+        @test maxpayld(sh_nt, tr) == maxpayld(sh_nt.s, tr.Kwt, tr.Kcu)
+        # T1.4b: DataFrameRow
+        @test maxpayld(sh_df, tr) == maxpayld(sh_nt.s, tr.Kwt, tr.Kcu)
     end
 
     @testset "totlogcost" begin

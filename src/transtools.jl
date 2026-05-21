@@ -105,6 +105,15 @@ function rate_ltl(q, s, d; ppi=104.2)
 end
 
 """
+    rate_ltl(q, sh::Union{NamedTuple,DataFrameRow}, ppi) -> Float64 or Vector{Float64}
+
+Struct-form overload of [`rate_ltl`](@ref). Unpacks `sh.s, sh.d` and dispatches
+to the scalar form `rate_ltl(q, sh.s, sh.d; ppi=ppi)`. `sh` may be a `NamedTuple`
+or `DataFrameRow`; `ppi` is the LTL Producer Price Index scalar.
+"""
+rate_ltl(q, sh::Union{NamedTuple, DataFrames.DataFrameRow}, ppi) = rate_ltl(q, sh.s, sh.d; ppi=ppi)
+
+"""
     mincharge_tl(; ppi=102.7) -> Float64
 
 Calculate TL minimum charge (independent of distance).
@@ -138,6 +147,15 @@ mincharge_tl(; ppi=108.6)  # 2005 rates → 47.6
 function mincharge_tl(; ppi=102.7)
     return (ppi / 102.7) * 45
 end
+
+"""
+    mincharge_tl(tr::Union{NamedTuple,DataFrameRow}) -> Float64
+
+Struct-form overload of [`mincharge_tl`](@ref). Reads `tr.ppi` only and dispatches
+to `mincharge_tl(; ppi=tr.ppi)`. Note: `tr.r` is NOT read by this overload (per
+MakePlan §4.D1); `tr` may be a `NamedTuple` or `DataFrameRow` with a `ppi` field.
+"""
+mincharge_tl(tr::Union{NamedTuple, DataFrames.DataFrameRow}) = mincharge_tl(; ppi=tr.ppi)
 
 """
     mincharge_ltl(d::Real; ppi=104.2) -> Float64
@@ -224,6 +242,16 @@ function charge_tl(q, d, s; r=2.00, Kwt=25.0, Kcu=2750.0, ppi=102.7)
 end
 
 """
+    charge_tl(q, sh::Union{NamedTuple,DataFrameRow}, tr) -> Float64
+
+Struct-form overload of [`charge_tl`](@ref). Unpacks `sh.d, sh.s` and
+`tr.r, tr.Kwt, tr.Kcu, tr.ppi`, dispatches to
+`charge_tl(q, sh.d, sh.s; r=tr.r, Kwt=tr.Kwt, Kcu=tr.Kcu, ppi=tr.ppi)`.
+`sh` may be a `NamedTuple` or `DataFrameRow`.
+"""
+charge_tl(q, sh::Union{NamedTuple, DataFrames.DataFrameRow}, tr) = charge_tl(q, sh.d, sh.s; r=tr.r, Kwt=tr.Kwt, Kcu=tr.Kcu, ppi=tr.ppi)
+
+"""
     charge_ltl(q, d, s; ppi=104.2) -> Float64
 
 Calculate LTL transport charge (rate × weight × distance, or minimum charge).
@@ -259,6 +287,15 @@ function charge_ltl(q, d, s; ppi=104.2)
 end
 
 """
+    charge_ltl(q, sh::Union{NamedTuple,DataFrameRow}, ppi) -> Float64
+
+Struct-form overload of [`charge_ltl`](@ref). Unpacks `sh.d, sh.s` and dispatches
+to `charge_ltl(q, sh.d, sh.s; ppi=ppi)`. `sh` may be a `NamedTuple` or
+`DataFrameRow`; `ppi` is the LTL Producer Price Index scalar.
+"""
+charge_ltl(q, sh::Union{NamedTuple, DataFrames.DataFrameRow}, ppi) = charge_ltl(q, sh.d, sh.s; ppi=ppi)
+
+"""
     maxpayld(s, Kwt, Kcu) -> Float64 or Vector{Float64}
 
 Determine maximum payload limited by weight or cube capacity.
@@ -285,6 +322,15 @@ maxpayld(25.0, 25.0, 2750.0) # 25 lb/ft³ → 25.0 tons (weight-limited)
 function maxpayld(s, Kwt, Kcu)
     return min.(Kwt, s .* Kcu ./ 2000)
 end
+
+"""
+    maxpayld(sh::Union{NamedTuple,DataFrameRow}, tr) -> Float64 or Vector{Float64}
+
+Struct-form overload of [`maxpayld`](@ref). Unpacks `sh.s, tr.Kwt, tr.Kcu` and
+dispatches to `maxpayld(sh.s, tr.Kwt, tr.Kcu)`. `sh` may be a `NamedTuple` or
+`DataFrameRow`.
+"""
+maxpayld(sh::Union{NamedTuple, DataFrames.DataFrameRow}, tr) = maxpayld(sh.s, tr.Kwt, tr.Kcu)
 
 # =============================================================================
 # Total Logistics Cost
