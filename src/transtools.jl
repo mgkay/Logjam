@@ -2,6 +2,46 @@
 # Transportation Economics
 # =============================================================================
 
+"""
+Transport-module field-name conventions.
+
+The transport helpers (`rate_ltl`, `charge_tl`, `charge_ltl`, `maxpayld`,
+`mincharge_tl`, `totlogcost`, `minTLC`) provide `(sh, tr)` struct-form method
+overloads in addition to their scalar/keyword signatures. The struct forms read
+fields from `sh` (a per-shipment `NamedTuple` or `DataFrameRow`) and `tr` (a
+per-carrier `NamedTuple`). The canonical field names are:
+
+# Per-shipment row (`sh`)
+
+| Field | Meaning | Type | Notes |
+|-------|---------|------|-------|
+| `f`     | Annual demand (tons/year)                  | Number | |
+| `s`     | Shipment density (lb/ft³)                  | Number | |
+| `a`     | Avg origin+destination inventory fraction  | Number | ASCII; math notation `α` in prose |
+| `v`     | Unit value (\$/ton)                         | Number | |
+| `h`     | Holding cost rate (1/yr)                   | Number | |
+| `d`     | Distance (mi)                              | Number | |
+| `qmax`  | Max payload (ton)                          | Number | attached by `maxpayld` |
+| `qᵒ`    | Optimal shipment size (ton)                | Number | attached by `minTLC` |
+| `TLCᵒ`  | Optimal total logistics cost (\$/yr)        | Number | attached by `minTLC` |
+| `isLTL` | LTL chosen?                                | Bool   | attached by `minTLC` |
+
+# Per-carrier (`tr`)
+
+| Field | Meaning | Notes |
+|-------|---------|-------|
+| `r`   | TL per-mile rate (\$/mi), PPI-adjusted     | |
+| `Kwt` | Weight capacity (ton)                     | |
+| `Kcu` | Cube capacity (ft³)                       | |
+| `ppi` | TL Producer Price Index at the rate date  | used by `mincharge_tl` PPI-scaling |
+
+LTL PPI is a separate scalar passed at the call site (LTL and TL are
+conceptually different carriers, so LTL PPI is not bundled into `tr`).
+
+Each struct-form overload's docstring lists exactly which `sh`/`tr` fields it
+consumes; not every overload reads every field.
+"""
+
 # =============================================================================
 # Rate Estimation
 # =============================================================================
