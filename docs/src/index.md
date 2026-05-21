@@ -243,4 +243,5 @@ maxpayld
 totlogcost
 aggshmt
 transport_costs
+minTLC
 ```

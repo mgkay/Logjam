@@ -430,6 +430,75 @@ function aggshmt(df::DataFrame)
 end
 
 """
+    minTLC(sh, tr=nothing, ppi=nothing) -> NamedTuple
+
+Independent shipment size that minimises total logistics cost (TLC), checking
+TL only, LTL only, or both modes depending on which arguments are provided.
+
+# Call modes
+
+- **TL-only** (`minTLC(sh, tr)`): Optimises over TL shipment size using the
+  closed-form EOQ expression; `ppi` is `nothing`.
+- **LTL-only** (`minTLC(sh, nothing, ppi)`): Optimises over LTL shipment size
+  using Optim.jl one-dimensional minimisation; `tr` is `nothing`.
+- **Both** (`minTLC(sh, tr, ppi)`): Computes both optimal sizes and returns
+  the mode with the lower TLC; `isLTL = true` iff LTL wins.
+- **Degenerate** (`minTLC(sh)` — neither provided): Returns
+  `(qᵒ=nothing, TLCᵒ=Inf, isLTL=false)`.
+
+# Arguments
+
+- `sh`: Per-shipment parameters; a `NamedTuple` or `DataFrameRow` with fields
+  `f` (demand, ton/yr), `s` (density, lb/ft³), `a` (inventory fraction), `v`
+  (unit value, \$/ton), `h` (holding rate, 1/yr), `d` (distance, mi).
+- `tr`: Carrier `NamedTuple` with fields `r`, `Kwt`, `Kcu`, `ppi` (TL). Pass
+  `nothing` for LTL-only mode.
+- `ppi`: LTL Producer Price Index scalar. Pass `nothing` for TL-only mode.
+
+# Returns
+
+`NamedTuple` with fields:
+- `qᵒ`: Optimal shipment size (ton); `nothing` in the degenerate case.
+- `TLCᵒ`: Minimum total logistics cost (\$/yr); `Inf` in the degenerate case.
+- `isLTL`: `true` if LTL was chosen, `false` if TL was chosen (or degenerate).
+
+# LTL search bounds
+
+The Optim search for the LTL optimal `q` uses hard-coded bounds:
+- Lower: `150/2000` ton (150 lb, the LTL minimum shipment weight).
+- Upper: `min(5, 650·sh.s/2000)` ton — the smaller of the LTL weight ceiling
+  (5 ton = 10,000 lb) and the density-derived cube-out limit (650 ft³ × density
+  converted to tons), following the ISE 754 lecture convention.
+
+# Example
+
+```julia
+sh = (f=20.0, s=40/9, a=1.0, v=25_000.0, h=0.30, d=532.0)
+tr = (r=2.00*131.0/102.7, Kwt=25.0, Kcu=2750.0, ppi=131.0)
+result = minTLC(sh, tr, 177.4)
+# result.qᵒ ≈ 1.9024, result.TLCᵒ ≈ 28_536.25, result.isLTL == false
+```
+"""
+function minTLC(sh, tr=nothing, ppi=nothing)
+    qᵒ, TLCᵒ, isLTL = nothing, Inf, false
+    if tr !== nothing
+        qTL = min(sqrt((sh.f * max(tr.r*sh.d, mincharge_tl(tr))) / (sh.a*sh.v*sh.h)),
+                  maxpayld(sh, tr))
+        TLCtl = totlogcost(qTL, charge_tl(qTL, sh, tr), sh)
+        qᵒ, TLCᵒ = qTL, TLCtl
+    end
+    if ppi !== nothing
+        qLTL = optimize(q -> totlogcost(q, charge_ltl(q, sh, ppi), sh),
+                        150/2000, min(5, 650sh.s/2000)).minimizer
+        TLCltl = totlogcost(qLTL, charge_ltl(qLTL, sh, ppi), sh)
+        if TLCltl < TLCᵒ
+            qᵒ, TLCᵒ, isLTL = qLTL, TLCltl, true
+        end
+    end
+    return (qᵒ = qᵒ, TLCᵒ = TLCᵒ, isLTL = isLTL)
+end
+
+"""
     transport_costs(shipments::DataFrame; mode=:auto, kwargs...) -> DataFrame
 
 Calculate transport costs for a collection of shipments, automatically selecting TL vs LTL.

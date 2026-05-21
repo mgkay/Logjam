@@ -291,6 +291,62 @@ using DataFrames
         @test all(results_ppi.cost .>= results.cost)  # Higher PPI → higher costs
     end
 
+    @testset "minTLC (T2)" begin
+        # Lecture-accurate fixtures (from 3-tran-3.jl):
+        #   uwt=40 lb, ucu=9 ft³ => s=40/9; f=20 ton/yr; d=532 mi;
+        #   ppiTL=131.0; rTL=2.00*131/102.7; alpha=1.0; ppiLTL=177.4
+        # NOTE: test-spec-unit.md §T2 listed different fixture values
+        # (f=10_000, s=4.444, a=0.10, r=2.00, ppi=102.7, d=500, ppi_ltl=104.2)
+        # that do NOT reproduce the idea.md Q14-Q19 acceptance numerics.
+        # The correct fixtures below reproduce all acceptance values to rtol=1e-4.
+        ppiTL_lec = 131.0
+        sh_lec = (f=20.0, s=40/9, a=1.0, v=25_000.0, h=0.30, d=532.0)
+        tr_lec = (r=2.00*ppiTL_lec/102.7, Kwt=25.0, Kcu=2750.0, ppi=ppiTL_lec)
+        ppi_ltl_lec = 177.4
+
+        # T2.1 TL-only: minTLC(sh_lec, tr_lec)
+        @testset "T2.1 TL-only" begin
+            result = minTLC(sh_lec, tr_lec)
+            @test result.qᵒ ≈ 1.9024 rtol=1e-4
+            @test result.TLCᵒ ≈ 28_536.25 rtol=1e-4
+            @test result.isLTL === false
+        end
+
+        # T2.2 LTL-only: minTLC(sh_lec, nothing, ppi_ltl_lec)
+        @testset "T2.2 LTL-only" begin
+            result = minTLC(sh_lec, nothing, ppi_ltl_lec)
+            @test result.qᵒ ≈ 0.7622 rtol=1e-4
+            @test result.isLTL === true
+        end
+
+        # T2.3 Both (TL wins at v=25k)
+        @testset "T2.3 Both, TL wins (v=25k)" begin
+            result = minTLC(sh_lec, tr_lec, ppi_ltl_lec)
+            @test result.qᵒ ≈ 1.9024 rtol=1e-4
+            @test result.TLCᵒ ≈ 28_536.25 rtol=1e-4
+            @test result.isLTL === false
+        end
+
+        # T2.4 Both (LTL wins at v=85k)
+        # Note: idea.md Q17 displays qᵒLTL=0.2735 (4 decimal places).
+        # Actual computed value is 0.27354...; using 0.27354 here to satisfy rtol=1e-4.
+        @testset "T2.4 Both, LTL wins (v=85k)" begin
+            sh_85k = merge(sh_lec, (v=85_000.0,))
+            result = minTLC(sh_85k, tr_lec, ppi_ltl_lec)
+            @test result.qᵒ ≈ 0.27354 rtol=1e-4
+            @test result.TLCᵒ ≈ 47_801.01 rtol=1e-4
+            @test result.isLTL === true
+        end
+
+        # T2.5 Degenerate: neither tr nor ppi
+        @testset "T2.5 Degenerate" begin
+            result = minTLC(sh_lec)
+            @test result.qᵒ === nothing
+            @test result.TLCᵒ === Inf
+            @test result.isLTL === false
+        end
+    end
+
     @testset "Integration: mode comparison" begin
         # Test that auto mode selects correctly
         q, d, s = 1.0, 500.0, 10.0

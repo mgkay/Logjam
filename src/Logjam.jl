@@ -27,6 +27,7 @@ networks, route optimization, U.S. geographic data, and map visualization.
 - `totlogcost`: Total logistics cost (transport + inventory).
 - `aggshmt`: Aggregate shipments into equivalent single shipment.
 - `transport_costs`: Batch calculate transport costs with mode selection.
+- `minTLC`: Independent shipment size minimising total logistics cost.
 
 ## Data Functions
 - `usplace`: Returns DataFrame of U.S. place data (cities, towns, CDPs).
@@ -132,7 +133,7 @@ export ufladd, ufldrop, uflxchg, ufl, pmedian, randX
 
 # Export transportation economics functions
 export rate_ltl, charge_tl, charge_ltl, mincharge_tl, mincharge_ltl, maxpayld
-export totlogcost, aggshmt, transport_costs
+export totlogcost, aggshmt, transport_costs, minTLC
 
 # Export data functions
 export usplace, uscounty, uscentract, uscenblkgrp, uszcta5, uszcta3
