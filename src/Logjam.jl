@@ -101,6 +101,7 @@ using DelaunayTriangulation
 using Graphs
 using SimpleWeightedGraphs
 using SparseArrays
+using Optim
 
 # CairoMakie extension support (set by LogjamCairoMakieExt)
 const _cairomakie_available = Ref{Bool}(false)
