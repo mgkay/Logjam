@@ -6,3 +6,7 @@
 /docs/build/
 *- Copy*
 /data/faf5_*.csv
+
+# Geocode + OSM network caches (generated)
+geocode_cache.csv
+/examples/data/osm_*.csv
