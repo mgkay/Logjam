@@ -14,6 +14,7 @@ include("test_integration.jl")
 include("test_aligntext_duplicates.jl")
 include("test_plottools.jl")
 include("test_geocode.jl")
+include("test_packaging.jl")
 
 if haskey(ENV, "LOGJAM_NETWORK_TESTS")
     include("test_osm.jl")

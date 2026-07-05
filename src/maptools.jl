@@ -173,7 +173,7 @@ This function attempts to calculate the best alignment and offset positions for 
 # Example
 ```julia-repl
 # Example: Cities in North Carolina with populaions over 100,000
-using GeoMakie, DataFrames
+using CairoMakie, GeoMakie, DataFrames
 df = filter(r -> (r.STFIP == st2fips(:NC)) && (r.POP > 100_000), usplace())
 x, y, name = df.LON, df.LAT, df.NAME
 fig, ax = makemap(x, y)
@@ -313,6 +313,18 @@ Calculates the bounding box for a set of geographic coordinates, with optional e
 - The x-limits are clamped to the range `[-180, 180]` to ensure valid longitude values.
 - The y-limits are clamped to slightly above `-90` and slightly below `90` to ensure valid latitude values and avoid issues with map projections.
 - Throws `ArgumentError` if `x` or `y` contains no non-`NaN` values.
+
+# Example
+```julia
+lon = [-78.6, -80.8, -82.5]
+lat = [35.8, 35.2, 35.6]
+
+# Tight bounding box (no expansion)
+(xlim, ylim), _ = mapbbox(lon, lat)
+
+# Expand 10% on each side for map padding
+(xlim, ylim), orig = mapbbox(lon, lat; xexpand=0.1, yexpand=0.1)
+```
 """
 function mapbbox(x::Union{AbstractVector{<:Real}, Tuple{Vararg{Real}}},
                  y::Union{AbstractVector{<:Real}, Tuple{Vararg{Real}}};
@@ -482,7 +494,7 @@ background beneath overlaid data.
 
 # Examples
 ```julia
-using GeoMakie
+using CairoMakie, GeoMakie
 
 # Basic FAF5 plot
 dfN, dfL = faf5nodes(), faf5links()

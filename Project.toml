@@ -1,6 +1,6 @@
 name = "Logjam"
 uuid = "1d8a39d3-b73b-4a5b-b39c-beddb3604916"
-version = "0.2.6"
+version = "0.2.7"
 authors = ["Michael G. Kay <kay@ncsu.edu>"]
 description = "Logistics toolkit for facility location, transportation costing, freight road networks (FAF5), route optimization, U.S. geographic data, and GeoMakie visualizations"
 
@@ -40,7 +40,7 @@ DelaunayTriangulation = "1.1 - 1"
 GLMakie = "0.10 - 0.13"
 GeoMakie = "0.7 - 0"
 Graphs = "1.9 - 1"
-HTTP = "1"
+HTTP = "1 - 2"
 JSON3 = "1"
 LightOSM = "0.3 - 0"
 NearestNeighbors = "0.4 - 0"

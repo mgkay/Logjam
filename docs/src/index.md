@@ -141,6 +141,7 @@ Functions for calculating distances between points using various metrics.
 
 ```@docs
 dgc
+dgca
 d1
 d2
 dists
@@ -181,6 +182,7 @@ segcost
 rteTC
 isorigin
 rte2loc
+rte2lines
 ```
 
 ### Route Construction and Improvement
@@ -214,6 +216,13 @@ uflxchg
 ```@docs
 ufl
 pmedian
+```
+
+### Continuous Location
+
+```@docs
+ala
+wcentroid
 ```
 
 ### Utility Functions

@@ -16,6 +16,8 @@ networks, route optimization, U.S. geographic data, and map visualization.
 - `ufl`: Hybrid UFL heuristic (ADD + DROP + EXCHANGE).
 - `pmedian`: p-median facility location (fixed number of facilities).
 - `randX`: Generate random points within bounding box.
+- `ala`: Alternating location–allocation heuristic (multifacility minisum).
+- `wcentroid`: Weighted geographic centroid (cos-lat corrected).
 
 ## Transportation Economics Functions
 - `rate_ltl`: Estimate LTL transportation rate (\$/ton-mi).
@@ -53,12 +55,24 @@ networks, route optimization, U.S. geographic data, and map visualization.
 - `isptinbbox`: Checks if a point lies within a bounding box.
 - `alloclines`: Convert allocation matrix to NaN-separated line segments for visualization.
 - `plotroads!`: Overlay road networks on GeoAxis with adaptive zoom-based styling.
+- `plotroute!`: Overlay routes/paths on a GeoAxis (requires CairoMakie + GeoMakie).
+
+## Display and Formatting Functions
+- `prt`: Print a matrix as an aligned fixed-decimal table.
+- `mat2df`: Convert a matrix to a DataFrame with generated column names.
+- `snapvals`: Snap numeric values to a set of reference values within a tolerance.
+- `dcf`: Display the current figure (requires CairoMakie).
+
+## OSM Functions
+- `osm_roads`: Download an OpenStreetMap road network (requires LightOSM + NearestNeighbors).
+- `stitchnetworks`: Stitch multiple OSM subnetworks into one (requires LightOSM + NearestNeighbors).
 
 ## Road Network Functions
 - `dgc`: Great circle distance between two points.
+- `dgca`: Area-adjusted great-circle distance (floored by mean centroid distance).
 - `d1`: Rectilinear (Manhattan) distance between two points.
 - `d2`: Euclidean distance between two points.
-- `dists`: Unified distance matrix (replaces Dgc, supports all metrics).
+- `dists`: Unified distance matrix (replaces Dgc, supports all metrics incl. lp/Chebychev).
 - `prune_reindex`: Prune network to common vertices and reindex.
 - `thin`: Remove degree-2 nodes from network (use `verbose=true` for statistics).
 - `addconnectors`: Add demand point connectors to road network.
@@ -66,6 +80,7 @@ networks, route optimization, U.S. geographic data, and map visualization.
 - `x2ln`: Convert graph edges to line coordinates for plotting.
 - `cropnetwork`: Crop road network to bounding box of coordinates.
 - `shortestpaths`: Compute shortest path distances and parent pointers.
+- `tracepath`: Reconstruct a shortest-path node sequence from a parent vector.
 
 ## Routing Functions
 - `segcost`: Calculate segment costs in a location sequence.
@@ -83,12 +98,19 @@ networks, route optimization, U.S. geographic data, and map visualization.
 - `CUS_LIMITS`: Geographical limits for continental U.S. map projections.
 
 ## Dependencies
-- `Serialization`: For loading pre-serialized geographic data.
+
+Core dependencies (always loaded):
+- `Serialization`, `Artifacts`, `LazyArtifacts`: For loading pre-serialized geographic data.
 - `DataFrames`, `CSV`: For tabular data representation.
-- `GeoMakie`, `CairoMakie`: For creating and rendering maps.
-- `GLMakie` (optional): For interactive map display.
 - `DelaunayTriangulation`: For triangulation in text alignment and addconnectors.
-- `Graphs`, `SimpleWeightedGraphs`: For graph-based network operations.
+- `Graphs`, `SimpleWeightedGraphs`, `SparseArrays`: For graph-based network operations.
+- `Optim`: For continuous-location minisum solves (`ala`, single-facility idiom).
+
+Optional dependencies (weak deps — activate extensions when loaded):
+- `CairoMakie`, `GeoMakie`: For creating and rendering maps (`makemap`, `plotroads!`, `plotroute!`).
+- `GLMakie`: For interactive map display.
+- `HTTP`, `JSON3`: For street-address geocoding via the Nominatim API.
+- `LightOSM`, `NearestNeighbors`: For OpenStreetMap road networks (`osm_roads`, `stitchnetworks`).
 """
 module Logjam
 

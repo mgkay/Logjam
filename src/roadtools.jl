@@ -47,7 +47,7 @@ function prune_reindex(dfN::DataFrame, dfL::DataFrame;
     dfL_out = filter(row -> (row[src_col] in vtx_set) && (row[dst_col] in vtx_set), dfL)
     dfN_out = filter(row -> row[node_col] in vtx_set, dfN)
 
-    # Create mapping: old ID â†’ new sequential ID
+    # Create mapping: old ID → new sequential ID
     vtx_map = Dict(v => i for (i, v) in enumerate(vtx))
 
     # Reindex SRC and DST columns in links
@@ -492,13 +492,13 @@ function thin(dfN::DataFrame, dfL::DataFrame;
         orig_dist = sum(dfL[:, dist_col])
         thin_dist = sum(links[:, dist_col])
         println("Thinning Statistics:")
-        println("  Nodes: $(nrow(dfN)) â†’ $(nrow(nodes_out)) " *
+        println("  Nodes: $(nrow(dfN)) → $(nrow(nodes_out)) " *
                 "(-$(nrow(dfN) - nrow(nodes_out)), " *
                 "$(round(100*(1 - nrow(nodes_out)/nrow(dfN)), digits=1))%)")
-        println("  Links: $(nrow(dfL)) â†’ $(nrow(links)) " *
+        println("  Links: $(nrow(dfL)) → $(nrow(links)) " *
                 "(-$(nrow(dfL) - nrow(links)), " *
                 "$(round(100*(1 - nrow(links)/nrow(dfL)), digits=1))%)")
-        println("  Total distance: $(round(orig_dist, digits=1)) â†’ " *
+        println("  Total distance: $(round(orig_dist, digits=1)) → " *
                 "$(round(thin_dist, digits=1)) mi " *
                 "($(round(100*thin_dist/orig_dist, digits=1))%)")
     end
@@ -531,7 +531,7 @@ plotting all edges as lines with NaN separators.
 
 # Example
 ```julia
-using Graphs, CairoMakie
+using Graphs, CairoMakie, GeoMakie
 g = SimpleGraph(3)
 add_edge!(g, 1, 2)
 add_edge!(g, 2, 3)
@@ -560,18 +560,19 @@ By default, roads are bidirectional unless marked as one-way via `dir_col`.
 # Arguments
 - `dfL`: Links DataFrame with columns [SRC, DST, weight_col, ...].
 - `weight`: Weight column - either column index (default 3) or column name symbol.
-- `ab_weight`: Optional symbol for Aâ†’B weight column (overrides `weight` for forward edges).
-- `ba_weight`: Optional symbol for Bâ†’A weight column (overrides `weight` for reverse edges).
+- `ab_weight`: Optional symbol for A→B weight column (overrides `weight` for forward edges).
+- `ba_weight`: Optional symbol for B→A weight column (overrides `weight` for reverse edges).
 - `dir_col`: Column symbol indicating directionality (default `:DIR`).
-- `oneway_val`: Value in `dir_col` that indicates one-way Aâ†’B only (default `1`).
+- `oneway_val`: Value in `dir_col` that indicates one-way A→B only (default `1`).
 
 # Returns
 - `SimpleWeightedDiGraph` with weighted directed edges.
 
 # Examples
 ```julia
-# Load FAF5 road network
-links = faf5links()
+# Load FAF5 road network and reindex first so sparse node IDs become
+# sequential 1:n (otherwise :auto reindexing triggers a silent renumbering)
+nodes, links = prune_reindex(faf5nodes(), faf5links())
 
 # Default: use column 3 (DIST) for symmetric weights
 g = links2graph(links)
@@ -583,7 +584,7 @@ g = links2graph(links, ab_weight=:AB_TIME, ba_weight=:BA_TIME)
 # Notes
 - Roads are bidirectional by default. One-way roads are identified when
   `dir_col` exists and equals `oneway_val`.
-- For FAF5 data, `DIR=1` indicates one-way (Aâ†’B only), `DIR=0` is bidirectional.
+- For FAF5 data, `DIR=1` indicates one-way (A→B only), `DIR=0` is bidirectional.
 - Edges with zero or negative weights are skipped.
 """
 function _links2graph_core(dfL::DataFrame;
@@ -641,7 +642,7 @@ function _links2graph_core(dfL::DataFrame;
     for i in 1:nrow(dfL)
         u, v = src_col[i], dst_col[i]
 
-        # Forward edge (A â†’ B) with AB weight
+        # Forward edge (A → B) with AB weight
         val_ab = Float64(w_ab[i])
         if val_ab > 1e-10
             push!(src_vec, u)
@@ -649,7 +650,7 @@ function _links2graph_core(dfL::DataFrame;
             push!(wgt_vec, val_ab)
         end
 
-        # Reverse edge (B â†’ A) with BA weight, unless one-way
+        # Reverse edge (B → A) with BA weight, unless one-way
         is_oneway = has_dir && (d_col[i] == oneway_val)
         if !is_oneway
             val_ba = use_asymmetric ? Float64(w_ba[i]) : val_ab

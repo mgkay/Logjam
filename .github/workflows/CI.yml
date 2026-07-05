@@ -6,6 +6,9 @@ on:
     tags: ['*']
   pull_request:
   workflow_dispatch:
+  schedule:
+    # Weekly run (Mondays 06:00 UTC) to catch ecosystem drift.
+    - cron: "0 6 * * 1"
 concurrency:
   # Skip intermediate builds: always.
   # Cancel intermediate builds: only if it is a pull request build.

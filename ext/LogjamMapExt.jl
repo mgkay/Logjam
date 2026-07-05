@@ -64,6 +64,8 @@ function _makemap_impl(x::Union{Nothing, AbstractVector{<:Real}, NTuple{2, <:Rea
         elseif region == :CUS
             limits = Logjam.CUS_LIMITS
             doCountryborder, doUSborder = false, true
+        else
+            error("Unknown region :$region. Use :World, :US, or :CUS")
         end
     else
         # Calculate map limits based on provided coordinates with optional expansion
