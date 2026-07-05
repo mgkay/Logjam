@@ -2,6 +2,7 @@ using Test
 using Logjam
 using SparseArrays
 using Random
+using DataFrames
 
 @testset "Facility Location (loctools)" begin
 
@@ -297,5 +298,50 @@ using Random
             @test !any(vec(sum(W, dims=2)) .== 0)
             @test TC > 0 && TC < Inf
         end
+    end
+
+    @testset "N6: wcentroid (weighted geographic centroid)" begin
+        LON = [-78.64, -80.84, -79.79, -77.94]
+        LAT = [35.78, 35.23, 36.07, 34.23]
+        POP = [469.0, 897.0, 299.0, 123.0]
+
+        # Known weighted centroid to rtol=1e-6 (values re-run from the formula).
+        lon, lat = wcentroid(LON, LAT, POP)
+        @test lon ≈ -79.88862287042834 rtol=1e-6
+        @test lat ≈ 35.4459451901566 rtol=1e-6
+
+        # Returned in (LON, LAT) order — longitude first, and negative (western hemisphere).
+        @test lon < 0
+
+        # Latitude is the plain weighted mean of latitudes.
+        @test lat ≈ sum(POP .* LAT) / sum(POP) rtol=1e-6
+        # Longitude uses cos(lat) weighting.
+        cw = POP .* cosd.(LAT)
+        @test lon ≈ sum(cw .* LON) / sum(cw) rtol=1e-6
+
+        # Equal weights ⇒ cos-lat-corrected mean (still cos-weighted in longitude).
+        lon2, lat2 = wcentroid([-78.0, -80.0], [35.0, 36.0], [1.0, 1.0])
+        @test lat2 ≈ 35.5 rtol=1e-6
+        c = cosd.([35.0, 36.0])
+        @test lon2 ≈ sum(c .* [-78.0, -80.0]) / sum(c) rtol=1e-6
+
+        # Zero total weight errors.
+        @test_throws ErrorException wcentroid([-78.0, -80.0], [35.0, 36.0], [0.0, 0.0])
+
+        # Grouped combine: one row per group, columns LON/LAT populated.
+        df = DataFrame(
+            k   = [:A, :A, :B, :B],
+            LON = LON,
+            LAT = LAT,
+            POP = POP,
+        )
+        g = combine(groupby(df, :k), [:LON, :LAT, :POP] => wcentroid => [:LON, :LAT])
+        @test nrow(g) == 2                             # one row per group
+        @test Set(names(g)) == Set(["k", "LON", "LAT"])
+        # Group A centroid matches a direct wcentroid call on its rows.
+        lonA, latA = wcentroid(LON[1:2], LAT[1:2], POP[1:2])
+        rA = g[g.k .== :A, :]
+        @test rA.LON[1] ≈ lonA rtol=1e-6
+        @test rA.LAT[1] ≈ latA rtol=1e-6
     end
 end

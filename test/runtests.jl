@@ -4,6 +4,7 @@ using CairoMakie
 using GeoMakie
 
 include("test_loctools.jl")
+include("test_disttools.jl")
 include("test_transtools.jl")
 include("test_maptools.jl")
 include("test_datatools.jl")

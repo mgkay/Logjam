@@ -91,12 +91,18 @@ Compute distance matrix between two point sets using specified metric.
 - `X1`: m×n matrix of m points in n dimensions
 - `X2`: k×n matrix of k points in n dimensions
 - `p`: Distance metric (default: `2`)
-  - `1`: Rectilinear (Manhattan) distance
-  - `2`: Euclidean distance (default)
-  - `:mi`, `:km`, `:rad`: Great circle distance (requires n=2, lon-lat coordinates)
+  - `1`: Rectilinear (Manhattan, l₁) distance
+  - `2`: Euclidean (l₂) distance (default)
+  - real `p ≥ 1` (incl. `Inf`): general lₚ metric `(Σ|Δ|ᵖ)^(1/p)`; `Inf` gives the
+    Chebychev (l∞) distance `maximum(abs, Δ)`
+  - `:mi`, `:km`, `:rad`: Great circle distance (requires n=2, lon-lat coordinates);
+    `:rad` returns radians of arc
 
 # Returns
 - `D`: m×k matrix where D[i,j] = distance from X1[i,:] to X2[j,:]
+
+Integer `p ∈ {1,2}` dispatches to the specialized l₁/l₂ methods; any other real value
+(e.g. `1.5`, `3.0`, `Inf`) uses the general lₚ method. `p < 1` errors (not a metric).
 
 # Examples
 ```julia
@@ -108,11 +114,16 @@ D = dists(X1, X2)  # 2×2 matrix
 # Manhattan distance
 D = dists(X1, X2, 1)
 
+# General lₚ and Chebychev (l∞)
+D = dists(X1, X2, 3.0)   # (Σ|Δ|³)^(1/3)
+D = dists(X1, X2, Inf)   # maximum(abs, Δ)
+
 # Great circle distance (lon-lat coordinates)
 cities = [-78.64 35.78; -122.42 37.77]  # Raleigh, SF
 dc = [-77.04 38.91]                      # Washington DC
 D = dists(cities, dc, :mi)               # Statute miles
 D = dists(cities, dc, :km)               # Kilometers
+D = dists(cities, dc, :rad)              # Radians of arc
 ```
 
 See also: [`dgc`](@ref), [`d1`](@ref), [`d2`](@ref)
@@ -148,4 +159,76 @@ function dists(X1::AbstractMatrix, X2::AbstractMatrix, p::Symbol)
         D[i, j] = dgc(@view(X1[i, :]), @view(X2[j, :]); unit=p)
     end
     return D
+end
+
+# Real p (incl. Inf): general lₚ metric. p=Inf → Chebychev; finite p ≥ 1 → (Σ|Δ|ᵖ)^(1/p).
+# Int p (1, 2) dispatches to the more specific method above; Symbol p is a distinct type,
+# so this method never captures the geographic cases — dispatch stays unambiguous.
+function dists(X1::AbstractMatrix, X2::AbstractMatrix, p::Real)
+    p >= 1 || error("dists: lₚ metric requires p ≥ 1 (got $p); p<1 is not a metric.")
+    D = Matrix{Float64}(undef, size(X1, 1), size(X2, 1))
+    if isinf(p)
+        @inbounds for j in axes(X2, 1), i in axes(X1, 1)
+            D[i, j] = maximum(abs, @view(X1[i, :]) .- @view(X2[j, :]))
+        end
+    else
+        @inbounds for j in axes(X2, 1), i in axes(X1, 1)
+            Δ = @view(X1[i, :]) .- @view(X2[j, :])
+            D[i, j] = sum(abs.(Δ) .^ p)^(1 / p)
+        end
+    end
+    return D
+end
+
+"""
+    dgca(X, Xa, a; unit=:mi) -> Matrix{Float64}
+
+Area-adjusted great-circle distance matrix between new-facility/point set `X` and
+demand-point set `Xa`, floored by the mean centroid-to-random-point distance of a
+disk of area `aⱼ`.
+
+# Formulation
+For points ``X = \\{X_i\\}_{i=1}^n`` and demand points ``Xa = \\{Xa_j\\}_{j=1}^m`` with
+land areas ``a_j \\ge 0``,
+
+```math
+D^{aa}_{ij} \\;=\\; \\max\\!\\left\\{\\, d_{gc}(X_i, Xa_j),\\;\\; \\tfrac{2}{3}\\sqrt{a_j/\\pi}\\,\\right\\},
+\\qquad i = 1..n,\\; j = 1..m .
+```
+
+The floor ``\\tfrac{2}{3}\\sqrt{a_j/\\pi}`` is the mean distance from the centroid to a
+uniformly random point in a disk of area ``a_j`` (radius ``r_j=\\sqrt{a_j/\\pi}``, mean
+centroid distance ``\\tfrac{2}{3}r_j``). It represents the intra-zone travel a demand
+point still incurs when a facility is placed at its geographic center.
+
+**No circuity:** the raw ``D^{aa}`` is returned; any circuity factor is applied by the
+caller. Degenerate ``a_j = 0`` gives floor ``0``, so ``D^{aa}_{ij} = d_{gc}``.
+
+# Arguments
+- `X`: n×2 matrix of points (LON, LAT).
+- `Xa`: m×2 matrix of demand points (LON, LAT).
+- `a`: length-m vector of demand-point areas, in the areal unit whose square root matches
+  `unit` (e.g. mi² for `unit=:mi`).
+- `unit`: distance/area unit — `:mi` (default), `:km`, or `:rad`.
+
+# Returns
+- `D`: n×m matrix where `D[i,j] = max(dgc(X[i,:], Xa[j,:]; unit), (2/3)√(a[j]/π))`.
+
+# Example
+```julia
+# Two facilities, two demand points (LON, LAT); demand areas in mi²
+X  = [-78.64 35.78; -80.84 35.23]     # Raleigh, Charlotte
+Xa = [-79.79 36.07; -77.94 34.23]     # Greensboro, Wilmington
+a  = [0.0, 500.0]                      # Wilmington floored by a 500 mi² disk
+D  = dgca(X, Xa, a)                    # 2×2 raw distances (no circuity)
+```
+
+See also: [`dgc`](@ref), [`dists`](@ref)
+"""
+function dgca(X::AbstractMatrix, Xa::AbstractMatrix, a::AbstractVector; unit=:mi)
+    size(Xa, 1) == length(a) || error("dgca: length(a) must equal the number of rows in Xa.")
+    all(a .>= 0) || error("dgca: areas a must be nonnegative.")
+    D = dists(X, Xa, unit)                       # n×m great-circle distances
+    floors = (2 / 3) .* sqrt.(a ./ π)            # length-m floor per demand point
+    return max.(D, reshape(floors, 1, :))
 end

@@ -467,3 +467,62 @@ function randX(P::AbstractMatrix, n::Int=1)
         return mins .+ rand(n, size(P, 2)) .* ranges
     end
 end
+
+"""
+    wcentroid(LON, LAT, w) -> (LON, LAT)
+
+Weighted geographic centroid of points `(LON, LAT)` with weights `w`, corrected for
+longitude convergence toward the poles by a `cos(lat)` factor.
+
+# Formulation
+Given points ``\\{(\\text{lon}_i, \\text{lat}_i)\\}_{i=1}^N`` with weights ``w_i \\ge 0``
+and ``\\sum_i w_i > 0``,
+
+```math
+\\overline{\\text{LAT}} = \\frac{\\sum_i w_i\\,\\text{lat}_i}{\\sum_i w_i},
+\\qquad
+\\overline{\\text{LON}} = \\frac{\\sum_i w_i \\cos(\\text{lat}_i)\\,\\text{lon}_i}
+                              {\\sum_i w_i \\cos(\\text{lat}_i)} .
+```
+
+The ``\\cos(\\text{lat})`` weighting corrects for meridian convergence: a degree of
+longitude spans less ground distance at higher latitudes, so higher-latitude points are
+down-weighted in the longitude average. Domain: ``\\sum_i w_i > 0`` and
+``\\text{lat} \\in (-90, 90)`` so ``\\cos(\\text{lat}) > 0``.
+
+# Arguments
+- `LON`: vector of longitudes (degrees).
+- `LAT`: vector of latitudes (degrees, in ``(-90, 90)``).
+- `w`: vector of nonnegative weights with ``\\sum_i w_i > 0``.
+
+# Returns
+- `(LON = ..., LAT = ...)`: the weighted centroid as a `NamedTuple`, longitude first
+  (matching Logjam's LON–LAT order). Destructures as `lon, lat = wcentroid(...)` and
+  composes directly with `combine(groupby(...), ... => wcentroid => [:LON, :LAT])`.
+
+# Example
+```julia
+using DataFrames
+# Two clusters keyed by :k; weighted (population) centroid per group
+df = DataFrame(
+    k   = [:A, :A, :B, :B],
+    LON = [-78.64, -80.84, -79.79, -77.94],
+    LAT = [ 35.78,  35.23,  36.07,  34.23],
+    POP = [469.0, 897.0, 299.0, 123.0],
+)
+combine(groupby(df, :k), [:LON, :LAT, :POP] => wcentroid => [:LON, :LAT])
+# one row per group with its cos-lat-corrected weighted centroid
+```
+
+See also: [`ala`](@ref), [`randX`](@ref)
+"""
+function wcentroid(LON, LAT, w)
+    sw = sum(w)
+    sw > 0 || error("wcentroid: sum of weights must be positive.")
+    LATbar = sum(w .* LAT) / sw
+    cw = w .* cosd.(LAT)
+    scw = sum(cw)
+    scw > 0 || error("wcentroid: sum of cos(lat)-weights must be positive (check lat range).")
+    LONbar = sum(cw .* LON) / scw
+    return (LON=LONbar, LAT=LATbar)
+end

@@ -129,7 +129,7 @@ const _nominatim_available = Ref{Bool}(false)
 const _nominatim_geocode = Ref{Any}(nothing)
 
 # Export facility location functions
-export ufladd, ufldrop, uflxchg, ufl, pmedian, randX, ala
+export ufladd, ufldrop, uflxchg, ufl, pmedian, randX, ala, wcentroid
 
 # Export transportation economics functions
 export rate_ltl, charge_tl, charge_ltl, mincharge_tl, mincharge_ltl, maxpayld
@@ -153,7 +153,7 @@ export WORLD_LIMITS, US_LIMITS, CUS_LIMITS
 export dcf
 
 # Export road network functions (including H5–H6)
-export dgc, d1, d2, dists, prune_reindex, thin, addconnectors
+export dgc, d1, d2, dgca, dists, prune_reindex, thin, addconnectors
 export links2graph, x2ln, cropnetwork, shortestpaths, tracepath
 
 # Export OSM functions (require LightOSM + NearestNeighbors extension)
