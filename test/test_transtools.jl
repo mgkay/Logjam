@@ -43,10 +43,10 @@ using DataFrames
         sh_nt = (f=10_000, s=4.444, a=0.10, v=25_000, h=0.30, d=500)
         sh_df = DataFrame([sh_nt])[1, :]
         ppi_ltl = 104.2
-        # T1.1a: NamedTuple
-        @test rate_ltl(1.0, sh_nt, ppi_ltl) ≈ rate_ltl(1.0, sh_nt.s, sh_nt.d; ppi=ppi_ltl) rtol=1e-4
+        # T1.1a: NamedTuple (ppi now a keyword with default)
+        @test rate_ltl(1.0, sh_nt; ppi=ppi_ltl) ≈ rate_ltl(1.0, sh_nt.s, sh_nt.d; ppi=ppi_ltl) rtol=1e-4
         # T1.1b: DataFrameRow
-        @test rate_ltl(1.0, sh_df, ppi_ltl) ≈ rate_ltl(1.0, sh_nt.s, sh_nt.d; ppi=ppi_ltl) rtol=1e-4
+        @test rate_ltl(1.0, sh_df; ppi=ppi_ltl) ≈ rate_ltl(1.0, sh_nt.s, sh_nt.d; ppi=ppi_ltl) rtol=1e-4
     end
 
     @testset "mincharge_tl" begin
@@ -89,25 +89,26 @@ using DataFrames
     end
 
     @testset "charge_tl" begin
+        # Scalar arg order is (q, s, d) as of v0.2.7.
         # Test single truckload (within capacity)
-        c = charge_tl(10.0, 500.0, 8.0)
+        c = charge_tl(10.0, 8.0, 500.0)
         @test c > 0
         @test c ≈ max(2.00 * 500.0, 45.0)  # Should be distance-based, not minimum
 
         # Test minimum charge applies for short distances
-        c_short = charge_tl(10.0, 10.0, 8.0)
+        c_short = charge_tl(10.0, 8.0, 10.0)
         @test c_short >= 45.0
 
         # Test multiple trucks needed
         # 30 tons at 8 lb/ft³: q_max = min(25, 8*2750/2000) = min(25, 11) = 11 tons
         # Need ceil(30/11) = 3 trucks
-        c_multi = charge_tl(30.0, 500.0, 8.0)
-        c_single = charge_tl(10.0, 500.0, 8.0)
+        c_multi = charge_tl(30.0, 8.0, 500.0)
+        c_single = charge_tl(10.0, 8.0, 500.0)
         @test c_multi > 2 * c_single  # At least 2x more
 
         # Test cube-limited vs weight-limited
-        c_light = charge_tl(10.0, 500.0, 5.0)   # Cube-limited: 5*2750/2000 = 6.875 tons
-        c_heavy = charge_tl(10.0, 500.0, 20.0)  # Weight-limited: 20*2750/2000 = 27.5, so 25 tons
+        c_light = charge_tl(10.0, 5.0, 500.0)   # Cube-limited: 5*2750/2000 = 6.875 tons
+        c_heavy = charge_tl(10.0, 20.0, 500.0)  # Weight-limited: 20*2750/2000 = 27.5, so 25 tons
         @test c_light > c_heavy  # Need more trucks when cube-limited
     end
 
@@ -115,27 +116,28 @@ using DataFrames
         sh_nt = (f=10_000, s=4.444, a=0.10, v=25_000, h=0.30, d=500)
         sh_df = DataFrame([sh_nt])[1, :]
         tr = (r=2.00, Kwt=25.0, Kcu=2750.0, ppi=102.7)
-        # T1.2a: NamedTuple
-        @test charge_tl(1.0, sh_nt, tr) ≈ charge_tl(1.0, sh_nt.d, sh_nt.s; r=tr.r, Kwt=tr.Kwt, Kcu=tr.Kcu, ppi=tr.ppi) rtol=1e-4
+        # T1.2a: NamedTuple (scalar reference uses (q, s, d) order)
+        @test charge_tl(1.0, sh_nt, tr) ≈ charge_tl(1.0, sh_nt.s, sh_nt.d; r=tr.r, Kwt=tr.Kwt, Kcu=tr.Kcu, ppi=tr.ppi) rtol=1e-4
         # T1.2b: DataFrameRow
-        @test charge_tl(1.0, sh_df, tr) ≈ charge_tl(1.0, sh_nt.d, sh_nt.s; r=tr.r, Kwt=tr.Kwt, Kcu=tr.Kcu, ppi=tr.ppi) rtol=1e-4
+        @test charge_tl(1.0, sh_df, tr) ≈ charge_tl(1.0, sh_nt.s, sh_nt.d; r=tr.r, Kwt=tr.Kwt, Kcu=tr.Kcu, ppi=tr.ppi) rtol=1e-4
     end
 
     @testset "charge_ltl" begin
+        # Scalar arg order is (q, s, d) as of v0.2.7.
         # Test typical shipment
-        c = charge_ltl(0.5, 250.0, 8.0)
+        c = charge_ltl(0.5, 8.0, 250.0)
         @test c > 0
         @test !isinf(c)
 
         # Test minimum charge applies
         r = rate_ltl(0.1, 10.0, 100.0)
         c_calc = r * 0.1 * 100.0
-        c_actual = charge_ltl(0.1, 100.0, 10.0)
+        c_actual = charge_ltl(0.1, 10.0, 100.0)
         mc = mincharge_ltl(100.0)
         @test c_actual >= mc  # Should be at least minimum
 
         # Test out-of-bounds returns Inf
-        c_invalid = charge_ltl(6.0, 250.0, 8.0)
+        c_invalid = charge_ltl(6.0, 8.0, 250.0)
         @test isinf(c_invalid)
     end
 
@@ -143,25 +145,29 @@ using DataFrames
         sh_nt = (f=10_000, s=4.444, a=0.10, v=25_000, h=0.30, d=500)
         sh_df = DataFrame([sh_nt])[1, :]
         ppi_ltl = 104.2
-        # T1.3a: NamedTuple
-        @test charge_ltl(1.0, sh_nt, ppi_ltl) ≈ charge_ltl(1.0, sh_nt.d, sh_nt.s; ppi=ppi_ltl) rtol=1e-4
+        # T1.3a: NamedTuple (ppi now a keyword; scalar reference uses (q, s, d))
+        @test charge_ltl(1.0, sh_nt; ppi=ppi_ltl) ≈ charge_ltl(1.0, sh_nt.s, sh_nt.d; ppi=ppi_ltl) rtol=1e-4
         # T1.3b: DataFrameRow
-        @test charge_ltl(1.0, sh_df, ppi_ltl) ≈ charge_ltl(1.0, sh_nt.d, sh_nt.s; ppi=ppi_ltl) rtol=1e-4
+        @test charge_ltl(1.0, sh_df; ppi=ppi_ltl) ≈ charge_ltl(1.0, sh_nt.s, sh_nt.d; ppi=ppi_ltl) rtol=1e-4
     end
 
     @testset "maxpayld" begin
+        # Kwt/Kcu are now keywords with defaults (25.0, 2750.0).
         # Test weight-limited
-        q = maxpayld(25.0, 25.0, 2750.0)
+        q = maxpayld(25.0)
         @test q == 25.0  # High density → weight limit
 
         # Test cube-limited
-        q = maxpayld(8.0, 25.0, 2750.0)
+        q = maxpayld(8.0)
         @test q ≈ 8.0 * 2750.0 / 2000.0  # Low density → cube limit
         @test q == 11.0
 
+        # Test explicit keywords
+        @test maxpayld(8.0; Kwt=25.0, Kcu=2750.0) == 11.0
+
         # Test vectorized
         s_vec = [5.0, 10.0, 20.0, 30.0]
-        q_vec = maxpayld(s_vec, 25.0, 2750.0)
+        q_vec = maxpayld(s_vec; Kwt=25.0, Kcu=2750.0)
         @test length(q_vec) == 4
         @test q_vec[1] < 25.0  # Cube-limited
         @test q_vec[4] == 25.0  # Weight-limited
@@ -172,9 +178,9 @@ using DataFrames
         sh_df = DataFrame([sh_nt])[1, :]
         tr = (r=2.00, Kwt=25.0, Kcu=2750.0, ppi=102.7)
         # T1.4a: NamedTuple (exact equality — pure arithmetic)
-        @test maxpayld(sh_nt, tr) == maxpayld(sh_nt.s, tr.Kwt, tr.Kcu)
+        @test maxpayld(sh_nt, tr) == maxpayld(sh_nt.s; Kwt=tr.Kwt, Kcu=tr.Kcu)
         # T1.4b: DataFrameRow
-        @test maxpayld(sh_df, tr) == maxpayld(sh_nt.s, tr.Kwt, tr.Kcu)
+        @test maxpayld(sh_df, tr) == maxpayld(sh_nt.s; Kwt=tr.Kwt, Kcu=tr.Kcu)
     end
 
     @testset "totlogcost" begin
@@ -255,11 +261,12 @@ using DataFrames
     end
 
     @testset "transport_costs" begin
+        # Columns are canonical sh field names q/s/d as of v0.2.7.
         # Test auto mode selection
         shipments = DataFrame(
-            weight = [0.5, 2.0, 15.0, 30.0],
-            density = [8.0, 10.0, 12.0, 15.0],
-            distance = [250.0, 500.0, 800.0, 1200.0]
+            q = [0.5, 2.0, 15.0, 30.0],
+            s = [8.0, 10.0, 12.0, 15.0],
+            d = [250.0, 500.0, 800.0, 1200.0]
         )
 
         results = transport_costs(shipments; mode=:auto)
@@ -293,9 +300,9 @@ using DataFrames
 
     @testset "transport_costs kwargs + baselines (R4)" begin
         shipments = DataFrame(
-            weight = [0.5, 2.0, 15.0, 30.0],
-            density = [8.0, 10.0, 12.0, 15.0],
-            distance = [250.0, 500.0, 800.0, 1200.0]
+            q = [0.5, 2.0, 15.0, 30.0],
+            s = [8.0, 10.0, 12.0, 15.0],
+            d = [250.0, 500.0, 800.0, 1200.0]
         )
 
         # Regression: a documented TL kwarg (r) used to splat into charge_ltl,
@@ -311,30 +318,33 @@ using DataFrames
         @test res_r3.cost[4] > res_r2.cost[4]
 
         # TL baseline 102.7 and LTL baseline 104.2 are applied distinctly.
+        # (scalar reference calls use (q, s, d) order)
         res_ltl = transport_costs(shipments; mode=:ltl)
-        @test res_ltl.cost[1] ≈ charge_ltl(0.5, 250.0, 8.0; ppi=104.2)
-        @test res_ltl.cost[2] ≈ charge_ltl(2.0, 500.0, 10.0; ppi=104.2)
+        @test res_ltl.cost[1] ≈ charge_ltl(0.5, 8.0, 250.0; ppi=104.2)
+        @test res_ltl.cost[2] ≈ charge_ltl(2.0, 10.0, 500.0; ppi=104.2)
 
         res_tl = transport_costs(shipments; mode=:tl)
-        @test res_tl.cost[4] ≈ charge_tl(30.0, 1200.0, 15.0; ppi=102.7)
+        @test res_tl.cost[4] ≈ charge_tl(30.0, 15.0, 1200.0; ppi=102.7)
 
         # ppi_tl / ppi_ltl override each regime independently.
         base = transport_costs(shipments; mode=:ltl)
         hi   = transport_costs(shipments; mode=:ltl, ppi_ltl=130.0)
         @test all(hi.cost .>= base.cost)
-        @test hi.cost[1] ≈ charge_ltl(0.5, 250.0, 8.0; ppi=130.0)
+        @test hi.cost[1] ≈ charge_ltl(0.5, 8.0, 250.0; ppi=130.0)
     end
 
     @testset "docstring numerics (R6)" begin
         # Values re-run from current code; each would fail on the stale docstrings.
+        # Scalar charge_tl/charge_ltl use (q, s, d) order as of v0.2.7 — the
+        # C1-fixed numerics are preserved by reordering the arguments.
         @test rate_ltl(0.5, 8.0, 250.0) ≈ 1.9906 atol=1e-3
         @test mincharge_ltl(250.0) ≈ 47.10 atol=1e-2
         @test mincharge_ltl(500.0) ≈ 50.84 atol=1e-2
-        @test charge_tl(25.0, 500.0, 8.0) == 3000.0
-        @test charge_tl(30.0, 500.0, 8.0) == 3000.0
-        @test charge_tl(10.0, 500.0, 8.0) == 1000.0
-        @test charge_ltl(0.5, 250.0, 8.0) ≈ 248.83 atol=1e-2
-        @test charge_ltl(2.0, 500.0, 10.0) ≈ 859.31 atol=1e-2
+        @test charge_tl(25.0, 8.0, 500.0) == 3000.0
+        @test charge_tl(30.0, 8.0, 500.0) == 3000.0
+        @test charge_tl(10.0, 8.0, 500.0) == 1000.0
+        @test charge_ltl(0.5, 8.0, 250.0) ≈ 248.83 atol=1e-2
+        @test charge_ltl(2.0, 10.0, 500.0) ≈ 859.31 atol=1e-2
     end
 
     @testset "minTLC (T2)" begin
@@ -395,12 +405,12 @@ using DataFrames
 
     @testset "Integration: mode comparison" begin
         # Test that auto mode selects correctly
-        q, d, s = 1.0, 500.0, 10.0
+        q, s, d = 1.0, 10.0, 500.0
 
-        c_tl = charge_tl(q, d, s)
-        c_ltl = charge_ltl(q, d, s)
+        c_tl = charge_tl(q, s, d)
+        c_ltl = charge_ltl(q, s, d)
 
-        shipments = DataFrame(weight=[q], density=[s], distance=[d])
+        shipments = DataFrame(q=[q], s=[s], d=[d])
         results = transport_costs(shipments; mode=:auto)
 
         if c_tl <= c_ltl
@@ -410,5 +420,114 @@ using DataFrames
             @test results.mode[1] == :ltl
             @test results.cost[1] ≈ c_ltl
         end
+    end
+
+    # =========================================================================
+    # C3 — Interface + cross-regime tests (I1, I2, I3, I5)
+    # =========================================================================
+
+    @testset "I1 scalar arg order (q, s, d)" begin
+        # charge_tl/charge_ltl scalar signature standardized on (q, s, d),
+        # following the sh field sequence; rate_ltl already conformed. The
+        # C1-fixed numerics are preserved by reordering the passed arguments.
+        @test charge_tl(25.0, 8.0, 500.0) == 3000.0    # q=25, s=8, d=500
+        @test charge_tl(30.0, 8.0, 500.0) == 3000.0
+        @test charge_tl(10.0, 8.0, 500.0) == 1000.0
+        @test charge_ltl(0.5, 8.0, 250.0) ≈ 248.83 atol=1e-2
+        @test charge_ltl(2.0, 10.0, 500.0) ≈ 859.31 atol=1e-2
+        @test rate_ltl(0.5, 8.0, 250.0) ≈ 1.9906 atol=1e-3
+
+        # Swapping s and d changes the result — guards against silent regression
+        # to the old (q, d, s) order.
+        @test charge_tl(25.0, 500.0, 8.0) != charge_tl(25.0, 8.0, 500.0)
+        @test charge_ltl(0.5, 250.0, 8.0) != charge_ltl(0.5, 8.0, 250.0)
+    end
+
+    @testset "I2 struct-form keyword ppi + maxpayld keyword defaults" begin
+        sh_nt = (f=20.0, s=40/9, a=1.0, v=25_000.0, h=0.30, d=532.0)
+        sh_df = DataFrame([sh_nt])[1, :]
+
+        # rate_ltl / charge_ltl struct forms take ppi as a keyword with default.
+        @test rate_ltl(1.0, sh_nt) == rate_ltl(1.0, sh_nt.s, sh_nt.d; ppi=104.2)
+        @test rate_ltl(1.0, sh_nt; ppi=177.4) == rate_ltl(1.0, sh_nt.s, sh_nt.d; ppi=177.4)
+        @test charge_ltl(1.0, sh_nt) == charge_ltl(1.0, sh_nt.s, sh_nt.d; ppi=104.2)
+        @test charge_ltl(1.0, sh_nt; ppi=177.4) == charge_ltl(1.0, sh_nt.s, sh_nt.d; ppi=177.4)
+        # DataFrameRow parity
+        @test charge_ltl(1.0, sh_df; ppi=177.4) == charge_ltl(1.0, sh_nt.s, sh_nt.d; ppi=177.4)
+
+        # maxpayld keyword defaults match charge_tl's (Kwt=25.0, Kcu=2750.0).
+        @test maxpayld(8.0) == maxpayld(8.0; Kwt=25.0, Kcu=2750.0)
+        @test maxpayld(8.0) == 11.0
+        @test maxpayld(sh_nt.s) == maxpayld(sh_nt.s; Kwt=25.0, Kcu=2750.0)
+    end
+
+    @testset "I3 aggshmt complete-sh pass-through + chains into minTLC" begin
+        # Two shipments sharing a lane (same d).
+        df = DataFrame(
+            f = [100.0, 200.0],
+            s = [8.0, 12.0],
+            v = [1000.0, 1500.0],
+            h = [0.25, 0.30],
+            a = [0.5, 0.6],
+            d = [532.0, 532.0]
+        )
+        agg = aggshmt(df)
+
+        @test agg.f == 300.0                                    # sum of demand
+        @test agg.s ≈ 300.0 / (100/8 + 200/12)                 # total-wt / total-vol
+        @test agg.v ≈ (100*1000 + 200*1500) / 300              # demand-weighted mean
+        @test agg.h ≈ (100*0.25 + 200*0.30) / 300
+        @test agg.a ≈ (100*0.5 + 200*0.6) / 300
+        @test agg.d == 532.0                                   # d passed through from sh[1]
+
+        # Output is a complete sh that chains directly into minTLC / maxpayld
+        # with no intervening combine.
+        tr = (r=2.00*131/102.7, Kwt=25.0, Kcu=2750.0, ppi=131.0)
+        res = minTLC(agg, tr, 177.4)
+        @test res.qᵒ !== nothing
+        @test isfinite(res.TLCᵒ)
+        @test maxpayld(agg, tr) == maxpayld(agg.s; Kwt=tr.Kwt, Kcu=tr.Kcu)
+    end
+
+    @testset "I5 cross-regime sh/tr field isolation" begin
+        # A fully-populated sh (b,e,q,s,f,v,h,a,d) and tr (b,e,Kwt,Kcu,r,ppi).
+        sh_full = DataFrame(
+            b = [1, 2, 3],
+            e = [4, 5, 6],
+            q = [1.0, 1.0, 1.0],
+            s = [8.0, 10.0, 6.0],
+            f = [20.0, 20.0, 20.0],
+            v = [25_000.0, 25_000.0, 25_000.0],
+            h = [0.30, 0.30, 0.30],
+            a = [1.0, 1.0, 1.0],
+            d = [532.0, 532.0, 532.0]
+        )
+        tr_full = (b=[1], e=[1], Kwt=25.0, Kcu=2750.0, r=2.00*131/102.7, ppi=131.0)
+
+        # --- Transport regime reads sh.{f,q,s,a,v,h,d}, tr.{r,Kwt,Kcu,ppi};
+        #     the b,e fields must be ignored. ---
+        row    = sh_full[2, :]
+        sh_min = (f=row.f, s=row.s, a=row.a, v=row.v, h=row.h, d=row.d)          # no b,e
+        tr_min = (r=tr_full.r, Kwt=tr_full.Kwt, Kcu=tr_full.Kcu, ppi=tr_full.ppi) # no b,e
+
+        @test charge_tl(1.0, row, tr_full) == charge_tl(1.0, sh_min, tr_min)
+        @test charge_ltl(1.0, row; ppi=177.4) == charge_ltl(1.0, sh_min; ppi=177.4)
+        r_full = minTLC(row, tr_full, 177.4)
+        r_min  = minTLC(sh_min, tr_min, 177.4)
+        @test r_full.qᵒ ≈ r_min.qᵒ
+        @test r_full.TLCᵒ ≈ r_min.TLCᵒ
+        @test r_full.isLTL === r_min.isLTL
+
+        # --- Routing regime reads sh.{b,e}, tr.{b,e}; the r,ppi,Kwt,... fields
+        #     must be ignored. ---
+        locs = [-78.6 35.8; -80.8 35.2; -79.0 36.1; -77.5 35.5;
+                -81.0 35.0; -78.0 36.0; -79.5 35.6]
+        C   = dists(locs, locs, :mi)
+        rte = [1, 1, 2, 2, 3, 3]
+        sh_be = DataFrame(b=sh_full.b, e=sh_full.e)   # only b,e
+        tr_be = (b=tr_full.b, e=tr_full.e)            # only b,e
+
+        @test rte2loc(rte, sh_full, tr_full) == rte2loc(rte, sh_be, tr_be)
+        @test rteTC(rte, sh_full, C, tr_full) == rteTC(rte, sh_be, C, tr_be)
     end
 end
