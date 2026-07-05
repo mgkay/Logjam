@@ -1,6 +1,7 @@
 using Test
 using Logjam
 using SparseArrays
+using Random
 
 @testset "Facility Location (loctools)" begin
 
@@ -241,6 +242,60 @@ using SparseArrays
                 @test facility_idx in y
                 @test C[facility_idx, j] == minimum(C[y, j])
             end
+        end
+    end
+
+    @testset "ala (alternating location–allocation)" begin
+        # Demand points (Euclidean coordinates) shared across the ala tests.
+        P = [0.0 0.0; 1.0 0.0; 0.0 1.0; 1.0 1.0]
+        w = [1.0, 1.0, 1.0, 1.0]
+
+        @testset "N1: orphan relocation" begin
+            Random.seed!(20270705)
+            # Facility 3 starts far away and would never be nearest → orphaned.
+            X0 = [0.2 0.2; 0.8 0.8; 100.0 100.0]
+            X, TC, W = ala(X0, w, P; dist=2)
+            @test size(X, 1) == 3                      # all facilities retained
+            @test size(W) == (3, 4)
+            @test !any(vec(sum(W, dims=2)) .== 0)      # no all-zero (orphaned) row
+            @test all(sum(W, dims=1) .≈ 1.0)           # every demand point allocated once
+            @test TC < Inf
+        end
+
+        @testset "N2: custom alloc/locate handles honored" begin
+            # Custom allocate forces a fixed partition: facilities {1,2} serve {1,2}/{3,4}.
+            Wfixed = sparse([1, 1, 2, 2], [1, 2, 3, 4], w, 2, 4)
+            myalloc = X -> (Wfixed, sum(Wfixed .* dists(X, P, 2)))
+            # Custom locate always parks every facility at the origin.
+            mylocate = (W, X) -> zeros(size(X))
+            X0 = [50.0 50.0; -50.0 -50.0]
+            X, TC, W = ala(X0, w, P; dist=2, alloc=myalloc, locate=mylocate)
+            @test W == Wfixed                          # custom allocation honored
+            @test all(X .== 0.0)                        # custom locate honored
+        end
+
+        @testset "N3: nruns returns best-of" begin
+            X0 = [0.9 0.1; 0.1 0.9]
+            Random.seed!(4242)
+            _, TC1, _ = ala(X0, w, P; dist=2, nruns=1)
+            Random.seed!(4242)
+            _, TC5, _ = ala(X0, w, P; dist=2, nruns=5)
+            # Run 1 is identical (same seed, same X0), extra runs can only improve.
+            @test TC5 <= TC1 + 1e-9
+        end
+
+        @testset "NC-cities smoke (great-circle)" begin
+            Random.seed!(1)
+            # Raleigh, Charlotte, Greensboro, Wilmington (LON, LAT) with population weights.
+            Pnc = [-78.64 35.78; -80.84 35.23; -79.79 36.07; -77.94 34.23]
+            wnc = [469.0, 897.0, 299.0, 123.0]
+            X0 = [-78.6 35.8; -80.0 35.5]
+            X, TC, W = ala(X0, wnc, Pnc)               # dist=:mi default
+            @test size(X) == (2, 2)
+            @test size(W) == (2, 4)
+            @test issparse(W)
+            @test !any(vec(sum(W, dims=2)) .== 0)
+            @test TC > 0 && TC < Inf
         end
     end
 end

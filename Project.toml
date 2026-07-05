@@ -56,9 +56,10 @@ HTTP = "cd3eb016-35fb-5094-929b-558a96fad6f3"
 JSON3 = "0f8b85d8-7281-11e9-16c2-39a750bddbf1"
 LightOSM = "d1922b25-af4e-4ba3-84af-fe9bea896051"
 NearestNeighbors = "b8a86587-4115-5ab1-83bc-aa920d37bbce"
+Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
 SimpleWeightedGraphs = "47aef6b3-ad0c-573a-a1e2-d07658019622"
 SparseArrays = "2f01184e-e22b-5df5-ae63-d93ebab69eaf"
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 
 [targets]
-test = ["CairoMakie", "GeoMakie", "LightOSM", "NearestNeighbors", "SimpleWeightedGraphs", "SparseArrays", "Test"]
+test = ["CairoMakie", "GeoMakie", "LightOSM", "NearestNeighbors", "Random", "SimpleWeightedGraphs", "SparseArrays", "Test"]

@@ -129,7 +129,7 @@ const _nominatim_available = Ref{Bool}(false)
 const _nominatim_geocode = Ref{Any}(nothing)
 
 # Export facility location functions
-export ufladd, ufldrop, uflxchg, ufl, pmedian, randX
+export ufladd, ufldrop, uflxchg, ufl, pmedian, randX, ala
 
 # Export transportation economics functions
 export rate_ltl, charge_tl, charge_ltl, mincharge_tl, mincharge_ltl, maxpayld
