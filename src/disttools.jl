@@ -104,6 +104,17 @@ Compute distance matrix between two point sets using specified metric.
 Integer `p ∈ {1,2}` dispatches to the specialized l₁/l₂ methods; any other real value
 (e.g. `1.5`, `3.0`, `Inf`) uses the general lₚ method. `p < 1` errors (not a metric).
 
+# Formulation
+For ``x, y \\in \\mathbb{R}^n`` and metric parameter ``p``,
+
+```math
+d_p(x,y) = \\Big(\\sum_{t=1}^{n} |x_t - y_t|^{p}\\Big)^{1/p}, \\quad p \\in [1,\\infty);
+\\qquad d_\\infty(x,y) = \\max_{t} |x_t - y_t| \\;\\text{(Chebychev)} .
+```
+
+The symbol forms ``:mi``/``:km`` return the great-circle distance on the sphere in the
+named unit, and ``:rad`` returns radians of arc.
+
 # Examples
 ```julia
 # Euclidean (default)
