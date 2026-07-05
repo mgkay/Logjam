@@ -5,13 +5,13 @@
 [![Stable](https://img.shields.io/badge/docs-stable-blue.svg)](https://mgkay.github.io/Logjam/)
 
 Logjam is a Julia package for logistics engineering, providing tools for:
-* **Facility Location**: Discrete optimization algorithms for facility location problems, including Uncapacitated Facility Location (UFL) and *p*-Median construction and improvement heuristics.
+* **Facility Location**: Discrete optimization algorithms for facility location problems, including Uncapacitated Facility Location (UFL) and *p*-Median construction and improvement heuristics, plus continuous location via alternating location–allocation (`ala`) and the weighted center of gravity (`wcentroid`).
 * **Transportation Costing**: Formulas for estimating LTL & TL freight rates, calculating minimum charges, and evaluating total logistics costs (TLC).
 * **Network Analysis**: Routing and topology tools for the FAF5 highway network, including shortest paths and automatic facility connectors.
 * **Vehicle Routing**: Algorithms for multi-stop route optimization, featuring savings-based construction and local search improvement methods.
 * **Spatial Data**: A gazetteer of U.S. administrative boundaries and points, including Cities, Counties, ZIP codes (3- and 5-digit), Census tracts, and CBSA/CSA definitions.
 * **Geocoding**: Forward (`loc2lonlat`) and reverse (`lonlat2loc`) geocoding with tiered resolution — street addresses via Nominatim, city/place names, postal codes, and counties from built-in reference data.
-* **Distance Metrics**: Unified distance calculation utilities supporting Rectilinear (*L*₁), Euclidean (*L*₂), and Great Circle (Haversine) metrics.
+* **Distance Metrics**: Unified distance calculation utilities supporting Rectilinear (*L*₁), Euclidean (*L*₂), Minkowski (*L_p*), Chebyshev (*L*∞), Great Circle (Haversine), and area-adjusted great-circle (`dgca`) metrics.
 * **Plotting**: Display helper (`dcf`) via CairoMakie extension.
 * **Mapping**: Plotting recipes and helper functions for mapping spatial data using GeoMakie.
 * **Data Helpers**: Matrix-to-DataFrame conversion (`mat2df`), formatted printing (`prt`), and floating-point snapping (`snapvals`).
@@ -87,7 +87,7 @@ println("$(nrow(nc_large)) NC cities with pop > 100k")
 
 # Forward geocoding: city name to coordinates
 geo = loc2lonlat("Raleigh", state=:NC)
-println("Raleigh: ($(round(geo.lon; digits=2)), $(round(geo.lat; digits=2))), source=$(geo.source)")
+println("Raleigh: ($(round(geo.LON; digits=2)), $(round(geo.LAT; digits=2))), source=$(geo.source)")
 
 # Reverse geocoding: coordinates to nearest named place
 nearest = lonlat2loc(-78.85, 35.73, filter(r -> r.POP > 50_000 && r.ISCUS, places))
@@ -100,8 +100,8 @@ println("Continental US 3-digit ZIPs: $(nrow(z3))")
 
 ```
 10 NC cities with pop > 100k
-Raleigh: (-78.64, 35.78), source=PLACE
-Nearest large city: in Apex
+Raleigh: (-78.64, 35.83), source=PLACE
+Nearest large city: in Apex, NC
 Continental US 3-digit ZIPs: 882
 ```
 
@@ -162,18 +162,18 @@ y, TC, W = pmedian(6, C; verbose=false)
 hubs = lonlat2loc(XY[y, :], filter(r -> r.POP >= 50_000 && r.ISCUS, usplace()))
 
 # Display hub locations (prt auto-formats coordinates)
-prt(XY[y, :]; rows=hubs.name, cols=["LON", "LAT"], row_title="Hubs")
+prt(XY[y, :]; rows=hubs.NAME, cols=["LON", "LAT"], row_title="Hubs")
 ```
 
 ```
          Hubs      LON    LAT
 ─────────────────────────────
-         Gary   -87.35  41.60
-Warner Robins   -83.62  32.61
-   Plainfield   -74.42  40.63
-     Pasadena  -118.13  34.15
-       Yakima  -120.51  46.60
-       Dallas   -96.77  32.78
+         Gary   -87.33  41.55
+Warner Robins   -83.48  32.64
+   Plainfield   -74.48  40.75
+     Pasadena  -118.11  34.18
+       Yakima  -120.45  46.62
+       Dallas   -96.79  32.81
 ```
 
 ```julia
@@ -190,7 +190,7 @@ scatter!(ax, XY[:, 1], XY[:, 2], color=:red, markersize=3, strokewidth=0)
 hub_xy = XY[y, :]
 scatter!(ax, hub_xy[:, 1], hub_xy[:, 2], color=colors, markersize=18,
          strokewidth=3, strokecolor=:white)
-text!(ax, hub_xy[:, 1], hub_xy[:, 2], text=hubs.name; aligntext(hub_xy[:, 1], hub_xy[:, 2])...)
+text!(ax, hub_xy[:, 1], hub_xy[:, 2], text=hubs.NAME; aligntext(hub_xy[:, 1], hub_xy[:, 2])...)
 
 ax.title = "Optimal Facility Locations (P-Median)\nSelected from 3-Digit ZIP Code Centroids (Population-Weighted)"
 dcf()
@@ -408,3 +408,69 @@ prt(sh_df)
 ```
 
 **After-action.** Both rows share the same carrier and lane (`d=532` mi), but row 1's high unit value (`v=85,000 $/ton`) makes inventory cost dominant, so `minTLC` selects a small LTL shipment (`qᵒ=0.27` ton, `isLTL=1`). Row 2's lower unit value allows a full truckload (`qᵒ=1.90` ton, `isLTL=0`) to win on freight cost. The comprehension `[minTLC(sh_df[i, :], tr, ppi_ltl) for i in 1:nrow(sh_df)]` passes each `DataFrameRow` directly to `minTLC`'s struct-form overload, which internally dispatches through `charge_tl`, `charge_ltl`, `maxpayld`, and `totlogcost`. The three result fields (`qᵒ`, `TLCᵒ`, `isLTL`) are then broadcast back as DataFrame columns via `[!, :col] = [...]` assignment. `prt` auto-formats mixed numeric and boolean columns: it applies comma separators to large integers and four-decimal display to floats, choosing column widths automatically.
+
+---
+
+### Example 7 — Continuous Location
+
+Where the *p*-median of Example 3 selects hubs from a fixed set of candidate sites, continuous location places facilities anywhere in the plane. `ala` (alternating location–allocation) solves the continuous minisum problem: starting from random facility locations, it alternates a nearest-facility **allocation** step with a per-facility minisum **location** step until the total demand-weighted distance stops decreasing. This example locates two distribution facilities among the ten largest North Carolina cities (population-weighted), and introduces `wcentroid` for the single-facility center of gravity and `dgca` for area-adjusted distance.
+
+```julia
+using Logjam
+using DataFrames, Random
+
+# NC cities with population > 100,000 as weighted demand points
+cities = filter(r -> r.STFIP == st2fips(:NC) && r.POP > 100_000, usplace())
+P = hcat(cities.LON, cities.LAT)      # demand points (LON, LAT)
+w = Float64.(cities.POP)              # population weights
+
+# Center of gravity: single cos-lat-corrected weighted centroid (1-facility anchor)
+cog = wcentroid(cities.LON, cities.LAT, w)
+println("Center of gravity: ($(round(cog.LON; digits=2)), $(round(cog.LAT; digits=2)))")
+
+# Locate 2 facilities by alternating location–allocation (best of 25 random restarts)
+Random.seed!(1)
+X0 = randX(P, 2)                      # random initial facility locations
+X, TC, W = ala(X0, w, P; nruns=25)
+
+# Reverse-geocode facility coordinates to the nearest large city
+facs = lonlat2loc(X, filter(r -> r.POP >= 50_000 && r.ISCUS, usplace()))
+
+# Facility locations and the cities each one serves
+prt(X; rows=facs.NAME, cols=["LON", "LAT"], row_title="Facility")
+println("Total demand-weighted distance: $(round(Int, TC)) people-mi")
+for i in 1:size(X, 1)
+    served = cities.NAME[findall(>(0), W[i, :])]
+    println("  $(facs.NAME[i]) serves: ", join(served, ", "))
+end
+```
+
+```
+Center of gravity: (-79.72, 35.58)
+ Facility     LON    LAT
+────────────────────────
+     Cary  -78.82  35.80
+Charlotte  -80.83  35.21
+Total demand-weighted distance: 77997853 people-mi
+  Cary serves: Cary, Durham, Fayetteville, Greensboro, High Point, Raleigh, Wilmington
+  Charlotte serves: Charlotte, Concord, Winston-Salem
+```
+
+```julia
+# dgca floors each distance by intra-zone travel: a facility placed exactly AT a
+# city's centroid still incurs (2/3)√(area/π) mi of local access travel. ALAND is
+# already in square miles, so it feeds dgca directly.
+big = cities[argmax(cities.ALAND), :]
+pt  = [big.LON big.LAT]
+println("$(big.NAME) (land area $(round(Int, big.ALAND)) mi²):")
+println("  dgc  self-distance = $(round(dists(pt, pt, :mi)[1]; digits=2)) mi")
+println("  dgca self-distance = $(round(dgca(pt, pt, [big.ALAND])[1]; digits=2)) mi")
+```
+
+```
+Charlotte (land area 308 mi²):
+  dgc  self-distance = 0.0 mi
+  dgca self-distance = 6.6 mi
+```
+
+**After-action.** `wcentroid` returns the population-weighted center of gravity as a `(LON, LAT)` named tuple, applying a `cos(lat)` correction so that meridian convergence does not bias the longitude average; it is the exact single-facility (1-median in the Euclidean sense) anchor and composes directly with `combine(groupby(df, :k), [:LON, :LAT, :POP] => wcentroid => [:LON, :LAT])` for per-group centroids. `ala` generalizes this to `n` facilities: `randX(P, 2)` seeds two random starts inside the demand bounding box, and `nruns=25` runs the alternating heuristic from 25 independent random restarts (seeded via `Random.seed!(1)` for reproducibility), returning the minimum-cost solution to mitigate the local optima inherent to location–allocation. The returned allocation matrix `W` records how much demand each facility serves; here Charlotte anchors the Piedmont cluster while Cary serves the eastern and Triad cities. `dgca` computes area-adjusted great-circle distances: even a facility sited exactly at a city centroid (`dgc = 0`) still incurs `(2/3)√(area/π)` miles of intra-zone access travel — 6.6 mi for Charlotte's 308 mi² footprint — which `dgca` floors in without applying circuity (the caller multiplies by a circuity factor if desired). For a fixed candidate set instead of the continuous plane, use the `pmedian` workflow of Example 3; `dists(X1, X2, p)` additionally supports Minkowski `L_p` and Chebyshev (`p=Inf`) metrics for non-geographic location problems.
