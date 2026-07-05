@@ -125,8 +125,8 @@ end
     # Basic lookup with state filter
     r = loc2lonlat("Raleigh", state=:NC)
     @test r.status == "OK"
-    @test -79.5 < r.lon < -78.0   # LON range for Raleigh
-    @test 35.5 < r.lat < 36.0     # LAT range for Raleigh
+    @test -79.5 < r.LON < -78.0   # LON range for Raleigh
+    @test 35.5 < r.LAT < 36.0     # LAT range for Raleigh
 
     # Not found
     r2 = loc2lonlat("Nonexistent City XYZ", state=:NC)
@@ -142,14 +142,14 @@ end
     result = lonlat2loc(xy, cities)
     @test isa(result, DataFrame)
     @test nrow(result) == 1
-    for col in ["idx", "name", "st", "dist", "bearing", "dir", "desc"]
+    for col in ["idx", "NAME", "ST", "dist", "bearing", "dir", "desc"]
         @test col in names(result)
     end
 
     # --- In-city threshold behavior ---
     @test startswith(result.desc[1], "in ")
-    @test result.name[1] == "Raleigh"
-    @test result.st[1] == "NC"
+    @test result.NAME[1] == "Raleigh"
+    @test result.ST[1] == :NC   # ST is now a Symbol (matches usplace().ST)
 
     # --- Bearing range: 0 <= bearing < 2pi ---
     @test 0.0 <= result.bearing[1] < 2pi
@@ -166,14 +166,14 @@ end
 
     # --- Vector input (single [LON, LAT]) ---
     res_vec = lonlat2loc([-78.6382, 35.7796], cities)
-    @test res_vec.name == result.name[1]
+    @test res_vec.NAME == result.NAME[1]
 
     # --- Multi-row matrix input ---
     xy_multi = [-78.6382 35.7796; -80.8431 35.2271]  # Raleigh, Charlotte
     res_multi = lonlat2loc(xy_multi, cities)
     @test nrow(res_multi) == 2
-    @test res_multi.name[1] == "Raleigh"
-    @test res_multi.name[2] == "Charlotte"
+    @test res_multi.NAME[1] == "Raleigh"
+    @test res_multi.NAME[2] == "Charlotte"
 
     # --- Invalid input ---
     @test_throws ArgumentError lonlat2loc([1.0, 2.0, 3.0], cities)

@@ -390,7 +390,7 @@ function _resolve_row(street, city, state, postalcode, county, country, cache, f
         key = _cache_key(addr.street, addr.city, addr.state, addr.postalcode)
         if !force_download && haskey(cache, key)
             c = cache[key]
-            return (lon=c.lon, lat=c.lat, source=c.source, uncert=c.uncert, status="OK")
+            return (LON=c.lon, LAT=c.lat, source=c.source, uncert=c.uncert, status="OK")
         end
     end
 
@@ -404,7 +404,7 @@ function _resolve_row(street, city, state, postalcode, county, country, cache, f
                     key = _cache_key(addr.street, addr.city, addr.state, addr.postalcode)
                     entry = (lon=result.lon, lat=result.lat, source="ADDRESS", uncert=0.0)
                     cache[key] = entry
-                    return (lon=result.lon, lat=result.lat, source="ADDRESS",
+                    return (LON=result.lon, LAT=result.lat, source="ADDRESS",
                             uncert=0.0, status="OK")
                 end
             catch e
@@ -423,7 +423,7 @@ function _resolve_row(street, city, state, postalcode, county, country, cache, f
         result = _resolve_place(addr.city, st_sym)
         if !ismissing(result)
             status = isempty(addr.street) || addr.is_pobox ? "OK" : "PARTIAL"
-            return (lon=result.lon, lat=result.lat, source=result.source,
+            return (LON=result.lon, LAT=result.lat, source=result.source,
                     uncert=_uncertainty(result.aland), status=status)
         end
     end
@@ -434,7 +434,7 @@ function _resolve_row(street, city, state, postalcode, county, country, cache, f
         result = _resolve_postalcode(pc)
         if !ismissing(result)
             status = isempty(addr.street) ? "OK" : "PARTIAL"
-            return (lon=result.lon, lat=result.lat, source=result.source,
+            return (LON=result.lon, LAT=result.lat, source=result.source,
                     uncert=_uncertainty(result.aland), status=status)
         end
     end
@@ -444,7 +444,7 @@ function _resolve_row(street, city, state, postalcode, county, country, cache, f
     if !isempty(county_str) && !isnothing(st_sym)
         result = _resolve_county(county_str, st_sym)
         if !ismissing(result)
-            return (lon=result.lon, lat=result.lat, source=result.source,
+            return (LON=result.lon, LAT=result.lat, source=result.source,
                     uncert=_uncertainty(result.aland), status="PARTIAL")
         end
     end
@@ -453,7 +453,7 @@ function _resolve_row(street, city, state, postalcode, county, country, cache, f
     if !isnothing(st_sym)
         result = _resolve_state(st_sym)
         if !ismissing(result)
-            return (lon=result.lon, lat=result.lat, source=result.source,
+            return (LON=result.lon, LAT=result.lat, source=result.source,
                     uncert=_uncertainty(result.aland), status="PARTIAL")
         end
     end
@@ -462,12 +462,12 @@ function _resolve_row(street, city, state, postalcode, county, country, cache, f
     if !isempty(addr.city) && isnothing(st_sym)
         result = _resolve_place(addr.city, nothing)
         if !ismissing(result)
-            return (lon=result.lon, lat=result.lat, source=result.source,
+            return (LON=result.lon, LAT=result.lat, source=result.source,
                     uncert=_uncertainty(result.aland), status="OK")
         end
     end
 
-    return (lon=missing, lat=missing, source="", uncert=missing, status="FAIL")
+    return (LON=missing, LAT=missing, source="", uncert=missing, status="FAIL")
 end
 
 """
@@ -476,7 +476,8 @@ end
 
 Geocode a single location string. Accepts addresses, city names, postal codes.
 
-Returns a named tuple `(lon, lat, source, uncert, status)`.
+Returns a named tuple `(LON, LAT, source, uncert, status)`. Geographic fields
+are UPPERCASE (`LON`, `LAT`); metadata fields are lowercase.
 
 # Examples
 ```julia
@@ -488,7 +489,7 @@ loc2lonlat("27601")
 function loc2lonlat(s::AbstractString; state=nothing, country::Symbol=:US,
                     cache_dir::AbstractString=".", force_download::Bool=false)
     s = strip(s)
-    isempty(s) && return (lon=missing, lat=missing, source="", uncert=missing, status="FAIL")
+    isempty(s) && return (LON=missing, LAT=missing, source="", uncert=missing, status="FAIL")
 
     cache = _load_cache(cache_dir)
 
@@ -496,10 +497,10 @@ function loc2lonlat(s::AbstractString; state=nothing, country::Symbol=:US,
     if _is_postalcode(s)
         result = _resolve_postalcode(s)
         if !ismissing(result)
-            return (lon=result.lon, lat=result.lat, source=result.source,
+            return (LON=result.lon, LAT=result.lat, source=result.source,
                     uncert=_uncertainty(result.aland), status="OK")
         end
-        return (lon=missing, lat=missing, source="", uncert=missing, status="FAIL")
+        return (LON=missing, LAT=missing, source="", uncert=missing, status="FAIL")
     end
 
     # Detect if it looks like an address (has commas or numbers)
@@ -516,11 +517,11 @@ function loc2lonlat(s::AbstractString; state=nothing, country::Symbol=:US,
     st_sym = _normalize_state(state)
     result = _resolve_place(s, st_sym)
     if !ismissing(result)
-        return (lon=result.lon, lat=result.lat, source=result.source,
+        return (LON=result.lon, LAT=result.lat, source=result.source,
                 uncert=_uncertainty(result.aland), status="OK")
     end
 
-    return (lon=missing, lat=missing, source="", uncert=missing, status="FAIL")
+    return (LON=missing, LAT=missing, source="", uncert=missing, status="FAIL")
 end
 
 """
@@ -555,8 +556,8 @@ function loc2lonlat(v::Vector{<:AbstractString}; state=nothing, country::Symbol=
         end
         r = loc2lonlat(v[i]; state=state, country=country,
                        cache_dir=cache_dir, force_download=force_download)
-        lons[i] = r.lon
-        lats[i] = r.lat
+        lons[i] = r.LON
+        lats[i] = r.LAT
         sources[i] = r.source
         uncerts[i] = r.uncert
         statuses[i] = r.status
@@ -623,8 +624,8 @@ function loc2lonlat(df::DataFrame; street::Symbol=:STREET, city::Symbol=:CITY,
 
         r = _resolve_row(s, c, st, pc, co, country, cache, force_download)
 
-        lons[i] = r.lon
-        lats[i] = r.lat
+        lons[i] = r.LON
+        lats[i] = r.LAT
         sources[i] = r.source
         uncerts[i] = r.uncert
         statuses[i] = r.status
@@ -657,7 +658,8 @@ _in_radius(aland) = sqrt(aland / π)
 
 Find nearest place to a (lon, lat) coordinate pair (reverse geocoding).
 
-Returns a named tuple with fields: name, st, dist, bearing, dir, desc.
+Returns a named tuple with fields: NAME, ST, dist, bearing, dir, desc.
+Geographic fields are UPPERCASE (`NAME`, `ST`; `ST isa Symbol`); metadata lowercase.
 
 # Example
 ```julia
@@ -674,7 +676,7 @@ end
 
 Find nearest places to coordinate vectors (reverse geocoding).
 
-Returns DataFrame with columns: idx, name, st, dist, bearing, dir, desc.
+Returns DataFrame with columns: idx, NAME, ST, dist, bearing, dir, desc (`ST isa Symbol`).
 
 # Example
 ```julia
@@ -695,7 +697,8 @@ Find nearest place to a [LON, LAT] coordinate (reverse geocoding).
 Uses area-based "in" radius by default: if within √(ALAND/π) of centroid,
 reported as "in City"; otherwise "X mi DIR of City".
 
-Returns a named tuple with fields: name, st, dist, bearing, dir, desc.
+Returns a named tuple with fields: NAME, ST, dist, bearing, dir, desc.
+Geographic fields are UPPERCASE (`NAME`, `ST`; `ST isa Symbol`); metadata lowercase.
 
 # Example
 ```julia
@@ -707,7 +710,7 @@ function lonlat2loc(xy::AbstractVector, df::DataFrame; threshold=nothing)
     length(xy) == 2 || throw(ArgumentError("xy must have length 2 [LON, LAT]"))
     XY = reshape(xy, 1, 2)
     result = lonlat2loc(XY, df; threshold=threshold)
-    return (name=result.name[1], st=result.st[1], dist=result.dist[1],
+    return (NAME=result.NAME[1], ST=result.ST[1], dist=result.dist[1],
             bearing=result.bearing[1], dir=result.dir[1], desc=result.desc[1])
 end
 
@@ -716,7 +719,7 @@ end
 
 Find nearest places to n×2 matrix of [LON LAT] coordinates.
 
-Returns DataFrame with columns: idx, name, st, dist, bearing, dir, desc.
+Returns DataFrame with columns: idx, NAME, ST, dist, bearing, dir, desc (`ST isa Symbol`).
 """
 function lonlat2loc(XY::AbstractMatrix, df::DataFrame; threshold=nothing)
     size(XY, 2) == 2 || throw(ArgumentError("XY must have 2 columns [LON, LAT]"))
@@ -728,7 +731,7 @@ function lonlat2loc(XY::AbstractMatrix, df::DataFrame; threshold=nothing)
     dir_labels = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"]
 
     results = DataFrame(
-        idx = Int[], name = String[], st = String[],
+        idx = Int[], NAME = String[], ST = Symbol[],
         dist = Float64[], bearing = Float64[],
         dir = String[], desc = String[]
     )
@@ -736,7 +739,7 @@ function lonlat2loc(XY::AbstractMatrix, df::DataFrame; threshold=nothing)
     for i in 1:size(D, 1)
         j = argmin(D[i, :])
         dist = D[i, j]
-        st = String(df.ST[j])
+        st = df.ST[j]           # keep as Symbol (matches usplace().ST)
         name = String(df.NAME[j])
 
         # Bearing from nearest city to query point
@@ -765,7 +768,7 @@ function lonlat2loc(XY::AbstractMatrix, df::DataFrame; threshold=nothing)
             "$(round(dist, digits=1)) mi $dir of $name, $st"
         end
 
-        push!(results, (idx=j, name=name, st=st, dist=dist,
+        push!(results, (idx=j, NAME=name, ST=st, dist=dist,
                         bearing=bearing, dir=dir, desc=desc))
     end
 
@@ -790,8 +793,8 @@ function lonlat2loc(df_in::DataFrame, df_ref::DataFrame;
     loc_df = lonlat2loc(XY, df_ref; threshold=threshold)
 
     result = copy(df_in)
-    result.GC_NAME = loc_df.name
-    result.GC_ST = loc_df.st
+    result.GC_NAME = loc_df.NAME
+    result.GC_ST = loc_df.ST         # Symbol, matches usplace().ST
     result.GC_DIST = loc_df.dist
     result.GC_DIR = loc_df.dir
     result.GC_DESC = loc_df.desc

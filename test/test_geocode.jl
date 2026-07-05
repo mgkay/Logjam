@@ -14,8 +14,8 @@ using DataFrames
         r = loc2lonlat("Raleigh", state=:NC)
         @test r.status == "OK"
         @test r.source == "PLACE"
-        @test r.lon ≈ cities[findfirst(row -> row.NAME == "Raleigh" && row.ST == :NC, eachrow(cities)), :LON]
-        @test r.lat ≈ cities[findfirst(row -> row.NAME == "Raleigh" && row.ST == :NC, eachrow(cities)), :LAT]
+        @test r.LON ≈ cities[findfirst(row -> row.NAME == "Raleigh" && row.ST == :NC, eachrow(cities)), :LON]
+        @test r.LAT ≈ cities[findfirst(row -> row.NAME == "Raleigh" && row.ST == :NC, eachrow(cities)), :LAT]
         # Verify uncertainty
         idx = findfirst(row -> row.NAME == "Raleigh" && row.ST == :NC, eachrow(cities))
         @test r.uncert ≈ 0.45 * sqrt(cities[idx, :ALAND])
@@ -26,8 +26,8 @@ using DataFrames
         r1 = loc2lonlat("Raleigh", state=:NC)
         r2 = loc2lonlat("raleigh", state=:NC)
         r3 = loc2lonlat("RALEIGH", state=:NC)
-        @test r1.lon == r2.lon == r3.lon
-        @test r1.lat == r2.lat == r3.lat
+        @test r1.LON == r2.LON == r3.LON
+        @test r1.LAT == r2.LAT == r3.LAT
     end
 
     # ── T3: Partial prefix match ─────────────────────────────────────────
@@ -37,7 +37,7 @@ using DataFrames
         @test r.source == "PLACE"
         # Should resolve to Raleigh (unique prefix starting with "ral" in NC)
         r_full = loc2lonlat("Raleigh", state=:NC)
-        @test r.lon == r_full.lon
+        @test r.LON == r_full.LON
     end
 
     # ── T4: Ambiguous partial match ──────────────────────────────────────
@@ -57,7 +57,7 @@ using DataFrames
             base_name = replace(cdp_name, " CDP" => "")
             r = loc2lonlat(base_name, state=cdp_st)
             @test r.status == "OK"
-            @test r.lon ≈ cities[cdp_idx, :LON]
+            @test r.LON ≈ cities[cdp_idx, :LON]
         end
     end
 
@@ -68,8 +68,8 @@ using DataFrames
         @test r.source == "POSTALCODE"
         idx = findfirst(==(27601), zips.ZCTA5)
         if !isnothing(idx)
-            @test r.lon ≈ zips[idx, :LON]
-            @test r.lat ≈ zips[idx, :LAT]
+            @test r.LON ≈ zips[idx, :LON]
+            @test r.LAT ≈ zips[idx, :LAT]
             @test r.uncert ≈ 0.45 * sqrt(zips[idx, :ALAND])
         end
     end
@@ -129,8 +129,8 @@ using DataFrames
     @testset "T12: Invalid input" begin
         r = loc2lonlat("xyzzyplugh", state=:NC)
         @test r.status == "FAIL"
-        @test ismissing(r.lon)
-        @test ismissing(r.lat)
+        @test ismissing(r.LON)
+        @test ismissing(r.LAT)
     end
 
     # ── T13: Uncertainty formula ─────────────────────────────────────────
@@ -239,7 +239,7 @@ using DataFrames
         @test r.status == "OK"
         @test r.source == "PLACE"
         r2 = loc2lonlat("Raleigh", state=:NC)
-        @test r.lon == r2.lon
+        @test r.LON == r2.LON
     end
 
     # ── E3: Country parameter ────────────────────────────────────────────
@@ -256,7 +256,7 @@ using DataFrames
         @test occursin("in Raleigh", r.desc)
         # Should match vector method
         r2 = lonlat2loc([lon, lat], cities)
-        @test r.name == r2.name
+        @test r.NAME == r2.NAME
         @test r.dist == r2.dist
     end
 
@@ -267,11 +267,11 @@ using DataFrames
         result = lonlat2loc(x, y, cities)
         @test result isa DataFrame
         @test nrow(result) == 2
-        @test result.name[1] == "Raleigh"
-        @test result.name[2] == "Charlotte"
+        @test result.NAME[1] == "Raleigh"
+        @test result.NAME[2] == "Charlotte"
         # Should match matrix method
         result2 = lonlat2loc(hcat(x, y), cities)
-        @test result.name == result2.name
+        @test result.NAME == result2.NAME
         @test result.dist == result2.dist
     end
 
@@ -287,6 +287,48 @@ using DataFrames
         @test hasproperty(result, :GC_DESC)
         @test hasproperty(result, :GC_NAME)
         @test nrow(result) == 2
+    end
+
+    # ── I4: geocode casing/type contract (v0.2.7 breaking) ───────────────
+    @testset "I4: geocode casing + ST type" begin
+        # loc2lonlat scalar: geographic fields UPPERCASE, metadata lowercase.
+        r = loc2lonlat("Raleigh", state=:NC)
+        for f in (:LON, :LAT, :source, :uncert, :status)
+            @test hasproperty(r, f)
+        end
+        @test !hasproperty(r, :lon)
+        @test !hasproperty(r, :lat)
+
+        # lonlat2loc scalar: NAME, ST UPPERCASE; ST is a Symbol matching usplace().
+        res = lonlat2loc([r.LON, r.LAT], cities)
+        for f in (:NAME, :ST, :dist, :bearing, :dir, :desc)
+            @test hasproperty(res, f)
+        end
+        @test !hasproperty(res, :name)
+        @test !hasproperty(res, :st)
+        @test res.NAME == "Raleigh"
+        @test res.ST isa Symbol
+        @test res.ST == :NC
+
+        # Naive equality against the census DataFrame must now match.
+        matched = filter(row -> row.ST == res.ST, usplace())
+        @test nrow(matched) > 0
+        @test all(matched.ST .== :NC)
+
+        # DataFrame form: matrix return columns and GC_* append respect the rule.
+        mat = lonlat2loc([r.LON r.LAT], cities)
+        @test eltype(mat.ST) == Symbol
+        @test mat.ST[1] == :NC
+        df_in = DataFrame(LON=[r.LON], LAT=[r.LAT])
+        out = lonlat2loc(df_in, cities)
+        @test eltype(out.GC_ST) == Symbol
+        @test out.GC_ST[1] == :NC
+        @test out.GC_NAME[1] == "Raleigh"
+
+        # Coordinate values themselves are unchanged (only names/types changed).
+        idx = findfirst(row -> row.NAME == "Raleigh" && row.ST == :NC, eachrow(cities))
+        @test r.LON ≈ cities[idx, :LON]
+        @test r.LAT ≈ cities[idx, :LAT]
     end
 
 end

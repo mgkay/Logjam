@@ -12,11 +12,11 @@
         r = loc2lonlat("2401 Westgate Dr, Durham, NC 27705"; cache_dir=cache_dir)
         @test r.status == "OK"
         @test r.source == "ADDRESS"
-        @test !ismissing(r.lon)
-        @test !ismissing(r.lat)
+        @test !ismissing(r.LON)
+        @test !ismissing(r.LAT)
         # Durham, NC area: lon ≈ -79.0, lat ≈ 36.0
-        @test -80.0 < r.lon < -78.0
-        @test 35.0 < r.lat < 37.0
+        @test -80.0 < r.LON < -78.0
+        @test 35.0 < r.LAT < 37.0
         @test r.uncert ≈ 0.0
     end
 
@@ -41,8 +41,8 @@
         r2 = loc2lonlat("500 Fayetteville St, Raleigh, NC 27601"; cache_dir=cache_dir2)
         elapsed = time() - t0
         @test elapsed < 1.0  # Should be near-instant from cache
-        @test r1.lon == r2.lon
-        @test r1.lat == r2.lat
+        @test r1.LON == r2.LON
+        @test r1.LAT == r2.LAT
     end
 
     # ── TN4: Failed address fallback ─────────────────────────────────────
