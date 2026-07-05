@@ -149,6 +149,7 @@ function uflxchg(k, C, y::Vector{Int})
     if k isa Number
         k = fill(k, size(C, 1))
     end
+    y = copy(y)  # work on a fresh vector: never alias/mutate the caller's y
     fTC(y) = sum(k[y]) + sum(minimum(C[y, :], dims=1))
     N = 1:size(C, 1)
     TCᵒ = fTC(y)
@@ -208,7 +209,7 @@ Typically produces high-quality solutions for uncapacitated facility location pr
 ```julia
 k = [10, 10, 15]
 C = [0 3 7; 3 0 4; 7 4 0]
-y, TC, W = ufl(k, C)  # Prints: Add: 13.0, Xchg: 13.0
+y, TC, W = ufl(k, C)  # Prints: Add: 17, Xchg: 17 → y=[2], TC=17
 ```
 
 # References

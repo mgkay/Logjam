@@ -291,6 +291,52 @@ using DataFrames
         @test all(results_ppi.cost .>= results.cost)  # Higher PPI → higher costs
     end
 
+    @testset "transport_costs kwargs + baselines (R4)" begin
+        shipments = DataFrame(
+            weight = [0.5, 2.0, 15.0, 30.0],
+            density = [8.0, 10.0, 12.0, 15.0],
+            distance = [250.0, 500.0, 800.0, 1200.0]
+        )
+
+        # Regression: a documented TL kwarg (r) used to splat into charge_ltl,
+        # which accepts only ppi -> MethodError. Must now run cleanly.
+        res = transport_costs(shipments; r=2.5)
+        @test nrow(res) == 4
+        @test all(res.cost .> 0)
+
+        # r only affects the TL regime; the last (TL) shipment must scale with r.
+        res_r2 = transport_costs(shipments; mode=:tl, r=2.0)
+        res_r3 = transport_costs(shipments; mode=:tl, r=3.0)
+        @test all(res_r3.cost .>= res_r2.cost)
+        @test res_r3.cost[4] > res_r2.cost[4]
+
+        # TL baseline 102.7 and LTL baseline 104.2 are applied distinctly.
+        res_ltl = transport_costs(shipments; mode=:ltl)
+        @test res_ltl.cost[1] ≈ charge_ltl(0.5, 250.0, 8.0; ppi=104.2)
+        @test res_ltl.cost[2] ≈ charge_ltl(2.0, 500.0, 10.0; ppi=104.2)
+
+        res_tl = transport_costs(shipments; mode=:tl)
+        @test res_tl.cost[4] ≈ charge_tl(30.0, 1200.0, 15.0; ppi=102.7)
+
+        # ppi_tl / ppi_ltl override each regime independently.
+        base = transport_costs(shipments; mode=:ltl)
+        hi   = transport_costs(shipments; mode=:ltl, ppi_ltl=130.0)
+        @test all(hi.cost .>= base.cost)
+        @test hi.cost[1] ≈ charge_ltl(0.5, 250.0, 8.0; ppi=130.0)
+    end
+
+    @testset "docstring numerics (R6)" begin
+        # Values re-run from current code; each would fail on the stale docstrings.
+        @test rate_ltl(0.5, 8.0, 250.0) ≈ 1.9906 atol=1e-3
+        @test mincharge_ltl(250.0) ≈ 47.10 atol=1e-2
+        @test mincharge_ltl(500.0) ≈ 50.84 atol=1e-2
+        @test charge_tl(25.0, 500.0, 8.0) == 3000.0
+        @test charge_tl(30.0, 500.0, 8.0) == 3000.0
+        @test charge_tl(10.0, 500.0, 8.0) == 1000.0
+        @test charge_ltl(0.5, 250.0, 8.0) ≈ 248.83 atol=1e-2
+        @test charge_ltl(2.0, 500.0, 10.0) ≈ 859.31 atol=1e-2
+    end
+
     @testset "minTLC (T2)" begin
         # Lecture-accurate fixtures (from 3-tran-3.jl):
         #   uwt=40 lb, ucu=9 ft³ => s=40/9; f=20 ton/yr; d=532 mi;

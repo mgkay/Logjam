@@ -216,6 +216,23 @@ using DataFrames
         @test result.GC_STATUS[3] in ["PARTIAL", "FAIL"]  # state only or fail
     end
 
+    # ── R2: Address without recognizable state (regression) ──────────────
+    @testset "R2: Address with no state does not crash" begin
+        # Regression: an address string with no recognizable state used to hit
+        # String(::Nothing) inside _preprocess_address and throw a MethodError.
+        # It must now return a NamedTuple with a status field.
+        r = loc2lonlat("123 Main St, Raleigh")
+        @test hasproperty(r, :status)
+        @test r.status isa AbstractString
+        @test r.status in ["OK", "PARTIAL", "FAIL"]
+
+        # Direct check of the fixed helper: state === nothing behaves like missing.
+        pp = Logjam._preprocess_address("123 Main St", "Raleigh", nothing, nothing)
+        @test pp.state == ""
+        @test pp.street == "123 Main St"
+        @test pp.city == "Raleigh"
+    end
+
     # ── E2: State as full name ───────────────────────────────────────────
     @testset "E2: State full name" begin
         r = loc2lonlat("Raleigh", state="North Carolina")

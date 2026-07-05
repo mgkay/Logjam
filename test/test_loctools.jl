@@ -85,6 +85,42 @@ using SparseArrays
         @test TC1 == TC2
     end
 
+    @testset "uflxchg no aliasing (R5 core)" begin
+        # Regression: uflxchg used to mutate and return the SAME object it was
+        # passed, which made ufl's ADD/DROP refinement branch dead code.
+        y_in = [1, 3]
+        y_out, _, _ = uflxchg(k, C, y_in)
+        @test y_out !== y_in        # returns a fresh vector, never the caller's
+        @test y_in == [1, 3]        # caller's vector left untouched
+    end
+
+    @testset "ufl refinement branch runs (R5)" begin
+        # Instance where a single ADD+EXCHANGE pass is suboptimal but the
+        # ADD/DROP refinement improves it. Pre-fix, ufl == single ADD+EXCHANGE
+        # (refinement was unreachable), so this would fail.
+        kR = fill(4.0, 4)
+        CR = [0.0 8.0 9.0 5.0;
+              8.0 0.0 5.0 1.0;
+              6.0 4.0 0.0 8.0;
+              4.0 4.0 5.0 0.0]
+        ya, _, _ = ufladd(kR, CR)
+        _, TCx, _ = uflxchg(kR, CR, ya)   # single ADD+EXCHANGE (pre-fix ufl result)
+        yf, TCf, _ = ufl(kR, CR; verbose=false)
+        @test TCf <= TCx
+        @test TCf < TCx                    # refinement branch executed and improved
+        @test TCf ≈ 13.0
+        @test TCx ≈ 14.0
+    end
+
+    @testset "docstring numerics (R6)" begin
+        # ufl docstring example — value re-run from the fixed code.
+        y_ex, TC_ex, _ = ufl([10, 10, 15], [0 3 7; 3 0 4; 7 4 0]; verbose=false)
+        @test TC_ex == 17
+        @test Set(y_ex) == Set([2])
+        # d2 docstring example.
+        @test d2([1, 2, 3], [4, 6, 2]) ≈ 5.0990 atol=1e-4
+    end
+
     @testset "pmedian" begin
         # Test p-median with p=2
         y, TC = pmedian(2, C; verbose=true)

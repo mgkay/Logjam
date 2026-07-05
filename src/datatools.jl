@@ -744,8 +744,10 @@ end
 
 # Internal: format with fixed decimal places and comma separators
 function _formatfixed(v::Real, ndig::Int)
-    intpart = trunc(Int64, v)
-    fracpart = abs(v - intpart)
+    neg = v < 0                       # preserve sign for values in (-1, 0)
+    av = abs(v)
+    intpart = trunc(Int64, av)
+    fracpart = av - intpart
     fracstr = string(round(fracpart, digits=ndig))[2:end]  # ".xxxx"
     # Pad fractional part if needed
     while length(fracstr) - 1 < ndig
@@ -753,7 +755,7 @@ function _formatfixed(v::Real, ndig::Int)
     end
     # Truncate if too long
     fracstr = fracstr[1:min(ndig+1, length(fracstr))]
-    return _commasep(intpart) * fracstr
+    return (neg ? "-" : "") * _commasep(intpart) * fracstr
 end
 
 """

@@ -216,8 +216,11 @@ rte, cost = mincostinsert(2, rte, rteTCh)
 - The pickup must occur before the delivery in the route.
 """
 function mincostinsert(idx, rte, rteTCh)
+    if isempty(rte)
+        return [idx, idx], rteTCh([idx, idx])
+    end
     rteᵒ, TCᵒ = copy(rte), Inf
-    for i = 1:length(rte)
+    for i = 1:length(rte) + 1
         for j = max(2,i):length(rte) + 1
             rte′ = vcat(rte[1:i-1], idx, rte[i:j-1], idx, rte[j:end])
             TC = rteTCh(rte′)

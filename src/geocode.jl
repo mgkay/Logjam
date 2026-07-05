@@ -153,10 +153,10 @@ end
 Clean and normalize address components. Returns (street, city, state, postalcode, is_pobox).
 """
 function _preprocess_address(street, city, state, postalcode)
-    s = ismissing(street) ? "" : strip(String(street))
-    c = ismissing(city) ? "" : strip(String(city))
-    st = ismissing(state) ? "" : strip(String(state))
-    pc = ismissing(postalcode) ? "" : strip(String(postalcode))
+    s = (ismissing(street) || street === nothing) ? "" : strip(String(street))
+    c = (ismissing(city) || city === nothing) ? "" : strip(String(city))
+    st = (ismissing(state) || state === nothing) ? "" : strip(String(state))
+    pc = (ismissing(postalcode) || postalcode === nothing) ? "" : strip(String(postalcode))
 
     is_pobox = false
 

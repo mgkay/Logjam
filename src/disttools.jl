@@ -75,7 +75,7 @@ Calculate Euclidean (L₂) distance between two points.
 # Example
 ```julia
 d2([0, 0], [3, 4])  # Returns 5.0
-d2([1, 2, 3], [4, 6, 2])  # Returns 6.0
+d2([1, 2, 3], [4, 6, 2])  # Returns ≈5.0990
 ```
 """
 d2(x₁, x₂) = sqrt(sum((x₁ .- x₂).^2))

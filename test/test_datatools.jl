@@ -272,6 +272,22 @@ end
         @test result === nothing
     end
 
+    @testset "R3: sign preserved for values in (-1, 0)" begin
+        # Regression: _formatfixed dropped the minus sign for magnitudes < 1
+        # (trunc(Int, v) == 0), printing negatives as positive.
+        s = prt([-0.5 0.25; 0.75 -0.125]; str=true)
+        @test occursin("-0.5000", s)
+        @test occursin("-0.1250", s)
+        # Positive values remain unsigned.
+        @test occursin("0.2500", s)
+        @test !occursin("-0.2500", s)
+        # Internal helper directly.
+        @test Logjam._formatfixed(-0.5, 4) == "-0.5000"
+        @test Logjam._formatfixed(-0.125, 4) == "-0.1250"
+        @test Logjam._formatfixed(0.5, 4) == "0.5000"
+        @test Logjam._formatfixed(-1.5, 4) == "-1.5000"
+    end
+
     @testset "str=true preserves alignment spaces" begin
         s = prt([1000 2; 3 4000]; str=true)
         @test occursin("1,000", s)

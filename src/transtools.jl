@@ -75,7 +75,7 @@ r_LTL = PPI_LTL × [(s²/8 + 14) / ((q^(1/7) × d^(15/29) - 7/2) × (s² + 2s + 
 
 # Example
 ```julia
-rate_ltl(0.5, 8.0, 250.0)  # 0.5 ton, 8 lb/ft³, 250 miles → ~0.12 \$/ton-mi
+rate_ltl(0.5, 8.0, 250.0)  # 0.5 ton, 8 lb/ft³, 250 miles → ≈1.9906 \$/ton-mi
 rate_ltl([0.5, 1.0], [8.0, 10.0], [250.0, 500.0])  # Vectorized
 ```
 
@@ -185,8 +185,8 @@ where 28/19 ≈ 1.474 (economies of scale exponent) and 1625 is the scaling cons
 # Example
 ```julia
 mincharge_ltl(0.0)    # 0.0 (no shipment)
-mincharge_ltl(250.0)  # 250 miles → ~67.3
-mincharge_ltl(500.0)  # 500 miles → ~90.8
+mincharge_ltl(250.0)  # 250 miles → ≈47.10
+mincharge_ltl(500.0)  # 500 miles → ≈50.84
 ```
 
 # References
@@ -225,9 +225,9 @@ where q_max = min(Kwt, s × Kcu / 2000)
 
 # Example
 ```julia
-charge_tl(10.0, 500.0, 8.0)  # 10 tons, 500 mi, 8 lb/ft³ → ~1000
-charge_tl(25.0, 500.0, 8.0)  # Full truckload → ~1000
-charge_tl(30.0, 500.0, 8.0)  # Needs 2 trucks → ~2000
+charge_tl(10.0, 500.0, 8.0)  # 10 tons, 500 mi, 8 lb/ft³ → 1000
+charge_tl(25.0, 500.0, 8.0)  # Cube-limited: needs 3 trucks → 3000
+charge_tl(30.0, 500.0, 8.0)  # Cube-limited: needs 3 trucks → 3000
 ```
 
 # References
@@ -272,8 +272,8 @@ c_LTL = max(r_LTL × q × d, MC_LTL)
 
 # Example
 ```julia
-charge_ltl(0.5, 250.0, 8.0)  # 0.5 ton, 250 mi → ~15-20
-charge_ltl(2.0, 500.0, 10.0) # 2 tons, 500 mi → ~120-150
+charge_ltl(0.5, 250.0, 8.0)  # 0.5 ton, 250 mi → ≈248.83
+charge_ltl(2.0, 500.0, 10.0) # 2 tons, 500 mi → ≈859.31
 ```
 
 # References
@@ -506,7 +506,11 @@ Calculate transport costs for a collection of shipments, automatically selecting
 # Arguments
 - `shipments`: DataFrame with columns `:weight` (tons), `:density` (lb/ft³), `:distance` (miles).
 - `mode`: `:auto` (select min cost), `:tl`, or `:ltl`.
-- `kwargs`: Additional parameters passed to charge functions (e.g., `ppi`, `Kwt`, `Kcu`, `r`).
+- `kwargs`: Additional parameters routed to the relevant charge function. `charge_tl`
+  accepts `r`, `Kwt`, `Kcu`; `charge_ltl` accepts no capacity/rate parameters. The TL
+  and LTL Producer Price Indices default to their own baselines (`ppi_tl=102.7`,
+  `ppi_ltl=104.2`) and are applied separately; override either with `ppi_tl`/`ppi_ltl`,
+  or pass a bare `ppi` to override both at once.
 
 # Returns
 - DataFrame with original columns plus `:cost` (\$), `:mode` (`:tl` or `:ltl`), `:rate` (\$/ton-mi).
@@ -524,6 +528,15 @@ results = transport_costs(shipments)
 ```
 """
 function transport_costs(shipments::DataFrame; mode=:auto, kwargs...)
+    kw = values(kwargs)
+    # TL and LTL Producer Price Indices default to their own baselines (102.7 /
+    # 104.2) and are applied separately; a bare `ppi` overrides both explicitly.
+    ppi_tl  = haskey(kw, :ppi_tl)  ? kw.ppi_tl  : (haskey(kw, :ppi) ? kw.ppi : 102.7)
+    ppi_ltl = haskey(kw, :ppi_ltl) ? kw.ppi_ltl : (haskey(kw, :ppi) ? kw.ppi : 104.2)
+    # Route only the parameters each callee accepts: charge_tl takes r/Kwt/Kcu,
+    # charge_ltl takes none of them (only ppi).
+    tl_kw = NamedTuple(k => kw[k] for k in keys(kw) if k in (:r, :Kwt, :Kcu))
+
     n = nrow(shipments)
     costs = zeros(n)
     modes = Vector{Symbol}(undef, n)
@@ -533,8 +546,8 @@ function transport_costs(shipments::DataFrame; mode=:auto, kwargs...)
         q, s, d = shipments[i, :weight], shipments[i, :density], shipments[i, :distance]
 
         if mode == :auto
-            c_tl = charge_tl(q, d, s; kwargs...)
-            c_ltl = charge_ltl(q, d, s; kwargs...)
+            c_tl = charge_tl(q, d, s; ppi=ppi_tl, tl_kw...)
+            c_ltl = charge_ltl(q, d, s; ppi=ppi_ltl)
             if c_tl <= c_ltl
                 costs[i] = c_tl
                 modes[i] = :tl
@@ -542,16 +555,16 @@ function transport_costs(shipments::DataFrame; mode=:auto, kwargs...)
             else
                 costs[i] = c_ltl
                 modes[i] = :ltl
-                rates[i] = rate_ltl(q, s, d; ppi=get(kwargs, :ppi, 104.2))
+                rates[i] = rate_ltl(q, s, d; ppi=ppi_ltl)
             end
         elseif mode == :tl
-            costs[i] = charge_tl(q, d, s; kwargs...)
+            costs[i] = charge_tl(q, d, s; ppi=ppi_tl, tl_kw...)
             modes[i] = :tl
             rates[i] = costs[i] / (q * d)
         elseif mode == :ltl
-            costs[i] = charge_ltl(q, d, s; kwargs...)
+            costs[i] = charge_ltl(q, d, s; ppi=ppi_ltl)
             modes[i] = :ltl
-            rates[i] = rate_ltl(q, s, d; ppi=get(kwargs, :ppi, 104.2))
+            rates[i] = rate_ltl(q, s, d; ppi=ppi_ltl)
         end
     end
 

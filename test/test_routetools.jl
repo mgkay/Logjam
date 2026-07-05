@@ -154,6 +154,29 @@ using Graphs
         @test first_1 < last_1
     end
 
+    @testset "mincostinsert - append after route end (R1)" begin
+        # Regression: the inner loop must search the append-after-route-end
+        # position. Cost matrix where the chain 1->2->3->4 costs 1 per leg and
+        # every other move costs 100. The only cheap arrangement appends
+        # shipment 2 after the end of route [1,1].
+        sh = DataFrame(b=[1, 3], e=[2, 4])
+        C = fill(100.0, 4, 4)
+        for i in 1:4
+            C[i, i] = 0.0
+        end
+        C[1, 2] = 1.0; C[2, 3] = 1.0; C[3, 4] = 1.0
+        rteTCh = rte -> rteTC(rte, sh, C)
+
+        rte, cost = Logjam.mincostinsert(2, [1, 1], rteTCh)
+        @test rte == [1, 1, 2, 2]
+        @test cost == 3.0          # NOT the cost-201 interleaved route
+
+        # Empty-route case starts a new route [idx, idx] with its own cost.
+        rte0, cost0 = Logjam.mincostinsert(1, Int[], rteTCh)
+        @test rte0 == [1, 1]
+        @test cost0 == rteTCh([1, 1]) == 1.0
+    end
+
     @testset "pairwisesavings" begin
         # 4-node network
         C = [0 10 20 30;
