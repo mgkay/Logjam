@@ -861,7 +861,7 @@ nodes_nc, links_nc = cropnetwork(nodes, links, cities.LON, cities.LAT)
 function cropnetwork(nodes::DataFrame, links::DataFrame, x, y;
                      xexpand::Real=0.1, yexpand::Real=0.1)
     # Get bounding box with expansion
-    ((xmin, xmax), (ymin, ymax)), _ = mapbbox(x, y; xexpand=xexpand, yexpand=yexpand)
+    ((xmin, xmax), (ymin, ymax)) = mapbbox(x, y; xexpand=xexpand, yexpand=yexpand)
 
     # Filter nodes within bounding box
     nodes_sub = filter(r -> (r.LON >= xmin) && (r.LON <= xmax) &&

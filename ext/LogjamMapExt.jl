@@ -20,7 +20,8 @@ function _makemap_impl(x::Union{Nothing, AbstractVector{<:Real}, NTuple{2, <:Rea
                        region::Symbol = :World, backend::Symbol = :CairoMakie,
                        xexpand::Real = 0.3, yexpand::Real = 0.1,
                        doRoadbkgd::Bool = true, maxroadlatspan::Real = 30.0,
-                       showgrid::Bool = false)
+                       showgrid::Bool = false,
+                       roadcolor = nothing, roadalpha = nothing)
 
     # Enforce that x and y must have at least two elements if they are vectors
     if x isa AbstractVector && length(x) < 2
@@ -69,7 +70,10 @@ function _makemap_impl(x::Union{Nothing, AbstractVector{<:Real}, NTuple{2, <:Rea
         end
     else
         # Calculate map limits based on provided coordinates with optional expansion
-        limits, limits0 = Logjam.mapbbox(x, y, xexpand=xexpand, yexpand=yexpand)
+        limits = Logjam.mapbbox(x, y; xexpand=xexpand, yexpand=yexpand)
+        # Raw (unexpanded) extent for the region-containment check; reuses mapbbox's
+        # validation + NaN handling so the all-NaN ArgumentError guard is preserved.
+        limits0 = Logjam.mapbbox(x, y)
         # Check if the region falls within the continental U.S. or broader U.S. limits
         if isinbbox(limits0, Logjam.CUS_LIMITS)
             doCountryborder, doUSborder = false, true
@@ -88,36 +92,37 @@ function _makemap_impl(x::Union{Nothing, AbstractVector{<:Real}, NTuple{2, <:Rea
         ax.xgridstyle, ax.ygridstyle = :dot, :dot
     end
 
-    hborders = []
-
     # Add roads as background if specified and within latitude span limits
     if doRoadbkgd
         latspan = abs(limits[2][2] - limits[2][1])
         if latspan <= maxroadlatspan
             road_alpha = latspan > 20 ? 0.35 : (latspan > 10 ? 0.25 : 0.2)
             road_lw = latspan > 20 ? 0.3 : (latspan > 10 ? 0.5 : 0.6)
-            push!(hborders, lines!(ax, Logjam.faf5interstateroads()..., color=(:steelblue, road_alpha),
-                linewidth=road_lw, label="Interstate Roads"))
+            # Adaptive defaults unless explicitly overridden by roadcolor/roadalpha
+            rc = isnothing(roadcolor) ? :steelblue : roadcolor
+            ra = isnothing(roadalpha) ? road_alpha : roadalpha
+            lines!(ax, Logjam.faf5interstateroads()..., color=(rc, ra),
+                linewidth=road_lw, label="Interstate Roads")
         end
     end
 
     # Add U.S. state borders if specified
     if doUSborder
-        push!(hborders, lines!(ax, Logjam.usstates()..., color=:blue, linewidth=.75,
-            label="US State Borders"))
+        husborder = lines!(ax, Logjam.usstates()..., color=:blue, linewidth=.75,
+            label="US State Borders")
         if doCountryborder
-            hborders[end].linestyle = :dash
-            hborders[end].alpha = 0.5
+            husborder.linestyle = :dash
+            husborder.alpha = 0.5
         end
     end
 
     # Add country borders if specified
     if doCountryborder
-        push!(hborders, lines!(ax, Logjam.countries()..., color=:blue, linewidth=.75,
-            label="Country Borders"))
+        lines!(ax, Logjam.countries()..., color=:blue, linewidth=.75,
+            label="Country Borders")
     end
 
-    return fig, ax, hborders, limits
+    return fig, ax
 end
 
 # =============================================================================

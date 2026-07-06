@@ -81,7 +81,8 @@ end
     makemap(x::Union{Nothing, AbstractVector{<:Real}, NTuple{2, <:Real}} = nothing,
             y::Union{Nothing, AbstractVector{<:Real}, NTuple{2, <:Real}} = nothing;
             region::Symbol = :World, backend::Symbol = :CairoMakie,
-            xexpand::Real = 0.3, yexpand::Real = 0.1, doRoadbkgd::Bool = true, maxroadlatspan::Real = 30.0) -> Figure, GeoAxis, Vector, Tuple
+            xexpand::Real = 0.3, yexpand::Real = 0.1, doRoadbkgd::Bool = true, maxroadlatspan::Real = 30.0,
+            roadcolor = nothing, roadalpha = nothing) -> Figure, GeoAxis
 
 Creates map visualization for predefined or user-defined region of interest. 
     
@@ -102,15 +103,14 @@ The map can focus on different predefined regions (the world, U.S., or continent
 - `doRoadbkgd::Bool`: Whether to include roads as background features if maximum latitude span is less than `maxroadlatspan`. Default is `true`.
 - `maxroadlatspan::Float64`: Maximum latitude span for displaying roads. Default is `30.0`° (allows continental US coverage with FAF5 interstate network).
 - `showgrid::Bool`: Whether to display grid lines and coordinate labels. Default is `false`.
+- `roadcolor`: Optional color for the interstate road overlay. If `nothing` (default), uses the adaptive `:steelblue`. Any Makie-compatible color overrides it.
+- `roadalpha`: Optional alpha (opacity) for the interstate road overlay. If `nothing` (default), uses the adaptive value computed from the latitude span. An explicit value overrides it.
 
 # Returns
 - `fig::Figure`: The figure object containing the map.
 - `ax::GeoAxis`: The axis object where the map is drawn.
-- `hborders::Vector`: A vector of handles for the lines plotted on the map in the following order:
-    - `hborders[1]`: Interstate roads, if used (derived from FAF5: https://geodata.bts.gov/datasets/usdot::freight-analysis-framework-faf5-network-links/about).
-    - `hborders[2]`: U.S. state borders, if used (derived from: https://raw.githubusercontent.com/PublicaMundi/MappingAPI/master/data/geojson/us-states.json)).
-    - `hborders[3]`: Country borders, if used (derived from https://github.com/PublicaMundi/MappingAPI/blob/master/data/geojson/countries.geojson?short_path=b27f2ec)).
-- `limits::Tuple`: The geographic limits (bounding box) used for the map.
+
+Interstate roads (if used) are derived from FAF5: https://geodata.bts.gov/datasets/usdot::freight-analysis-framework-faf5-network-links/about. U.S. state borders (if used) are derived from https://raw.githubusercontent.com/PublicaMundi/MappingAPI/master/data/geojson/us-states.json. Country borders (if used) are derived from https://github.com/PublicaMundi/MappingAPI/blob/master/data/geojson/countries.geojson.
 
 # Behavior
 - Automatically selects the appropriate region and borders based on the provided `x`, `y`, and `region` parameters.
@@ -121,25 +121,25 @@ The map can focus on different predefined regions (the world, U.S., or continent
 # Examples
 ```julia-repl
 # Create a world map using CairoMakie
-fig, ax, hborders, limits = makemap()
+fig, ax = makemap()
 
 # Create a U.S. map
-fig, ax, hborders, limits = makemap(region=:US)
+fig, ax = makemap(region=:US)
 
 # Create a map focused on a specific region with expanded limits
 using GeoMakie   # Required for scatter! function
 x = [-84.0, -83.0, -82.0]
 y = [41.0, 42.0, 43.0]
-fig, ax, hborders, limits = makemap(x, y)
+fig, ax = makemap(x, y)
 scatter!(ax, x, y, markersize=12, color=:red)
 fig
 ```
 """
 function makemap(x::Union{Nothing, AbstractVector{<:Real}, NTuple{2, <:Real}} = nothing,
                  y::Union{Nothing, AbstractVector{<:Real}, NTuple{2, <:Real}} = nothing;
-                 kwargs...)
+                 roadcolor = nothing, roadalpha = nothing, kwargs...)
     if _geomakie_available[]
-        return _makemap_impl[](x, y; kwargs...)
+        return _makemap_impl[](x, y; roadcolor=roadcolor, roadalpha=roadalpha, kwargs...)
     else
         error("makemap() requires CairoMakie and GeoMakie. Run: using CairoMakie, GeoMakie")
     end
@@ -293,7 +293,7 @@ end
 """
     mapbbox(x::Union{AbstractVector{<:Real}, Tuple{Vararg{Real}}},
             y::Union{AbstractVector{<:Real}, Tuple{Vararg{Real}}};
-            xexpand::Real=0.0, yexpand::Real=0.0) -> Tuple, Tuple
+            xexpand::Real=0.0, yexpand::Real=0.0) -> Tuple
 
 Calculates the bounding box for a set of geographic coordinates, with optional expansion along the x and y axes.
 
@@ -304,8 +304,7 @@ Calculates the bounding box for a set of geographic coordinates, with optional e
 - `yexpand`: A `Float64` value (default = `0.0`) specifying the fractional expansion of the bounding box along the y-axis.
 
 # Returns
-- A tuple of x-limits and y-limits after applying any expansions, in the form `((xmin, xmax), (ymin, ymax))`.
-- A tuple of the original x-limits and y-limits without any expansion.
+- A single nested tuple of x-limits and y-limits after applying any expansions, in the form `((xmin, xmax), (ymin, ymax))`.
 
 # Details
 - The function first calculates the minimum and maximum values of `x` and `y`, ignoring any `NaN` values.
@@ -320,10 +319,10 @@ lon = [-78.6, -80.8, -82.5]
 lat = [35.8, 35.2, 35.6]
 
 # Tight bounding box (no expansion)
-(xlim, ylim), _ = mapbbox(lon, lat)
+(xlim, ylim) = mapbbox(lon, lat)
 
 # Expand 10% on each side for map padding
-(xlim, ylim), orig = mapbbox(lon, lat; xexpand=0.1, yexpand=0.1)
+(xlim, ylim) = mapbbox(lon, lat; xexpand=0.1, yexpand=0.1)
 ```
 """
 function mapbbox(x::Union{AbstractVector{<:Real}, Tuple{Vararg{Real}}},
@@ -343,9 +342,6 @@ function mapbbox(x::Union{AbstractVector{<:Real}, Tuple{Vararg{Real}}},
     end
     (xmin, xmax) = extrema(xvals)
     (ymin, ymax) = extrema(yvals)
-
-    # Store the original limits without any expansion
-    limits0 = (xmin, xmax), (ymin, ymax)
 
     # Calculate the expansion offsets based on the specified expansion factors
     xoffset = (xmax - xmin) * xexpand
@@ -371,8 +367,8 @@ function mapbbox(x::Union{AbstractVector{<:Real}, Tuple{Vararg{Real}}},
         ymax = min(90 - sqrt(eps(Float64)), maximum(yvals))
     end
 
-    # Return the expanded limits and the original unexpanded limits
-    return ((xmin, xmax), (ymin, ymax)), limits0
+    # Return the expanded limits
+    return ((xmin, xmax), (ymin, ymax))
 end
 
 """
