@@ -54,7 +54,13 @@ end
     df = uscbsa()
     @test isa(df, DataFrame)
     @test !isempty(df)
-    @test all(issubset(names(df), ["CBSA", "NAME", "LAT", "LON", "POP", "ALAND", "AWATER", "M_MSA", "CSA", "ISCUS"]))
+    @test all(issubset(names(df), ["CBSA", "NAME", "LAT", "LON", "POP", "ALAND", "AWATER", "IS_MSA", "CSA", "ISCUS"]))
+
+    # G4.1: M_MSA::String replaced by IS_MSA::Bool; Metropolitan count preserved
+    @test "IS_MSA" in names(df)
+    @test eltype(df.IS_MSA) == Bool
+    @test count(df.IS_MSA) == 382
+    @test !("M_MSA" in names(df))
 end
 
 # Test for uscsa function
@@ -63,6 +69,35 @@ end
     @test isa(df, DataFrame)
     @test !isempty(df)
     @test all(issubset(names(df), ["CSA", "NAME", "LAT", "LON", "POP", "ALAND", "AWATER"]))
+end
+
+# G1.1: census loaders are LON-first (LON column precedes LAT column)
+@testset "census LON-first column order (G1.1)" begin
+    loaders = [usplace, uscounty, uscentract, uscenblkgrp,
+               uszcta5, uszcta3, uscbsa, uscsa]
+    for loader in loaders
+        df = loader()
+        cols = names(df)
+        ilon = findfirst(==("LON"), cols)
+        ilat = findfirst(==("LAT"), cols)
+        @test ilon !== nothing
+        @test ilat !== nothing
+        @test ilon < ilat
+    end
+end
+
+# G2.1: uscentract().ST is a Symbol column with a known :NC value
+@testset "uscentract ST Symbol (G2.1)" begin
+    df = uscentract()
+    @test eltype(df.ST) <: Symbol
+    @test any(df.ST .== :NC)
+end
+
+# G3.1: uscsa().NAME is a plain String column with no missing values
+@testset "uscsa NAME String (G3.1)" begin
+    df = uscsa()
+    @test eltype(df.NAME) == String
+    @test count(ismissing, df.NAME) == 0
 end
 
 # Test for st2fips function

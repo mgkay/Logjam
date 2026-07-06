@@ -16,34 +16,36 @@ end
 # ---------------------------------------------------------------------------
 @testset "makemap additional paths" begin
 
-    @testset "doRoadbkgd=false suppresses road background" begin
-        fig, ax, hborders, limits = makemap(region=:CUS; doRoadbkgd=false)
+    @testset "doRoadbkgd toggle returns valid (Figure, GeoAxis)" begin
+        # C3: hborders no longer returned; assert both paths yield a valid axis.
+        fig, ax = makemap(region=:CUS; doRoadbkgd=false)
         @test fig isa Figure
-        # Without road background, hborders should have fewer elements
-        fig2, ax2, hborders2, _ = makemap(region=:CUS; doRoadbkgd=true)
-        @test length(hborders2) >= length(hborders)
+        @test ax isa GeoAxis
+        fig2, ax2 = makemap(region=:CUS; doRoadbkgd=true)
+        @test fig2 isa Figure
+        @test ax2 isa GeoAxis
     end
 
     @testset "Hawaii bbox (US but not CUS)" begin
         # Honolulu area: inside US_LIMITS but outside CUS_LIMITS
         x_hi = [-158.0, -155.0]
         y_hi = [19.0, 22.0]
-        fig, ax, hborders, limits = makemap(x_hi, y_hi)
+        fig, ax = makemap(x_hi, y_hi)
         @test fig isa Figure
-        @test limits isa Tuple
+        @test ax isa GeoAxis
     end
 
     @testset "non-US region coordinates" begin
         # Western Europe: outside both US and CUS
         x_eu = [2.0, 13.0]
         y_eu = [48.0, 52.0]
-        fig, ax, hborders, limits = makemap(x_eu, y_eu)
+        fig, ax = makemap(x_eu, y_eu)
         @test fig isa Figure
-        @test limits isa Tuple
+        @test ax isa GeoAxis
     end
 
     @testset "tuple coordinate input" begin
-        fig, ax, hborders, limits = makemap((-80.0, -75.0), (35.0, 40.0))
+        fig, ax = makemap((-80.0, -75.0), (35.0, 40.0))
         @test fig isa Figure
         @test ax isa GeoAxis
     end
@@ -66,33 +68,33 @@ end
     @testset "out-of-bounds LON raises ArgumentError" begin
         dfN_bad = DataFrame(IDX=[1, 2], LON=[-78.9, 200.0], LAT=[35.8, 35.8])
         dfL_bad = DataFrame(SRC=[1], DST=[2])
-        fig, ax, _, _ = makemap(x_test, y_test)
+        fig, ax = makemap(x_test, y_test)
         @test_throws ArgumentError plotroads!(ax, dfN_bad, dfL_bad)
     end
 
     @testset "out-of-bounds LAT raises ArgumentError" begin
         dfN_bad = DataFrame(IDX=[1, 2], LON=[-78.9, -78.5], LAT=[35.8, 95.0])
         dfL_bad = DataFrame(SRC=[1], DST=[2])
-        fig, ax, _, _ = makemap(x_test, y_test)
+        fig, ax = makemap(x_test, y_test)
         @test_throws ArgumentError plotroads!(ax, dfN_bad, dfL_bad)
     end
 
     @testset "empty dfN raises ArgumentError" begin
         dfN_empty = DataFrame(IDX=Int[], LON=Float64[], LAT=Float64[])
-        fig, ax, _, _ = makemap(x_test, y_test)
+        fig, ax = makemap(x_test, y_test)
         @test_throws ArgumentError plotroads!(ax, dfN_empty, dfL_test)
     end
 
     @testset "too few columns in dfN raises ArgumentError" begin
         dfN_narrow = DataFrame(IDX=[1, 2], LON=[-78.9, -78.5])
         dfL_bad = DataFrame(SRC=[1], DST=[2])
-        fig, ax, _, _ = makemap(x_test, y_test)
+        fig, ax = makemap(x_test, y_test)
         @test_throws ArgumentError plotroads!(ax, dfN_narrow, dfL_bad)
     end
 
     @testset "too few columns in dfL raises ArgumentError" begin
         dfL_narrow = DataFrame(SRC=[1])
-        fig, ax, _, _ = makemap(x_test, y_test)
+        fig, ax = makemap(x_test, y_test)
         @test_throws ArgumentError plotroads!(ax, dfN_test, dfL_narrow)
     end
 end
@@ -106,7 +108,7 @@ end
     y_test = [35.5, 36.1]
 
     @testset "basic coordinate vector" begin
-        fig, ax, _, _ = makemap(x_test, y_test)
+        fig, ax = makemap(x_test, y_test)
         lx = [-79.0, -78.7, -78.5]
         ly = [35.8, 36.0, 35.8]
         handles = plotroute!(ax, lx, ly)
@@ -115,7 +117,7 @@ end
     end
 
     @testset "coordinate vector show_markers=false" begin
-        fig, ax, _, _ = makemap(x_test, y_test)
+        fig, ax = makemap(x_test, y_test)
         lx = [-79.0, -78.7, -78.5]
         ly = [35.8, 36.0, 35.8]
         handles = plotroute!(ax, lx, ly; show_markers=false)
@@ -123,7 +125,7 @@ end
     end
 
     @testset "coordinate vector with NaN separators" begin
-        fig, ax, _, _ = makemap(x_test, y_test)
+        fig, ax = makemap(x_test, y_test)
         lx = [-79.0, -78.7, NaN, -78.6, -78.5]
         ly = [35.8, 36.0, NaN, 35.9, 35.8]
         handles = plotroute!(ax, lx, ly)

@@ -135,10 +135,9 @@ end  # @testset "NC Cities Routing Integration"
     final_route, cost = twoopt(initial_routes[1], cost_fn)
 
     @testset "makemap with data coordinates" begin
-        fig, ax, hborders, limits = makemap(cities.LON, cities.LAT)
+        fig, ax = makemap(cities.LON, cities.LAT)
         @test fig isa Figure
         @test ax isa GeoAxis
-        @test limits isa Tuple
     end
 
     @testset "plotroads! returns Dict with tier keys" begin

@@ -9,11 +9,17 @@ using Test
 @testset "mapbbox tests" begin
     x = [-80.0, -75.0, -78.0]
     y = [35.0, 40.0, 38.0]
-    expanded_bbox, original_bbox = mapbbox(x, y, xexpand=0.1, yexpand=0.1)
+    result = mapbbox(x, y, xexpand=0.1, yexpand=0.1)
 
-    @test original_bbox == ((-80.0, -75.0), (35.0, 40.0))
-    @test expanded_bbox[1] != original_bbox[1]  # x limits should be expanded
-    @test expanded_bbox[2] != original_bbox[2]  # y limits should be expanded
+    # M4.1: returns one nested box ((xmin,xmax),(ymin,ymax)), not a 2-tuple of boxes
+    @test length(result) == 2
+    @test result[1] isa Tuple
+    @test result[1][1] isa Real
+    @test result[2] isa Tuple
+    @test result[2][1] isa Real
+    # Expanded box differs from the raw extent
+    @test result[1] != (-80.0, -75.0)  # x limits should be expanded
+    @test result[2] != (35.0, 40.0)    # y limits should be expanded
 end
 
 @testset "mapbbox all-NaN input" begin
@@ -73,33 +79,40 @@ end
 
 # Test for makemap function
 @testset "makemap tests" begin
-    # Test different regions
+    # Test different regions (M1: 2-tuple return)
     @testset "region=$region" for region in [:World, :US, :CUS]
-        fig, ax, hborders, limits = makemap(region=region)
+        fig, ax = makemap(region=region)
         @test fig isa Figure
         @test ax isa GeoAxis
-        @test hborders isa Vector
-        @test limits isa Tuple
     end
 
     # Test with coordinate inputs
     @testset "coordinate inputs" begin
         x = [-80.0, -75.0, -78.0]
         y = [35.0, 40.0, 38.0]
-        fig, ax, hborders, limits = makemap(x, y)
+        fig, ax = makemap(x, y)
         @test fig isa Figure
         @test ax isa GeoAxis
     end
 
+    # M1.2: roadcolor/roadalpha kwargs accepted; overlay override runs
+    @testset "roadcolor/roadalpha kwargs" begin
+        x = [-80.0, -75.0, -78.0]
+        y = [35.0, 40.0, 38.0]
+        fig2, ax2 = makemap(x, y; roadcolor=:red, roadalpha=0.5)
+        @test fig2 isa Figure
+        @test ax2 isa GeoAxis
+    end
+
     # Test showgrid keyword
     @testset "showgrid default off" begin
-        fig, ax, _, _ = makemap(region=:CUS)
+        fig, ax = makemap(region=:CUS)
         @test ax.xgridvisible[] == false
         @test ax.yticklabelsvisible[] == false
     end
 
     @testset "showgrid=true" begin
-        fig, ax, _, _ = makemap(region=:CUS; showgrid=true)
+        fig, ax = makemap(region=:CUS; showgrid=true)
         @test ax.xgridvisible[] == true
         @test ax.yticklabelsvisible[] == true
     end
@@ -225,7 +238,7 @@ end
     y_test = [35.5, 36.1]
 
     @testset "basic render returns Dict" begin
-        fig, ax, _, _ = makemap(x_test, y_test)
+        fig, ax = makemap(x_test, y_test)
         handles = plotroads!(ax, dfN_test, dfL_test)
         @test handles isa Dict{Symbol, Any}
         @test length(handles) > 0
@@ -233,7 +246,7 @@ end
 
     @testset "handle keys without connectors" begin
         dfL_faf5 = filter(r -> r.SOURCE != "CONNECTOR", dfL_test)
-        fig, ax, _, _ = makemap(x_test, y_test)
+        fig, ax = makemap(x_test, y_test)
         handles = plotroads!(ax, dfN_test, dfL_faf5)
         # Close zoom (<10° latspan): 2 tiers (FCLASS 1,2) with casing+fill each
         @test haskey(handles, :fill_1)
@@ -245,7 +258,7 @@ end
     end
 
     @testset "handle keys with connectors" begin
-        fig, ax, _, _ = makemap(x_test, y_test)
+        fig, ax = makemap(x_test, y_test)
         handles = plotroads!(ax, dfN_test, dfL_test; show_connectors=true)
         @test haskey(handles, :fill_1)
         @test haskey(handles, :casing_1)
@@ -254,14 +267,14 @@ end
     end
 
     @testset "connectors hidden by default" begin
-        fig, ax, _, _ = makemap(x_test, y_test)
+        fig, ax = makemap(x_test, y_test)
         handles = plotroads!(ax, dfN_test, dfL_test)
         @test !haskey(handles, :connector)
         @test length(handles) == 4
     end
 
     @testset "handle customization" begin
-        fig, ax, _, _ = makemap(x_test, y_test)
+        fig, ax = makemap(x_test, y_test)
         handles = plotroads!(ax, dfN_test, dfL_test)
         # Verify handles are mutable Makie line objects
         handles[:fill_1].color = :darkblue
@@ -270,19 +283,19 @@ end
 
     @testset "empty dfL raises ArgumentError" begin
         dfL_empty = DataFrame(SRC=Int[], DST=Int[])
-        fig, ax, _, _ = makemap(x_test, y_test)
+        fig, ax = makemap(x_test, y_test)
         @test_throws ArgumentError plotroads!(ax, dfN_test, dfL_empty)
     end
 
     @testset "orphan node reference raises ArgumentError" begin
         dfL_bad = DataFrame(SRC=[1, 99], DST=[2, 3], SOURCE=["FAF5", "FAF5"])
-        fig, ax, _, _ = makemap(x_test, y_test)
+        fig, ax = makemap(x_test, y_test)
         @test_throws ArgumentError plotroads!(ax, dfN_test, dfL_bad)
     end
 
     @testset "no SOURCE column backward compat" begin
         dfL_nosrc = DataFrame(SRC=[1, 2, 3], DST=[2, 3, 4], DIST=[1.0, 1.2, 1.5])
-        fig, ax, _, _ = makemap(x_test, y_test)
+        fig, ax = makemap(x_test, y_test)
         handles = plotroads!(ax, dfN_test, dfL_nosrc)
         # No SOURCE, no FCLASS → all tier 5; close zoom: casing_5 + fill_5 = 2
         @test length(handles) == 2
@@ -294,7 +307,7 @@ end
         # latspan > 20° → no casing keys
         x_wide = [-125.0, -65.0]
         y_wide = [24.0, 50.0]
-        fig, ax, _, _ = makemap(x_wide, y_wide)
+        fig, ax = makemap(x_wide, y_wide)
         handles = plotroads!(ax, dfN_test, dfL_test)
         @test haskey(handles, :fill_1)
         @test !haskey(handles, :casing_1)
@@ -314,19 +327,19 @@ end
     y_test = [35.5, 36.1]
 
     @testset "single path with markers" begin
-        fig, ax, _, _ = makemap(x_test, y_test)
+        fig, ax = makemap(x_test, y_test)
         handles = plotroute!(ax, [1, 2, 3, 4], dfN_test)
         @test length(handles) == 3  # line + origin scatter + dest scatter
     end
 
     @testset "single path without markers" begin
-        fig, ax, _, _ = makemap(x_test, y_test)
+        fig, ax = makemap(x_test, y_test)
         handles = plotroute!(ax, [1, 2, 3], dfN_test; show_markers=false)
         @test length(handles) == 1  # line only
     end
 
     @testset "multi-path" begin
-        fig, ax, _, _ = makemap(x_test, y_test)
+        fig, ax = makemap(x_test, y_test)
         paths = [[1, 2, 3], [1, 4, 3]]
         all_handles = plotroute!(ax, paths, dfN_test)
         @test length(all_handles) == 2  # two path groups
@@ -335,7 +348,7 @@ end
     end
 
     @testset "multi-path without markers" begin
-        fig, ax, _, _ = makemap(x_test, y_test)
+        fig, ax = makemap(x_test, y_test)
         paths = [[1, 2], [3, 4]]
         all_handles = plotroute!(ax, paths, dfN_test; show_markers=false)
         @test length(all_handles) == 2
