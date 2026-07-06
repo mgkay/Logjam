@@ -60,7 +60,7 @@ function ufladd(k, C; y = Int[], p::Union{Int, Nothing} = nothing)
             done = true
         end
     end
-    return y, TCᵒ, _build_alloc(y, C)
+    return y, float(TCᵒ), _build_alloc(y, C)
 end
 
 """
@@ -115,7 +115,7 @@ function ufldrop(k, C; y = nothing, p::Union{Int, Nothing} = nothing)
             done = true
         end
     end
-    return y, TCᵒ, _build_alloc(y, C)
+    return y, float(TCᵒ), _build_alloc(y, C)
 end
 
 """
@@ -185,7 +185,7 @@ function uflxchg(k, C, y::Vector{Int})
             done = true
         end
     end
-    return y, TCᵒ, _build_alloc(y, C)
+    return y, float(TCᵒ), _build_alloc(y, C)
 end
 
 """
@@ -209,7 +209,7 @@ Typically produces high-quality solutions for uncapacitated facility location pr
 ```julia
 k = [10, 10, 15]
 C = [0 3 7; 3 0 4; 7 4 0]
-y, TC, W = ufl(k, C)  # Prints: Add: 17, Xchg: 17 → y=[2], TC=17
+y, TC, W = ufl(k, C)  # Prints: Add: 17.0, Xchg: 17.0 → y=[2], TC=17.0
 ```
 
 # References
@@ -238,7 +238,7 @@ function ufl(k, C; verbose = true)
             done = true
         end
     end
-    return y, TC, _build_alloc(y, C)
+    return y, float(TC), _build_alloc(y, C)
 end
 
 """

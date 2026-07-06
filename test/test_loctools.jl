@@ -344,4 +344,15 @@ using DataFrames
         @test rA.LON[1] ≈ lonA rtol=1e-6
         @test rA.LAT[1] ≈ latA rtol=1e-6
     end
+
+    @testset "S1.2: TC Float64 return contract (integer k/C)" begin
+        # Integer fixtures — TC must be promoted to Float64 for all UFL-family fns.
+        ki = [10, 10, 15]
+        Ci = [0 3 7; 3 0 4; 7 4 0]
+        @test ufladd(ki, Ci)[2] isa Float64
+        @test ufldrop(ki, Ci)[2] isa Float64
+        @test uflxchg(ki, Ci, [1, 3])[2] isa Float64
+        @test ufl(ki, Ci; verbose=false)[2] isa Float64
+        @test pmedian(2, Ci; verbose=false)[2] isa Float64
+    end
 end

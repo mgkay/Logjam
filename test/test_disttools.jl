@@ -74,4 +74,10 @@ using Logjam
         # p < 1 is not a metric → error.
         @test_throws ErrorException dists(X1, X2, 0.5)
     end
+
+    @testset "S1.1: d1 Float64 return contract" begin
+        # Integer inputs must still return Float64 (declared return type).
+        @test d1([0, 0], [3, 4]) isa Float64
+        @test d1([0, 0], [3, 4]) == 7.0
+    end
 end

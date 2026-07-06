@@ -58,7 +58,7 @@ d1([0, 0], [3, 4])  # Returns 7.0
 d1([1, 2, 3], [4, 6, 2])  # Returns 8.0
 ```
 """
-d1(x₁, x₂) = sum(abs.(x₁ .- x₂))
+d1(x₁, x₂) = float(sum(abs.(x₁ .- x₂)))
 
 """
     d2(x₁, x₂) -> Float64
