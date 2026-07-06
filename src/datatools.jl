@@ -142,6 +142,8 @@ Returns DataFrame containing U.S. census block group-level data.
 
 Geographic and population data for each U.S. census block group, including latitude-longitude coordinates representing the center of population of the block group.  Does not include U.S. territories.
 
+Unlike the other census loaders, block groups carry no `NAME` or `ST` column: block groups have no common name, and are identified solely by their numeric FIPS codes. Recover the state from `STFIP` via [`fips2st`](@ref) if needed.
+
 # Columns
 - `STFIP`: Integer representing state FIPS (Federal Information Processing Standards) code.
 - `COFIP`: Integer representing county FIPS code.
