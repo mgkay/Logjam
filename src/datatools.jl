@@ -49,6 +49,13 @@ Geographic data derived from [1], population data from [2], and `CBSA` from [3].
 2. U.S. Census Bureau, 2020 Census Demographic and Housing Characteristics File (DHC), [DECENNIALDHC2020.P1](https://data.census.gov/table/DECENNIALDHC2020.P1?t=Populations%20and%20People&g=010XX00US\$1600000)
 
 3. U.S. Census Bureau, Principal cities of metropolitan and micropolitan statistical areas, [list2_2023.xls](https://www2.census.gov/programs-surveys/metro-micro/geographies/reference-files/2023/delineation-files/list2_2023.xlsx)
+
+# Example
+```julia
+df = usplace()
+names(df)                       # LON precedes LAT
+filter(r -> r.ST == :NC, df)    # places in North Carolina
+```
 """
 function usplace()
     return loaddata("usplace")
@@ -81,6 +88,12 @@ Area data from [1], population and center of population data from [2], and CBSA 
 2. U.S. Census Bureau, Centers of Population, [CenPop2020_Mean_CO.txt](https://www2.census.gov/geo/docs/reference/cenpop2020/county/CenPop2020_Mean_CO.txt)
 
 3. U.S. Census Bureau, Core based statistical areas (CBSAs), metropolitan divisions, and combined statistical areas (CSAs), [list1_2023.xls](https://www2.census.gov/programs-surveys/metro-micro/geographies/reference-files/2023/delineation-files/list1_2023.xlsx)
+
+# Example
+```julia
+df = uscounty()
+first(df, 5)                    # LON precedes LAT
+```
 """
 function uscounty()
     return loaddata("uscounty")
@@ -111,6 +124,12 @@ Area data from [1]. Population and center of population data from [2].
 1. U.S. Census Bureau, 2020 Gazetteer Files, [2020_Gaz_tract_national.txt](https://www2.census.gov/geo/docs/maps-data/data/gazetteer/2020_Gazetteer/2020_Gaz_tract_national.zip)
 
 2. U.S. Census Bureau, Centers of Population, [CenPop2020_Mean_TR.txt](https://www2.census.gov/geo/docs/reference/cenpop2020/tract/CenPop2020_Mean_TR.txt)
+
+# Example
+```julia
+df = uscentract()
+filter(r -> r.ST == :NC, df)    # census tracts in North Carolina (ST is a Symbol)
+```
 """
 function uscentract()
     return loaddata("uscentract")
@@ -140,6 +159,13 @@ Area data from [1]. Population and center of population data from [2].
 1. U.S. Census Bureau, TIGER/Line Shapefiles for 2020 Census Block Groups, [https://www2.census.gov/geo/tiger/TIGER2020/BG/]
 
 2. U.S. Census Bureau, Centers of Population, [CenPop2020_Mean_BG.txt](https://www2.census.gov/geo/docs/reference/cenpop2020/blockgroup/CenPop2020_Mean_BG.txt)
+
+# Example
+```julia
+df = uscenblkgrp()
+nrow(df)                        # number of block groups
+first(df, 5)                    # LON precedes LAT
+```
 """
 function uscenblkgrp()
     return loaddata("uscenblkgrp")
@@ -167,6 +193,12 @@ Geographic data derived from [1]. Population data derived from [2]. `ISCUS` dete
 1. U.S. Census Bureau, 2023 Gazetteer Files, [2023_Gaz_zcta_national.txt](https://www2.census.gov/geo/docs/maps-data/data/gazetteer/2023_Gazetteer/2023_Gaz_zcta_national.zip)
 
 2. U.S. Census Bureau, 2020 Census Demographic and Housing Characteristics File (DHC), [DECENNIALDHC2020.P1](https://data.census.gov/table?t=Populations%20and%20People&g=010XX00US\$8600000)
+
+# Example
+```julia
+df = uszcta5()
+first(df, 5)                    # LON precedes LAT
+```
 """
 function uszcta5()
     return loaddata("uszcta5")
@@ -190,6 +222,12 @@ Geographic and population data for each U.S. 3-digit ZIP Code Tabulation Area (Z
 
 # Sources
 All data derived from `uszcta5`.
+
+# Example
+```julia
+df = uszcta3()
+first(df, 5)                    # LON precedes LAT
+```
 """
 function uszcta3()
     return loaddata("uszcta3")
@@ -218,6 +256,12 @@ Geographic and population data for each U.S. CBSA. The latitude-longitude of eac
 CBSA delineations and classifications from [1]. Geographic and population data from `uscounty()`.
 
 1. U.S. Census Bureau, Core based statistical areas (CBSAs), metropolitan divisions, and combined statistical areas (CSAs), [list1_2023.xls](https://www2.census.gov/programs-surveys/metro-micro/geographies/reference-files/2023/delineation-files/list1_2023.xlsx)
+
+# Example
+```julia
+df = uscbsa()
+filter(r -> r.IS_MSA, df)       # Metropolitan Statistical Areas only (IS_MSA::Bool)
+```
 """
 function uscbsa()
     return loaddata("uscbsa")
@@ -243,6 +287,12 @@ Geographic and population data for each U.S. CSA. The latitude-longitude of each
 CSA delineations and classifications from [1]. Geographic and population data from `uscbsa()`.
 
 1. U.S. Census Bureau, 2023 Combined Statistical Area (CSA) Codes, [list2_2023.xls](https://www2.census.gov/programs-surveys/metro-micro/geographies/reference-files/2020/delineation-files/list2_2023.xls)
+
+# Example
+```julia
+df = uscsa()
+first(df, 5)                    # LON precedes LAT; NAME::String
+```
 """
 function uscsa()
     return loaddata("uscsa")
@@ -274,14 +324,9 @@ Valid two-character symbols of the state or territory are
 $(join(sort(collect(keys(state_fips))), ", "))
 
 # Examples
-```jldoctest
-julia> st2fips(:NC)
-37
-
-julia> st2fips.([:NC, :NY])
-2-element Vector{Int64}:
- 37
- 36
+```julia
+st2fips(:NC)          # => 37
+st2fips.([:NC, :NY])  # => [37, 36]
 ```
 """
 function st2fips(state::Symbol)
@@ -313,18 +358,10 @@ Valid FIPS codes are: $(join(sort(collect(keys(fips_state))), ", "))
 - `ArgumentError` if the FIPS code is not valid.
 
 # Examples
-```jldoctest
-julia> fips2st(37)
-:NC
-
-julia> fips2st(36)
-:NY
-
-julia> fips2st.(37:39)
-3-element Vector{Symbol}:
- :NC
- :ND
- :OH
+```julia
+fips2st(37)      # => :NC
+fips2st(36)      # => :NY
+fips2st.(37:39)  # => [:NC, :ND, :OH]
 ```
 """
 function fips2st(fips::Integer)
@@ -386,6 +423,12 @@ Centroid nodes (artificial FAF zone connectors) are excluded.
 U.S. Department of Transportation, Bureau of Transportation Statistics,
 Freight Analysis Framework (FAF5) Network,
 https://geodata.bts.gov/datasets/usdot::freight-analysis-framework-faf5-network-nodes/about
+
+# Example
+```julia
+df = faf5nodes()
+first(df, 5)                    # IDX, LON, LAT, ...
+```
 """
 function faf5nodes()
     return loadcsvdata("faf5_nodes")
@@ -430,6 +473,12 @@ Links connecting to centroid nodes are excluded.
 U.S. Department of Transportation, Bureau of Transportation Statistics,
 Freight Analysis Framework (FAF5) Network,
 https://geodata.bts.gov/datasets/usdot::freight-analysis-framework-faf5-network-links/about
+
+# Example
+```julia
+df = faf5links()
+first(df, 5)                    # SRC, DST, DIST, ...
+```
 """
 function faf5links()
     return loadcsvdata("faf5_links")
@@ -444,10 +493,12 @@ Returns a tuple `(x, y)` of coordinate vectors with NaN separators between segme
 This format is directly compatible with Makie's `lines!()` function for plotting
 road network backgrounds.
 
-# Usage
+# Example
 ```julia
 x, y = faf5interstate()
-lines!(ax, x, y, color=(:steelblue, 0.3), linewidth=0.5)
+length(x)                       # NaN-separated interstate polylines
+# Plot as a road-network background (requires a Makie axis `ax`):
+# lines!(ax, x, y, color=(:steelblue, 0.3), linewidth=0.5)
 ```
 
 # Sources
@@ -462,7 +513,7 @@ end
 # =============================================================================
 
 """
-    mat2df(X::AbstractMatrix, cols::AbstractVector; rows=nothing) -> DataFrame
+    mat2df(X::AbstractMatrix, cols::AbstractVector; rows=nothing, row_title="") -> DataFrame
 
 Convert a matrix to a labeled DataFrame.
 
@@ -470,28 +521,23 @@ Convert a matrix to a labeled DataFrame.
 - `X`: Matrix of values.
 - `cols`: Column names (length must equal `size(X, 2)`).
 - `rows`: Optional row labels. If provided (length must equal `size(X, 1)`),
-  inserted as the first column with a blank header.
+  inserted as the first column.
+- `row_title`: Header for the inserted row-label column (default `""`, a blank
+  header). Ignored when `rows` is not provided.
 
 # Example
-```jldoctest
-julia> mat2df([1 2; 3 4], ["A", "B"])
-2×2 DataFrame
- Row │ A      B
-     │ Int64  Int64
-─────┼──────────────
-   1 │     1      2
-   2 │     3      4
+```julia
+mat2df([1 2; 3 4], ["A", "B"])
+# => 2×2 DataFrame with columns A, B
 
-julia> mat2df([1 2; 3 4], ["A", "B"]; rows=["r1", "r2"])
-2×3 DataFrame
- Row │         A      B
-     │ String  Int64  Int64
-─────┼──────────────────────
-   1 │ r1          1      2
-   2 │ r2          3      4
+mat2df([1 2; 3 4], ["A", "B"]; rows=["r1", "r2"])
+# => 2×3 DataFrame; row labels in a first column with a blank header
+
+mat2df([1 2; 3 4], ["A", "B"]; rows=["r1", "r2"], row_title="ID")
+# => 2×3 DataFrame; row-label column header is :ID
 ```
 """
-function mat2df(X::AbstractMatrix, cols::AbstractVector; rows::Union{Nothing, AbstractVector}=nothing)
+function mat2df(X::AbstractMatrix, cols::AbstractVector; rows::Union{Nothing, AbstractVector}=nothing, row_title::AbstractString="")
     if length(cols) != size(X, 2)
         throw(ArgumentError("length(cols) = $(length(cols)) must equal size(X, 2) = $(size(X, 2))"))
     end
@@ -500,7 +546,7 @@ function mat2df(X::AbstractMatrix, cols::AbstractVector; rows::Union{Nothing, Ab
     end
     df = DataFrame(X, Symbol.(cols))
     if rows !== nothing
-        insertcols!(df, 1, Symbol("") => rows)
+        insertcols!(df, 1, Symbol(row_title) => rows)
     end
     return df
 end
@@ -780,17 +826,9 @@ can violate the associated constraint by a large amount.
 - `atol`: Tolerance for snapping (default: `1e-8`).
 
 # Example
-```jldoctest
-julia> snapvals([2.9999999997, 1e-12, 0.5])
-3-element Vector{Float64}:
- 3.0
- 0.0
- 0.5
-
-julia> snapvals([1.0, 2.0, 3.0, 4.0], 2, 2)
-2×2 Matrix{Float64}:
- 1.0  3.0
- 2.0  4.0
+```julia
+snapvals([2.9999999997, 1e-12, 0.5])   # => [3.0, 0.0, 0.5]
+snapvals([1.0, 2.0, 3.0, 4.0], 2, 2)   # => [1.0 3.0; 2.0 4.0]
 ```
 """
 function snapvals(x; atol::Real=1e-8)
@@ -827,14 +865,21 @@ Determines whether a given point lies within a specified bounding box.
   - `false` otherwise.
 
 # Example
-```jldoctest
-julia> bbox = ((0, 10), (0, 15));
+```julia
+bbox = ((0, 10), (0, 15))
+isptinbbox((5, 10), bbox)   # => true   (inside)
+isptinbbox((15, 10), bbox)  # => false  (outside)
 
-julia> isptinbbox((5, 10), bbox)  # inside
-true
+# DataFrame filter idiom (primary; matches course usage): keep the rows whose
+# (LON, LAT) falls inside a bounding box.
+using Logjam, DataFrames
+df = usplace()
+ncbox = ((-84.5, -75.0), (33.5, 36.7))          # ((xmin, xmax), (ymin, ymax))
+filter(r -> isptinbbox((r.LON, r.LAT), ncbox), df)
 
-julia> isptinbbox((15, 10), bbox)  # outside
-false
+# Bare-matrix broadcast idiom over the rows of an N×2 coordinate matrix:
+X = [-80.0 35.5; -78.0 40.0]
+isptinbbox.(eachrow(X), Ref(ncbox))   # => Bool[1, 0]
 ```
 """
 function isptinbbox(pt, bbox::Tuple{Union{Tuple{<:Real, <:Real}, AbstractVector{<:Real}},

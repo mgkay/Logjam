@@ -69,6 +69,7 @@ end
 @testset "st2fips function tests" begin
     @test st2fips(:NC) == 37
     @test st2fips(:NY) == 36
+    @test st2fips.([:NC, :NY]) == [37, 36]   # docstring broadcast example
     @test_throws ArgumentError st2fips(:XX)
 end
 
@@ -77,6 +78,7 @@ end
     @test fips2st(37) == :NC
     @test fips2st(36) == :NY
     @test fips2st(72) == :PR
+    @test fips2st.(37:39) == [:NC, :ND, :OH]   # docstring broadcast example
     @test_throws ArgumentError fips2st(99)
 end
 
@@ -191,8 +193,14 @@ end
 
     @testset "with row labels" begin
         df = mat2df([1 2; 3 4], ["A", "B"]; rows=["r1", "r2"])
-        @test names(df) == ["", "A", "B"]
+        @test names(df) == ["", "A", "B"]        # D2.1: blank default header
         @test df[!, ""] == ["r1", "r2"]
+    end
+
+    @testset "row_title header (D2.2)" begin
+        df = mat2df([1 2; 3 4], ["A", "B"]; rows=["r1", "r2"], row_title="ID")
+        @test names(df) == ["ID", "A", "B"]
+        @test df.ID == ["r1", "r2"]
     end
 
     @testset "single-element matrix" begin
@@ -370,6 +378,16 @@ end
     bbox = ((-180, 180), (-90, 90))
     @test isptinbbox((0, 0), bbox) == true
     @test isptinbbox((200, 100), bbox) == false
+
+    # Docstring example inputs
+    box2 = ((0, 10), (0, 15))
+    @test isptinbbox((5, 10), box2) == true
+    @test isptinbbox((15, 10), box2) == false
+
+    # Bare-matrix broadcast idiom (docstring D1)
+    X = [-80.0 35.5; -78.0 40.0]
+    ncbox = ((-84.5, -75.0), (33.5, 36.7))
+    @test isptinbbox.(eachrow(X), Ref(ncbox)) == [true, false]
 end
 
 # ─── Relocated: alloclines (from maptools) ────────────────────────
