@@ -31,8 +31,8 @@ Geographic and population data for each place in the U.S., where each place is a
 - `PLFIP`: Integer representing place FIPS code.
 - `NAME`: String containing name of place (city, town, or CDP).
 - `ST`: Symbol representing state abbreviation (e.g., :AL for Alabama).
-- `LAT`: Float representing an interior latitude of place.
 - `LON`: Float representing an interior longitude of place.
+- `LAT`: Float representing an interior latitude of place.
 - `POP`: Integer representing population of place.
 - `ALAND`: Float representing land area of place in square miles.
 - `AWATER`: Float representing water area of place in square miles.
@@ -73,8 +73,8 @@ Geographic and population data for each U.S. county, including latitude-longitud
 - `COFIP`: Integer representing county FIPS code.
 - `NAME`: String containing name of county.
 - `ST`: Symbol representing state abbreviation (e.g., :AL for Alabama).
-- `LAT`: Float representing latitude of county center of population.
 - `LON`: Float representing longitude of county center of population.
+- `LAT`: Float representing latitude of county center of population.
 - `POP`: Integer representing population of county.
 - `ALAND`: Float representing land area of county in square miles.
 - `AWATER`: Float representing water area of county in square miles.
@@ -111,8 +111,8 @@ Geographic and population data for each U.S. census tract, including latitude-lo
 - `COFIP`: Integer representing county FIPS code.
 - `TRFIP`: Integer representing census tract FIPS code.
 - `ST`: Symbol representing state abbreviation (e.g., :AL for Alabama).
-- `LAT`: Float representing latitude of census tract center of population.
 - `LON`: Float representing longitude of census tract center of population.
+- `LAT`: Float representing latitude of census tract center of population.
 - `POP`: Integer representing population of census tract.
 - `ALAND`: Float representing land area of census tract in square miles.
 - `AWATER`: Float representing water area of census tract in square miles.
@@ -147,8 +147,8 @@ Geographic and population data for each U.S. census block group, including latit
 - `COFIP`: Integer representing county FIPS code.
 - `TRFIP`: Integer representing census tract FIPS code.
 - `BGFIP`: Integer representing census block group FIPS code.
-- `LAT`: Float representing latitude of block group center of population.
 - `LON`: Float representing longitude of block group center of population.
+- `LAT`: Float representing latitude of block group center of population.
 - `POP`: Integer representing population of block group.
 - `ALAND`: Float representing land area of block group in square miles.
 - `AWATER`: Float representing water area of block group in square miles.
@@ -180,8 +180,8 @@ Geographic and population data for each U.S. 5-digit ZIP Code Tabulation Area (Z
 
 # Columns
 - `ZCTA5`: Integer (<= 5 digits) representing the ZIP Code Tabulation Area (ZCTA5) code.
-- `LAT`: Float representing an interior latitude of ZCTA5.
 - `LON`: Float representing an interior longitude of ZCTA5.
+- `LAT`: Float representing an interior latitude of ZCTA5.
 - `POP`: Integer representing population of ZCTA5.
 - `ALAND`: Float representing land area of ZCTA5 in square miles.
 - `AWATER`: Float representing water area of ZCTA5 in square miles.
@@ -213,8 +213,8 @@ Geographic and population data for each U.S. 3-digit ZIP Code Tabulation Area (Z
 
 # Columns
 - `ZCTA3`: Integer (<= 3 digits) representing the 3-digit ZIP Code Tabulation Area (ZCTA3) code.
-- `LAT`: Float representing latitude of ZCTA3 approximate center of population.
 - `LON`: Float representing longitude of ZCTA3 approximate center of population.
+- `LAT`: Float representing latitude of ZCTA3 approximate center of population.
 - `POP`: Integer representing population of ZCTA3.
 - `ALAND`: Float representing land area of ZCTA3 in square miles.
 - `AWATER`: Float representing water area of ZCTA3 in square miles.
@@ -243,12 +243,12 @@ Geographic and population data for each U.S. CBSA. The latitude-longitude of eac
 # Columns
 - `CBSA`: Integer representing Core-Based Statistical Area code.
 - `NAME`: String containing name of CBSA.
-- `LAT`: Float representing latitude of CBSA center of population.
 - `LON`: Float representing longitude of CBSA center of population.
+- `LAT`: Float representing latitude of CBSA center of population.
 - `POP`: Integer representing population of CBSA.
 - `ALAND`: Float representing land area of CBSA in square miles.
 - `AWATER`: Float representing water area of CBSA in square miles.
-- `M_MSA`: String indicating whether CBSA is a Metropolitan Statistical Area or a Micropolitan Statistical Area.
+- `IS_MSA`: Boolean indicating whether CBSA is a Metropolitan Statistical Area (`true`) or a Micropolitan Statistical Area (`false`).
 - `CSA`: Integer or None representing Combined Statistical Area code if CBSA is part of a CSA.
 - `ISCUS`: Boolean indicating whether CBSA is within continental U.S. (true or false).
 
@@ -277,8 +277,8 @@ Geographic and population data for each U.S. CSA. The latitude-longitude of each
 # Columns
 - `CSA`: Integer representing Combined Statistical Area code.
 - `NAME`: String containing name of CSA.
-- `LAT`: Float representing latitude of CSA center of population.
 - `LON`: Float representing longitude of CSA center of population.
+- `LAT`: Float representing latitude of CSA center of population.
 - `POP`: Integer representing population of CSA.
 - `ALAND`: Float representing land area of CSA in square miles.
 - `AWATER`: Float representing water area of CSA in square miles.

@@ -1,5 +1,46 @@
 # Logjam Release Notes
 
+## v0.2.8
+
+### Breaking changes
+
+- **Census loaders are LON-first.** The eight census/gazetteer tables
+  (`usplace`, `uscounty`, `uscentract`, `uscenblkgrp`, `uszcta5`, `uszcta3`,
+  `uscbsa`, `uscsa`) now return the `LON` column immediately before `LAT`,
+  following Logjam's `(LON, LAT)` convention; all other columns are unchanged.
+  Migration: use named column access (`df.LON`, `df.LAT`) rather than positional
+  indices, which now resolve `LON`/`LAT` in swapped positions.
+- **`uscbsa` `M_MSA::String31` → `IS_MSA::Bool`.** The metro/micro classification
+  is now a boolean: `true` marks a Metropolitan Statistical Area (382 of them),
+  `false` a Micropolitan Statistical Area. Migration: replace
+  `filter(r -> r.M_MSA == "Metropolitan Statistical Area", uscbsa())` with
+  `filter(r -> r.IS_MSA, uscbsa())`.
+- **`makemap` returns `(fig, ax)`.** The third return value and the `hborders`
+  and `limits` keywords are removed. Migration: destructure two values
+  (`fig, ax = makemap(...)`) and restyle the built-in road overlay with the new
+  `roadcolor`/`roadalpha` keywords (e.g. `makemap(x, y; roadcolor=:steelblue,
+  roadalpha=0.5)`) instead of mutating a returned line handle
+  (`hb[1].color[] = ...`).
+- **`mapbbox` returns the expanded bounding box only.** The function now returns
+  the single box `((xmin, xmax), (ymin, ymax))` directly rather than a tuple whose
+  first element is the box. Migration: drop the trailing `[1]` —
+  `mapbbox(x, y; xexpand=0.1, yexpand=0.1)` instead of `...[1]`.
+
+### Improvements
+
+- **`Float64` cost returns.** `d1` and the total-cost (`TC`) return of `ufladd`,
+  `ufldrop`, `uflxchg`, `ufl`, and `pmedian` are now always `Float64`, even for
+  integer inputs; `ufl(verbose=true)` accordingly prints values such as
+  `Add: 17.0`.
+- **`uscentract.ST::Symbol` and `uscsa.NAME::String`.** `uscentract().ST` is now a
+  `Symbol` (matching `usplace().ST`, so `filter(r -> r.ST == :NC, uscentract())`
+  works directly), and `uscsa().NAME` is now a plain `String`.
+- **Runnable docstring examples.** The census and FAF5 loaders and the data
+  helpers (`mat2df`, `snapvals`, `isptinbbox`, `st2fips`, `fips2st`) now carry
+  self-contained, runnable `# Example` code blocks reflecting the LON-first order.
+- **`mat2df` `row_title` keyword.** `mat2df` gains a `row_title::AbstractString=""`
+  keyword that labels the inserted row-index column.
+
 ## v0.2.7
 
 ### New functions

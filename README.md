@@ -111,7 +111,7 @@ Continental US 3-digit ZIPs: 882
 
 ### Example 2 — Mapping
 
-Logjam's `makemap` function creates GeoMakie map figures with automatic projection, region detection, and a FAF5 interstate highway background. This example maps NC cities and introduces the full mapping toolkit: `makemap` for the figure and axis, `scatter!` and `text!` for data, `aligntext` for automatic label positioning, and the `hborders` return value for customizing the built-in road overlay.
+Logjam's `makemap` function creates GeoMakie map figures with automatic projection, region detection, and a FAF5 interstate highway background. This example maps NC cities and introduces the full mapping toolkit: `makemap` for the figure and axis, `scatter!` and `text!` for data, `aligntext` for automatic label positioning, and the `roadcolor`/`roadalpha` keywords for customizing the built-in road overlay.
 
 ```julia
 using Logjam
@@ -122,10 +122,8 @@ cities = filter(r -> r.STFIP == st2fips(:NC) && r.POP > 100_000, usplace())
 x, y, name = cities.LON, cities.LAT, cities.NAME
 
 # Create map — auto-fits region to data; draws FAF5 interstates by default
-fig, ax, hb = makemap(x, y)
+fig, ax = makemap(x, y; roadcolor=:steelblue, roadalpha=0.5)
 ax.title = "North Carolina Cities with Population > 100,000"
-
-hb[1].color[] = (:steelblue, 0.5)
 
 # Plot city locations and labels
 scatter!(ax, x, y, color=:red, markersize=12)
@@ -136,7 +134,7 @@ dcf()
 
 ![NC Cities Plot](docs/assets/nc_cities_plot.png)
 
-**After-action.** `makemap` detects when coordinates fall within the continental U.S. and automatically overlays the FAF5 interstate network as a geographic reference. The `hb` return value (third element) exposes the road and border line handles for post-hoc styling, as shown above for the interstate color. `aligntext(x, y)` returns a named tuple of keyword arguments (`:align`, `:offset`) that are splatted into `text!` via `...`, automatically positioning each label to avoid overlap with its marker.
+**After-action.** `makemap` detects when coordinates fall within the continental U.S. and automatically overlays the FAF5 interstate network as a geographic reference. The `roadcolor` and `roadalpha` keywords restyle that road overlay directly, as shown above where the interstates are drawn in semi-transparent steel blue. `aligntext(x, y)` returns a named tuple of keyword arguments (`:align`, `:offset`) that are splatted into `text!` via `...`, automatically positioning each label to avoid overlap with its marker.
 
 ---
 
@@ -336,7 +334,7 @@ gc = loc2lonlat(stops)
 x, y = gc.LON, gc.LAT
 
 # Download OSM road network covering the stop region
-bb = mapbbox(x, y; xexpand=0.1, yexpand=0.1)[1]
+bb = mapbbox(x, y; xexpand=0.1, yexpand=0.1)
 dfN0, dfL0 = osm_roads((bb[1]..., bb[2]...); cache_dir=joinpath(@__DIR__, "data"))
 
 # Build network and shortest paths
