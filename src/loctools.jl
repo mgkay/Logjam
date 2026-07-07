@@ -15,21 +15,21 @@ end
 
 Greedy ADD construction heuristic for uncapacitated facility location.
 
-Iteratively opens the facility giving the greatest cost reduction until no improvement
-is possible (or `p` facilities are open).
+Iteratively opens the new facility (NF) giving the greatest cost reduction until no
+improvement is possible (or `p` NFs are open).
 
 # Arguments
-- `k`: Fixed cost. Scalar (same cost at every site) or length-`n` vector, `k[i]` = cost
-  of opening a facility at candidate site `i`.
-- `C`: `n`×`m` variable-cost matrix over `n` candidate sites and `m` customers; `C[i,j]`
-  = cost of serving customer `j` from site `i`.
-- `y`: initial set of open sites (default: empty — start from scratch).
-- `p`: cap on the number of open facilities (default: `nothing`, no cap).
+- `k`: Fixed cost. Scalar (same cost at every NF site) or length-`n` vector, `k[i]` = cost
+  of opening an NF at candidate site `i`.
+- `C`: `n`×`m` variable-cost matrix over `n` candidate NF sites and `m` existing facilities
+  (EFs); `C[i,j]` = cost of serving EF `j` from an NF at site `i`.
+- `y`: indices of the initially-open NF sites (default: empty — start from scratch).
+- `p`: cap on the number of open NFs (default: `nothing`, no cap).
 
 # Returns
-- `(y, TC, W)`: open-facility site indices; total cost `TC = sum(k[y]) + sum(C[allocated])`;
-  and the `n`×`m` sparse allocation matrix `W`, `W[i,j] = 1` if customer `j` is served by
-  facility `i`.
+- `(y, TC, W)`: indices of the open NF sites; total cost `TC = sum(k[y]) + sum(C[allocated])`;
+  and the `n`×`m` sparse allocation matrix `W`, `W[i,j] = 1` if EF `j` is served by the NF
+  at site `i`.
 
 # Example
 Example 8.8 in Francis, *Facility Layout and Location*, 2nd ed. (Daskin, *Network and
@@ -86,21 +86,21 @@ end
 
 Greedy DROP construction heuristic for uncapacitated facility location.
 
-Starts with every facility open and iteratively closes the one giving the greatest cost
-reduction until no improvement is possible (or `p` remain).
+Starts with every new facility (NF) open and iteratively closes the one giving the greatest
+cost reduction until no improvement is possible (or `p` NFs remain).
 
 # Arguments
-- `k`: Fixed cost. Scalar (same cost at every site) or length-`n` vector, `k[i]` = cost
-  of opening a facility at candidate site `i`.
-- `C`: `n`×`m` variable-cost matrix over `n` candidate sites and `m` customers; `C[i,j]`
-  = cost of serving customer `j` from site `i`.
-- `y`: initial set of open sites (default: all sites open).
-- `p`: target number of open facilities (default: `nothing`, drop until no improvement).
+- `k`: Fixed cost. Scalar (same cost at every NF site) or length-`n` vector, `k[i]` = cost
+  of opening an NF at candidate site `i`.
+- `C`: `n`×`m` variable-cost matrix over `n` candidate NF sites and `m` existing facilities
+  (EFs); `C[i,j]` = cost of serving EF `j` from an NF at site `i`.
+- `y`: indices of the initially-open NF sites (default: all NF sites open).
+- `p`: target number of open NFs (default: `nothing`, drop until no improvement).
 
 # Returns
-- `(y, TC, W)`: open-facility site indices; total cost `TC = sum(k[y]) + sum(C[allocated])`;
-  and the `n`×`m` sparse allocation matrix `W`, `W[i,j] = 1` if customer `j` is served by
-  facility `i`.
+- `(y, TC, W)`: indices of the open NF sites; total cost `TC = sum(k[y]) + sum(C[allocated])`;
+  and the `n`×`m` sparse allocation matrix `W`, `W[i,j] = 1` if EF `j` is served by the NF
+  at site `i`.
 
 # Example
 Example 8.8 in Francis, *Facility Layout and Location*, 2nd ed. (Daskin, *Network and
@@ -159,20 +159,20 @@ end
 
 Pairwise EXCHANGE improvement heuristic for uncapacitated facility location.
 
-Steepest-descent swaps (close one open facility, open one closed) from a starting set `y`
-until a local optimum is reached. The swap preserves the number of open facilities, so
+Steepest-descent swaps — close one open new facility (NF), open one closed — from a starting
+set `y` until a local optimum is reached. The swap preserves the number of open NFs, so
 `y` sets the cardinality.
 
 # Arguments
-- `k`: Fixed cost. Scalar (same cost at every site) or length-`n` vector (see [`ufladd`](@ref)).
-- `C`: `n`×`m` variable-cost matrix over `n` candidate sites and `m` customers; `C[i,j]`
-  = cost of serving customer `j` from site `i`.
-- `y`: starting set of open sites (required — exchange improves *this* set).
+- `k`: Fixed cost. Scalar (same cost at every NF site) or length-`n` vector (see [`ufladd`](@ref)).
+- `C`: `n`×`m` variable-cost matrix over `n` candidate NF sites and `m` existing facilities
+  (EFs); `C[i,j]` = cost of serving EF `j` from an NF at site `i`.
+- `y`: indices of the starting open NF sites (required — exchange improves *this* set).
 
 # Returns
-- `(y, TC, W)`: improved open-facility site indices; total cost
+- `(y, TC, W)`: indices of the improved open NF sites; total cost
   `TC = sum(k[y]) + sum(C[allocated])`; and the `n`×`m` sparse allocation matrix `W`,
-  `W[i,j] = 1` if customer `j` is served by facility `i`.
+  `W[i,j] = 1` if EF `j` is served by the NF at site `i`.
 
 # Example
 Improve the ADD solution to Example 8.8 (Francis, 2nd ed.; Daskin, Fig. 7.5): the swap
@@ -253,15 +253,15 @@ a better solution than any single procedure alone. With the default `verbose=tru
 the per-step `Add`/`Xchg`/`Drop` cost trace.
 
 # Arguments
-- `k`: Fixed cost. Scalar (same cost at every site) or length-`n` vector (see [`ufladd`](@ref)).
-- `C`: `n`×`m` variable-cost matrix over `n` candidate sites and `m` customers; `C[i,j]`
-  = cost of serving customer `j` from site `i`.
+- `k`: Fixed cost. Scalar (same cost at every NF site) or length-`n` vector (see [`ufladd`](@ref)).
+- `C`: `n`×`m` variable-cost matrix over `n` candidate new-facility (NF) sites and `m`
+  existing facilities (EFs); `C[i,j]` = cost of serving EF `j` from an NF at site `i`.
 - `verbose`: print the per-step cost trace (default: `true`).
 
 # Returns
-- `(y, TC, W)`: best open-facility site indices found; total cost
+- `(y, TC, W)`: indices of the best open NF sites found; total cost
   `TC = sum(k[y]) + sum(C[allocated])`; and the `n`×`m` sparse allocation matrix `W`,
-  `W[i,j] = 1` if customer `j` is served by facility `i`.
+  `W[i,j] = 1` if EF `j` is served by the NF at site `i`.
 
 # Example
 Example 8.8 in Francis, *Facility Layout and Location*, 2nd ed. The hybrid improves on ADD
@@ -275,11 +275,15 @@ C = [ 0  3  7 10  6  4
      10  7  3  0  7  8
       6  6  6  7  0  2
       4  7  8  8  2  0]
-y, TC, W = ufl(k, C; verbose=false)
+y, TC, W = ufl(k, C)
 (y, TC)
 
 # output
 
+  Add: 32.0
+ Xchg: 31.0
+  Add: 31.0
+ Drop: 31.0
 ([3, 6], 31.0)
 ```
 
@@ -317,20 +321,20 @@ end
 """
     pmedian(p, C; verbose=true) -> (Vector{Int}, Float64, SparseMatrixCSC)
 
-p-median facility location: open exactly `p` facilities (no fixed costs) to minimize total
-assignment cost. Uses [`ufladd`](@ref) with `k=0` to select `p`, then [`uflxchg`](@ref) to
-improve.
+p-median facility location: open exactly `p` new facilities (NFs; no fixed costs) to minimize
+total assignment cost. Uses [`ufladd`](@ref) with `k=0` to select `p`, then [`uflxchg`](@ref)
+to improve.
 
 # Arguments
-- `p`: number of facilities to open.
-- `C`: `n`×`m` variable-cost matrix over `n` candidate sites and `m` customers; `C[i,j]`
-  = cost of serving customer `j` from site `i`.
+- `p`: number of NFs to open.
+- `C`: `n`×`m` variable-cost matrix over `n` candidate NF sites and `m` existing facilities
+  (EFs); `C[i,j]` = cost of serving EF `j` from an NF at site `i`.
 - `verbose`: print the selection trace (default: `true`).
 
 # Returns
-- `(y, TC, W)`: the `p` open-facility site indices; total cost `TC = sum(C[allocated])`
+- `(y, TC, W)`: indices of the `p` open NF sites; total cost `TC = sum(C[allocated])`
   (transport only, no fixed costs); and the `n`×`m` sparse allocation matrix `W`,
-  `W[i,j] = 1` if customer `j` is served by facility `i`.
+  `W[i,j] = 1` if EF `j` is served by the NF at site `i`.
 
 # Example
 Same cost matrix as Example 8.8 (Francis, 2nd ed.), with fixed costs dropped.
