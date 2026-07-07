@@ -53,8 +53,8 @@ Geographic data derived from [1], population data from [2], and `CBSA` from [3].
 # Example
 ```julia
 df = usplace()
-names(df)                       # LON precedes LAT
-filter(r -> r.ST == :NC, df)    # places in North Carolina
+names(df)   # => ["STFIP", "PLFIP", "NAME", "ST", "LON", "LAT", "POP", "ALAND", "AWATER", "LSAD", "FUNCSTAT", "CBSA", "ISCUS"]  (LON precedes LAT)
+filter(r -> r.ST == :NC, df)    # => 776 places in North Carolina
 ```
 """
 function usplace()
@@ -92,7 +92,8 @@ Area data from [1], population and center of population data from [2], and CBSA 
 # Example
 ```julia
 df = uscounty()
-first(df, 5)                    # LON precedes LAT
+names(df)     # => ["STFIP", "COFIP", "NAME", "ST", "LON", "LAT", "POP", "ALAND", "AWATER", "CBSA"]
+first(df, 5)  # LON precedes LAT
 ```
 """
 function uscounty()
@@ -128,7 +129,8 @@ Area data from [1]. Population and center of population data from [2].
 # Example
 ```julia
 df = uscentract()
-filter(r -> r.ST == :NC, df)    # census tracts in North Carolina (ST is a Symbol)
+names(df)   # => ["STFIP", "COFIP", "TRFIP", "ST", "LON", "LAT", "POP", "ALAND", "AWATER", "ISCUS"]
+filter(r -> r.ST == :NC, df)    # => 2655 census tracts in North Carolina (ST is a Symbol)
 ```
 """
 function uscentract()
@@ -165,6 +167,7 @@ Area data from [1]. Population and center of population data from [2].
 # Example
 ```julia
 df = uscenblkgrp()
+names(df)   # => ["STFIP", "COFIP", "TRFIP", "BGFIP", "LON", "LAT", "POP", "ALAND", "AWATER"]  (no NAME/ST)
 nrow(df)                        # number of block groups
 first(df, 5)                    # LON precedes LAT
 ```
@@ -199,7 +202,8 @@ Geographic data derived from [1]. Population data derived from [2]. `ISCUS` dete
 # Example
 ```julia
 df = uszcta5()
-first(df, 5)                    # LON precedes LAT
+names(df)     # => ["ZCTA5", "LON", "LAT", "POP", "ALAND", "AWATER", "ISCUS"]
+first(df, 5)  # LON precedes LAT
 ```
 """
 function uszcta5()
@@ -228,7 +232,8 @@ All data derived from `uszcta5`.
 # Example
 ```julia
 df = uszcta3()
-first(df, 5)                    # LON precedes LAT
+names(df)     # => ["ZCTA3", "LON", "LAT", "POP", "ALAND", "AWATER", "ISCUS"]
+first(df, 5)  # LON precedes LAT
 ```
 """
 function uszcta3()
@@ -262,7 +267,8 @@ CBSA delineations and classifications from [1]. Geographic and population data f
 # Example
 ```julia
 df = uscbsa()
-filter(r -> r.IS_MSA, df)       # Metropolitan Statistical Areas only (IS_MSA::Bool)
+names(df)   # => ["CBSA", "NAME", "LON", "LAT", "POP", "ALAND", "AWATER", "IS_MSA", "CSA", "ISCUS"]
+filter(r -> r.IS_MSA, df)       # => 382 of 918 are Metropolitan Statistical Areas (IS_MSA::Bool)
 ```
 """
 function uscbsa()
@@ -293,7 +299,8 @@ CSA delineations and classifications from [1]. Geographic and population data fr
 # Example
 ```julia
 df = uscsa()
-first(df, 5)                    # LON precedes LAT; NAME::String
+names(df)     # => ["CSA", "NAME", "LON", "LAT", "POP", "ALAND", "AWATER"]
+first(df, 5)  # LON precedes LAT; NAME::String
 ```
 """
 function uscsa()
@@ -326,10 +333,15 @@ Valid two-character symbols of the state or territory are
 $(join(sort(collect(keys(state_fips))), ", "))
 
 # Examples
-```julia
-st2fips(:NC)          # => 37
-st2fips.([:NC, :NY])  # => [37, 36]
+```jldoctest
+st2fips(:NC)
+
+# output
+
+37
 ```
+
+Broadcasts over a collection: `st2fips.([:NC, :NY])` returns `[37, 36]`.
 """
 function st2fips(state::Symbol)
     if state in keys(state_fips)
@@ -360,11 +372,15 @@ Valid FIPS codes are: $(join(sort(collect(keys(fips_state))), ", "))
 - `ArgumentError` if the FIPS code is not valid.
 
 # Examples
-```julia
-fips2st(37)      # => :NC
-fips2st(36)      # => :NY
-fips2st.(37:39)  # => [:NC, :ND, :OH]
+```jldoctest
+fips2st(37)
+
+# output
+
+:NC
 ```
+
+Broadcasts over a range: `fips2st.(37:39)` returns `[:NC, :ND, :OH]`.
 """
 function fips2st(fips::Integer)
     if fips in keys(fips_state)
@@ -429,7 +445,8 @@ https://geodata.bts.gov/datasets/usdot::freight-analysis-framework-faf5-network-
 # Example
 ```julia
 df = faf5nodes()
-first(df, 5)                    # IDX, LON, LAT, ...
+names(df)     # => ["IDX", "LON", "LAT", "ENTRY_EXIT", "EXIT_NUM", "INTERCHANGE", "FACILITY_TYPE", "FACILITY_NAME", "STATEID", "FAFID"]
+first(df, 5)  # IDX, LON, LAT, ...
 ```
 """
 function faf5nodes()
@@ -479,7 +496,8 @@ https://geodata.bts.gov/datasets/usdot::freight-analysis-framework-faf5-network-
 # Example
 ```julia
 df = faf5links()
-first(df, 5)                    # SRC, DST, DIST, ...
+names(df)     # => ["SRC", "DST", "DIST", "STFIP", "COFIP", "SPEED", "NHS", "SIGN", "NAME", "FCLASS", "URBAN", "AB_SPEED", "BA_SPEED", "AB_TIME", "BA_TIME", "AB_LANES", "BA_LANES", "DIR", "STRAHNET", "NHFN", "TOLL_TYPE", "TOLL_LINK", "BORDER_LINK", "FAFZONE", "STATUS"]
+first(df, 5)  # SRC, DST, DIST, ...
 ```
 """
 function faf5links()
@@ -498,7 +516,7 @@ road network backgrounds.
 # Example
 ```julia
 x, y = faf5interstate()
-length(x)                       # NaN-separated interstate polylines
+length(x), length(x) == length(y)   # => (246969, true)  NaN-separated interstate polylines
 # Plot as a road-network background (requires a Makie axis `ax`):
 # lines!(ax, x, y, color=(:steelblue, 0.3), linewidth=0.5)
 ```
@@ -578,18 +596,26 @@ With `str=true`, returns the formatted table as a string (separator lines stripp
 instead of printing. Default behavior prints to stdout and returns `nothing`.
 
 # Examples
-```julia
-julia> prt([1000 0.1234; 2000 0.5678])
-       1        2
-────────────────────
-  1  1,000   0.1234
-  2  2,000   0.5678
+```jldoctest
+prt([1000 0.1234; 2000 0.5678])
 
-julia> prt([1 2; 3 4]; rows=["a","b"], cols=["X","Y"], row_title="ID")
-  ID    X    Y
-──────────────
-   a    1    2
-   b    3    4
+# output
+
+       1       2
+────────────────
+1  1,000  0.1234
+2  2,000  0.5678
+```
+
+```jldoctest
+prt([1 2; 3 4]; rows=["a", "b"], cols=["X", "Y"], row_title="ID")
+
+# output
+
+ID  X  Y
+────────
+ a  1  2
+ b  3  4
 ```
 """
 function prt(X::AbstractMatrix; rows=1:size(X, 1), cols=1:size(X, 2),
@@ -828,10 +854,19 @@ can violate the associated constraint by a large amount.
 - `atol`: Tolerance for snapping (default: `1e-8`).
 
 # Example
-```julia
-snapvals([2.9999999997, 1e-12, 0.5])   # => [3.0, 0.0, 0.5]
-snapvals([1.0, 2.0, 3.0, 4.0], 2, 2)   # => [1.0 3.0; 2.0 4.0]
+```jldoctest
+snapvals([2.9999999997, 1e-12, 0.5])
+
+# output
+
+3-element Vector{Float64}:
+ 3.0
+ 0.0
+ 0.5
 ```
+
+With dimensions, the result is reshaped: `snapvals([1.0, 2.0, 3.0, 4.0], 2, 2)` returns
+`[1.0 3.0; 2.0 4.0]`.
 """
 function snapvals(x; atol::Real=1e-8)
     arr = Array(x)
@@ -867,19 +902,24 @@ Determines whether a given point lies within a specified bounding box.
   - `false` otherwise.
 
 # Example
-```julia
+```jldoctest
 bbox = ((0, 10), (0, 15))
-isptinbbox((5, 10), bbox)   # => true   (inside)
-isptinbbox((15, 10), bbox)  # => false  (outside)
+(isptinbbox((5, 10), bbox), isptinbbox((15, 10), bbox))   # inside, outside
 
-# DataFrame filter idiom (primary; matches course usage): keep the rows whose
-# (LON, LAT) falls inside a bounding box.
+# output
+
+(true, false)
+```
+
+DataFrame filter idiom (primary; matches course usage) — keep the rows whose `(LON, LAT)`
+falls inside a bounding box, and the bare-matrix broadcast over an N×2 coordinate matrix:
+
+```julia
 using Logjam, DataFrames
 df = usplace()
 ncbox = ((-84.5, -75.0), (33.5, 36.7))          # ((xmin, xmax), (ymin, ymax))
 filter(r -> isptinbbox((r.LON, r.LAT), ncbox), df)
 
-# Bare-matrix broadcast idiom over the rows of an N×2 coordinate matrix:
 X = [-80.0 35.5; -78.0 40.0]
 isptinbbox.(eachrow(X), Ref(ncbox))   # => Bool[1, 0]
 ```
@@ -912,16 +952,24 @@ vector of coordinates per hub, enabling per-hub formatting (e.g., different colo
   `X[i]` and `Y[i]` contain NaN-separated coordinates for hub i's allocation lines.
 
 # Example
-```julia
-k = [100.0, 100.0, 150.0]
-C = [0 3 7 10; 3 0 4 8; 7 4 0 5]
-y, TC, W = ufl(k, C; verbose=false)
+Each hub's segments are `[hub, spoke, NaN, hub, spoke, NaN, …]`; an unused hub yields an
+empty vector.
 
-hubs = [-80.0 35.0; -78.0 36.0; -79.0 35.5]
-spokes = [-80.5 35.2; -78.5 35.8; -79.2 36.1; -78.0 35.0]
-
+```jldoctest
+W = [1.0 0.0; 0.0 1.0]          # hub 1 serves spoke 1; hub 2 serves spoke 2
+hubs = [0.0 0.0; 1.0 1.0]
+spokes = [0.5 0.5; 2.0 2.0]
 X, Y = alloclines(W, hubs, spokes)
+X
+
+# output
+
+2-element Vector{Vector{Float64}}:
+ [0.0, 0.5, NaN]
+ [1.0, 2.0, NaN]
 ```
+
+In practice `W` comes from an allocation solver, e.g. `_, _, W = ufl(k, C; verbose=false)`.
 """
 function alloclines(W::AbstractMatrix, hub_xy::AbstractMatrix, spoke_xy::AbstractMatrix;
                     tol::Real=sqrt(eps(Float64)))

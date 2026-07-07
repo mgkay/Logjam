@@ -481,9 +481,10 @@ are UPPERCASE (`LON`, `LAT`); metadata fields are lowercase.
 
 # Examples
 ```julia
-loc2lonlat("123 Main St, Raleigh, NC 27601")
-loc2lonlat("Raleigh", state=:NC)
-loc2lonlat("27601")
+loc2lonlat("Raleigh", state=:NC)   # => (LON, LAT, source="PLACE", uncert, status="OK")
+loc2lonlat("27601")                # => (LON, LAT, source="POSTALCODE", uncert, status="OK")
+loc2lonlat("123 Main St, Raleigh, NC 27601")  # ADDRESS tier via Nominatim (needs HTTP+JSON3;
+                                              # falls back to PLACE/POSTALCODE offline)
 ```
 """
 function loc2lonlat(s::AbstractString; state=nothing, country::Symbol=:US,
@@ -535,6 +536,7 @@ Returns a DataFrame with LON, LAT, GC_SOURCE, GC_UNCERT, GC_STATUS columns.
 # Examples
 ```julia
 loc2lonlat(["Raleigh", "Durham", "Chapel Hill"], state=:NC)
+# => DataFrame with columns INPUT, LON, LAT, GC_SOURCE, GC_UNCERT, GC_STATUS
 loc2lonlat(["27601", "27708", "27514"])
 ```
 """
@@ -586,7 +588,7 @@ Returns the input DataFrame with LON, LAT, GC_SOURCE, GC_UNCERT, GC_STATUS appen
 # Examples
 ```julia
 df = DataFrame(CITY=["Raleigh", "Durham"], STATE=[:NC, :NC])
-loc2lonlat(df)
+loc2lonlat(df)   # => input df with LON, LAT, GC_SOURCE, GC_UNCERT, GC_STATUS appended
 
 df2 = DataFrame(addr=["123 Main St"], town=["Raleigh"], st=["NC"])
 loc2lonlat(df2; street=:addr, city=:town, state=:st)
@@ -665,6 +667,7 @@ Geographic fields are UPPERCASE (`NAME`, `ST`; `ST isa Symbol`); metadata lowerc
 ```julia
 cities = usplace()
 lonlat2loc(-78.6382, 35.7796, cities)
+# => (NAME="Raleigh", ST=:NC, dist, bearing, dir, desc="in Raleigh, NC")
 ```
 """
 function lonlat2loc(lon::Real, lat::Real, df::DataFrame; threshold=nothing)
@@ -682,6 +685,7 @@ Returns DataFrame with columns: idx, NAME, ST, dist, bearing, dir, desc (`ST isa
 ```julia
 cities = usplace()
 lonlat2loc([-78.6382, -80.8431], [35.7796, 35.2271], cities)
+# => DataFrame with columns idx, NAME, ST, dist, bearing, dir, desc
 ```
 """
 function lonlat2loc(x::AbstractVector{<:Real}, y::AbstractVector{<:Real}, df::DataFrame; threshold=nothing)
@@ -704,6 +708,7 @@ Geographic fields are UPPERCASE (`NAME`, `ST`; `ST isa Symbol`); metadata lowerc
 ```julia
 cities = usplace()
 lonlat2loc([-78.6382, 35.7796], cities)
+# => (NAME="Raleigh", ST=:NC, dist, bearing, dir, desc="in Raleigh, NC")
 ```
 """
 function lonlat2loc(xy::AbstractVector, df::DataFrame; threshold=nothing)

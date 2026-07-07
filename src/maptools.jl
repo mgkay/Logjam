@@ -7,16 +7,33 @@ A constant defining the geographical limits for a world map projection.
 
 - The first tuple specifies the longitude limits in degrees: `(-180, 180)`.
 - The second tuple specifies the latitude limits in degrees: `(-75, 75)`.
+
+```jldoctest
+WORLD_LIMITS
+
+# output
+
+((-180, 180), (-75, 75))
+```
 """
 const WORLD_LIMITS = ((-180, 180), (-75, 75))
 
 """
     US_LIMITS
 
-A constant defining the geographical limits for a map projection of the contiguous United States.
+A constant defining the geographical limits for a map projection of the United States,
+including Alaska and Hawaii (the longitude range reaches to `-180` to cover the Aleutians).
 
 - The first tuple specifies the longitude limits in degrees: `(-180, -65)`.
 - The second tuple specifies the latitude limits in degrees: `(15, 72)`.
+
+```jldoctest
+US_LIMITS
+
+# output
+
+((-180, -65), (15, 72))
+```
 """
 const US_LIMITS = ((-180, -65), (15, 72))
 
@@ -27,6 +44,14 @@ A constant defining the geographical limits for a map projection of the contiguo
 
 - The first tuple specifies the longitude limits in degrees: `(-125, -65)`.
 - The second tuple specifies the latitude limits in degrees: `(24, 50)`.
+
+```jldoctest
+CUS_LIMITS
+
+# output
+
+((-125, -65), (24, 50))
+```
 """
 const CUS_LIMITS = ((-125, -65), (24, 50))
 
@@ -121,7 +146,7 @@ Interstate roads (if used) are derived from FAF5: https://geodata.bts.gov/datase
 # Examples
 ```julia-repl
 # Create a world map using CairoMakie
-fig, ax = makemap()
+fig, ax = makemap()          # => (Figure, GeoAxis)
 
 # Create a U.S. map
 fig, ax = makemap(region=:US)
@@ -171,14 +196,27 @@ This function attempts to calculate the best alignment and offset positions for 
 - **Three or More Points**: For three or more points, the function uses Delaunay triangulation to determine the optimal alignment by analyzing the angles and distances between adjacent points. It ensures that labels do not overlap and are well-positioned relative to each other.
 
 # Example
-```julia-repl
-# Example: Cities in North Carolina with populaions over 100,000
+A single point gets the default lower-left placement; multiple points return per-point
+alignment/offset vectors (the output is discrete symbols and integer offsets):
+
+```jldoctest
+aligntext(0.0, 0.0)
+
+# output
+
+(:align => (:left, :bottom), :offset => (1, 1))
+```
+
+In a plot, splat the result straight into `text!` — for example, labeling the NC cities
+over 100,000 population:
+
+```julia
 using CairoMakie, GeoMakie, DataFrames
 df = filter(r -> (r.STFIP == st2fips(:NC)) && (r.POP > 100_000), usplace())
 x, y, name = df.LON, df.LAT, df.NAME
 fig, ax = makemap(x, y)
 scatter!(ax, x, y)
-text!(ax, x, y, text=name; aligntext(x, y)...)  # Note ";" and "..." for splatting
+text!(ax, x, y, text=name; aligntext(x, y)...)  # note ";" and "..." for splatting
 display(fig)
 ```
 """
@@ -314,15 +352,28 @@ Calculates the bounding box for a set of geographic coordinates, with optional e
 - Throws `ArgumentError` if `x` or `y` contains no non-`NaN` values.
 
 # Example
-```julia
+Tight bounding box (no expansion):
+
+```jldoctest
 lon = [-78.6, -80.8, -82.5]
 lat = [35.8, 35.2, 35.6]
+mapbbox(lon, lat)
 
-# Tight bounding box (no expansion)
-(xlim, ylim) = mapbbox(lon, lat)
+# output
 
-# Expand 10% on each side for map padding
-(xlim, ylim) = mapbbox(lon, lat; xexpand=0.1, yexpand=0.1)
+((-82.5, -78.6), (35.2, 35.8))
+```
+
+Expanded 10% on each side for map padding:
+
+```jldoctest
+lon = [-78.6, -80.8, -82.5]
+lat = [35.8, 35.2, 35.6]
+mapbbox(lon, lat; xexpand=0.1, yexpand=0.1)
+
+# output
+
+((-82.89, -78.21), (35.14, 35.86))
 ```
 """
 function mapbbox(x::Union{AbstractVector{<:Real}, Tuple{Vararg{Real}}},

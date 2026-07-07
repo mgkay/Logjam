@@ -15,28 +15,46 @@ end
 
 Greedy ADD construction heuristic for uncapacitated facility location.
 
-Iteratively adds facilities that provide the greatest cost reduction until no
-improvement is possible or p facilities are selected.
+Iteratively opens the facility giving the greatest cost reduction until no improvement
+is possible (or `p` facilities are open).
 
 # Arguments
-- `k`: Fixed costs. Scalar (same cost for all) or vector (one per site).
-- `C`: n×m cost matrix where C[i,j] is cost of serving customer j from facility i.
-- `y`: Initial facility set (default: empty, start from scratch).
-- `p`: Maximum facilities to select (default: nothing, no limit).
+- `k`: Fixed cost. Scalar (same cost at every site) or length-`n` vector, `k[i]` = cost
+  of opening a facility at candidate site `i`.
+- `C`: `n`×`m` variable-cost matrix over `n` candidate sites and `m` customers; `C[i,j]`
+  = cost of serving customer `j` from site `i`.
+- `y`: initial set of open sites (default: empty — start from scratch).
+- `p`: cap on the number of open facilities (default: `nothing`, no cap).
 
 # Returns
-- `(y, TC, W)`: Selected facility indices, total cost, and n×m sparse allocation matrix
-  where W[i,j]=1 if facility i serves customer j.
+- `(y, TC, W)`: open-facility site indices; total cost `TC = sum(k[y]) + sum(C[allocated])`;
+  and the `n`×`m` sparse allocation matrix `W`, `W[i,j] = 1` if customer `j` is served by
+  facility `i`.
 
 # Example
-```julia
-k = [10, 10, 10]
-C = [2 5 4; 4 1 3; 5 4 2]
+Example 8.8 in Francis, *Facility Layout and Location*, 2nd ed. (Daskin, *Network and
+Discrete Location*, 1995, Fig. 7.2).
+
+```jldoctest
+k = [8, 8, 10, 8, 9, 8]
+C = [ 0  3  7 10  6  4
+      3  0  4  7  6  7
+      7  4  0  3  6  8
+     10  7  3  0  7  8
+      6  6  6  7  0  2
+      4  7  8  8  2  0]
 y, TC, W = ufladd(k, C)
+(y, TC)
+
+# output
+
+([2, 6], 32.0)
 ```
 
 # References
-- M.G. Kay, *Facility Location* (course notes), NC State University
+- R.L. Francis, L.F. McGinnis, J.A. White, *Facility Layout and Location: An Analytical
+  Approach*, 2nd ed., Ex. 8.8; M.S. Daskin, *Network and Discrete Location*, 1995,
+  Fig. 7.2. Ported from Matlog `ufladd`.
 """
 function ufladd(k, C; y = Int[], p::Union{Int, Nothing} = nothing)
     if k isa Number
@@ -68,28 +86,46 @@ end
 
 Greedy DROP construction heuristic for uncapacitated facility location.
 
-Starts with all facilities open and iteratively drops the one providing the
-greatest cost reduction until no improvement or p facilities remain.
+Starts with every facility open and iteratively closes the one giving the greatest cost
+reduction until no improvement is possible (or `p` remain).
 
 # Arguments
-- `k`: Fixed costs. Scalar (same cost for all) or vector (one per site).
-- `C`: n×m cost matrix where C[i,j] is cost of serving customer j from facility i.
-- `y`: Initial facility set (default: all facilities).
-- `p`: Target number of facilities (default: nothing, drop until no improvement).
+- `k`: Fixed cost. Scalar (same cost at every site) or length-`n` vector, `k[i]` = cost
+  of opening a facility at candidate site `i`.
+- `C`: `n`×`m` variable-cost matrix over `n` candidate sites and `m` customers; `C[i,j]`
+  = cost of serving customer `j` from site `i`.
+- `y`: initial set of open sites (default: all sites open).
+- `p`: target number of open facilities (default: `nothing`, drop until no improvement).
 
 # Returns
-- `(y, TC, W)`: Selected facility indices, total cost, and n×m sparse allocation matrix
-  where W[i,j]=1 if facility i serves customer j.
+- `(y, TC, W)`: open-facility site indices; total cost `TC = sum(k[y]) + sum(C[allocated])`;
+  and the `n`×`m` sparse allocation matrix `W`, `W[i,j] = 1` if customer `j` is served by
+  facility `i`.
 
 # Example
-```julia
-k = [10, 10, 10]
-C = [2 5 4; 4 1 3; 5 4 2]
+Example 8.8 in Francis, *Facility Layout and Location*, 2nd ed. (Daskin, *Network and
+Discrete Location*, 1995, Fig. 7.3). DROP stops at a different local optimum than ADD.
+
+```jldoctest
+k = [8, 8, 10, 8, 9, 8]
+C = [ 0  3  7 10  6  4
+      3  0  4  7  6  7
+      7  4  0  3  6  8
+     10  7  3  0  7  8
+      6  6  6  7  0  2
+      4  7  8  8  2  0]
 y, TC, W = ufldrop(k, C)
+(y, TC)
+
+# output
+
+([2, 4, 6], 32.0)
 ```
 
 # References
-- M.G. Kay, *Facility Location* (course notes), NC State University
+- R.L. Francis, L.F. McGinnis, J.A. White, *Facility Layout and Location: An Analytical
+  Approach*, 2nd ed., Ex. 8.8; M.S. Daskin, *Network and Discrete Location*, 1995,
+  Fig. 7.3. Ported from Matlog `ufldrop`.
 """
 function ufldrop(k, C; y = nothing, p::Union{Int, Nothing} = nothing)
     if k isa Number
@@ -123,27 +159,46 @@ end
 
 Pairwise EXCHANGE improvement heuristic for uncapacitated facility location.
 
-Performs steepest descent pairwise swaps (close one facility, open another)
-until local optimum is reached.
+Steepest-descent swaps (close one open facility, open one closed) from a starting set `y`
+until a local optimum is reached. The swap preserves the number of open facilities, so
+`y` sets the cardinality.
 
 # Arguments
-- `k`: Fixed costs. Scalar (same cost for all) or vector (one per site).
-- `C`: n×m cost matrix where C[i,j] is cost of serving customer j from facility i.
-- `y`: Initial facility set.
+- `k`: Fixed cost. Scalar (same cost at every site) or length-`n` vector (see [`ufladd`](@ref)).
+- `C`: `n`×`m` variable-cost matrix over `n` candidate sites and `m` customers; `C[i,j]`
+  = cost of serving customer `j` from site `i`.
+- `y`: starting set of open sites (required — exchange improves *this* set).
 
 # Returns
-- `(y, TC, W)`: Improved facility indices, total cost, and n×m sparse allocation matrix
-  where W[i,j]=1 if facility i serves customer j.
+- `(y, TC, W)`: improved open-facility site indices; total cost
+  `TC = sum(k[y]) + sum(C[allocated])`; and the `n`×`m` sparse allocation matrix `W`,
+  `W[i,j] = 1` if customer `j` is served by facility `i`.
 
 # Example
-```julia
-k = [10, 10, 10]
-C = [2 5 4; 4 1 3; 5 4 2]
-y, TC, W = uflxchg(k, C, [1, 3])
+Improve the ADD solution to Example 8.8 (Francis, 2nd ed.; Daskin, Fig. 7.5): the swap
+takes the starting set `[2, 6]` (TC 32.0) to `[3, 6]` (TC 31.0).
+
+```jldoctest
+k = [8, 8, 10, 8, 9, 8]
+C = [ 0  3  7 10  6  4
+      3  0  4  7  6  7
+      7  4  0  3  6  8
+     10  7  3  0  7  8
+      6  6  6  7  0  2
+      4  7  8  8  2  0]
+y0, _, _ = ufladd(k, C)          # ADD gives the starting set
+y, TC, W = uflxchg(k, C, y0)
+(y0, y, TC)
+
+# output
+
+([2, 6], [3, 6], 31.0)
 ```
 
 # References
-- M.G. Kay, *Facility Location* (course notes), NC State University
+- R.L. Francis, L.F. McGinnis, J.A. White, *Facility Layout and Location: An Analytical
+  Approach*, 2nd ed., Ex. 8.8; M.S. Daskin, *Network and Discrete Location*, 1995,
+  Fig. 7.5. Ported from Matlog `uflxchg`.
 """
 function uflxchg(k, C, y::Vector{Int})
     if k isa Number
@@ -191,29 +246,47 @@ end
 """
     ufl(k, C; verbose=true) -> (Vector{Int}, Float64, SparseMatrixCSC)
 
-Hybrid UFL heuristic combining ADD, DROP, and EXCHANGE procedures.
+Hybrid UFL heuristic combining ADD, EXCHANGE, and DROP.
 
-Iterates through ADD → EXCHANGE → (ADD vs DROP, take best) until no improvement.
-Typically produces high-quality solutions for uncapacitated facility location problems.
+Iterates ADD → EXCHANGE → (ADD vs DROP, take best) until no improvement. Typically finds
+a better solution than any single procedure alone. With the default `verbose=true`, prints
+the per-step `Add`/`Xchg`/`Drop` cost trace.
 
 # Arguments
-- `k`: Fixed costs. Scalar (same cost for all) or vector (one per site).
-- `C`: n×m cost matrix where C[i,j] is cost of serving customer j from facility i.
-- `verbose`: Print iteration costs (default: true).
+- `k`: Fixed cost. Scalar (same cost at every site) or length-`n` vector (see [`ufladd`](@ref)).
+- `C`: `n`×`m` variable-cost matrix over `n` candidate sites and `m` customers; `C[i,j]`
+  = cost of serving customer `j` from site `i`.
+- `verbose`: print the per-step cost trace (default: `true`).
 
 # Returns
-- `(y, TC, W)`: Best facility indices, total cost, and n×m sparse allocation matrix
-  where W[i,j]=1 if facility i serves customer j.
+- `(y, TC, W)`: best open-facility site indices found; total cost
+  `TC = sum(k[y]) + sum(C[allocated])`; and the `n`×`m` sparse allocation matrix `W`,
+  `W[i,j] = 1` if customer `j` is served by facility `i`.
 
 # Example
-```julia
-k = [10, 10, 15]
-C = [0 3 7; 3 0 4; 7 4 0]
-y, TC, W = ufl(k, C)  # Prints: Add: 17.0, Xchg: 17.0 → y=[2], TC=17.0
+Example 8.8 in Francis, *Facility Layout and Location*, 2nd ed. The hybrid improves on ADD
+(32.0) and DROP (32.0) alone.
+
+```jldoctest
+k = [8, 8, 10, 8, 9, 8]
+C = [ 0  3  7 10  6  4
+      3  0  4  7  6  7
+      7  4  0  3  6  8
+     10  7  3  0  7  8
+      6  6  6  7  0  2
+      4  7  8  8  2  0]
+y, TC, W = ufl(k, C; verbose=false)
+(y, TC)
+
+# output
+
+([3, 6], 31.0)
 ```
 
 # References
-- M.G. Kay, *Facility Location* (course notes), NC State University
+- R.L. Francis, L.F. McGinnis, J.A. White, *Facility Layout and Location: An Analytical
+  Approach*, 2nd ed., Ex. 8.8; M.S. Daskin, *Network and Discrete Location*, 1995.
+  Ported from Matlog `ufl`.
 """
 function ufl(k, C; verbose = true)
     y′, TC′, _ = ufladd(k, C)
@@ -244,28 +317,42 @@ end
 """
     pmedian(p, C; verbose=true) -> (Vector{Int}, Float64, SparseMatrixCSC)
 
-p-median facility location (fixed number of facilities, no fixed costs).
-
-Selects exactly p facilities to minimize total transportation cost. Uses ufladd
-with k=0 to select p facilities, then uflxchg to improve the solution.
+p-median facility location: open exactly `p` facilities (no fixed costs) to minimize total
+assignment cost. Uses [`ufladd`](@ref) with `k=0` to select `p`, then [`uflxchg`](@ref) to
+improve.
 
 # Arguments
-- `p`: Number of facilities to select.
-- `C`: n×m cost matrix where C[i,j] is cost of serving customer j from facility i.
-- `verbose`: Print iteration costs (default: true).
+- `p`: number of facilities to open.
+- `C`: `n`×`m` variable-cost matrix over `n` candidate sites and `m` customers; `C[i,j]`
+  = cost of serving customer `j` from site `i`.
+- `verbose`: print the selection trace (default: `true`).
 
 # Returns
-- `(y, TC, W)`: Selected facility indices, total cost, and n×m sparse allocation matrix
-  where W[i,j]=1 if facility i serves customer j.
+- `(y, TC, W)`: the `p` open-facility site indices; total cost `TC = sum(C[allocated])`
+  (transport only, no fixed costs); and the `n`×`m` sparse allocation matrix `W`,
+  `W[i,j] = 1` if customer `j` is served by facility `i`.
 
 # Example
-```julia
-C = [0 3 7; 3 0 4; 7 4 0]
+Same cost matrix as Example 8.8 (Francis, 2nd ed.), with fixed costs dropped.
+
+```jldoctest
+C = [ 0  3  7 10  6  4
+      3  0  4  7  6  7
+      7  4  0  3  6  8
+     10  7  3  0  7  8
+      6  6  6  7  0  2
+      4  7  8  8  2  0]
 y, TC, W = pmedian(2, C; verbose=false)
+(y, TC)
+
+# output
+
+([6, 3], 13.0)
 ```
 
 # References
-- M.G. Kay, *Facility Location* (course notes), NC State University
+- R.L. Francis, L.F. McGinnis, J.A. White, *Facility Layout and Location: An Analytical
+  Approach*, 2nd ed., Ex. 8.8 (cost matrix). Ported from Matlog `pmedian`.
 """
 function pmedian(p, C; verbose = true)
     1 <= p <= size(C, 1) || error("p must be between 1 and $(size(C, 1))")
@@ -398,12 +485,16 @@ distance ``d`` defaults to the great-circle distance ``d_{gc}`` (`dist=:mi`). Wi
   matrix `W` where `W[i,j]` is the weight facility `i` serves from demand point `j`.
 
 # Example
+Locate two facilities to serve four North Carolina cities. The `locate` step calls a
+continuous optimizer and the orphan rule draws from the RNG, so `TC` is shown rounded and
+may vary slightly across Optim/Julia versions.
+
 ```julia
-# Locate two facilities to serve four North Carolina cities (LON, LAT; population weights)
 P  = [-78.64 35.78; -80.84 35.23; -79.79 36.07; -77.94 34.23]  # Raleigh, Charlotte, Greensboro, Wilmington
 w  = [469.0, 897.0, 299.0, 123.0]
 X0 = [-78.6 35.8; -80.0 35.5]
 X, TC, W = ala(X0, w, P)          # dist=:mi great-circle minisum
+round(TC; digits=1)               # => 34194.6 (great-circle miles)
 ```
 
 # References
@@ -450,9 +541,15 @@ Useful for generating random facility locations for optimization problems.
 - n×d matrix of random points, uniformly distributed within min/max of each dimension.
 
 # Example
+`randX` draws from the RNG, so the coordinates vary run to run (and the exact stream is not
+stable across Julia versions); only the shape is fixed. Seed for reproducibility within a
+session.
+
 ```julia
+using Random; Random.seed!(1)
 P = [0 0; 2 0; 2 3]
-X = randX(P, 5)  # 5 random points in [0,2] × [0,3]
+X = randX(P, 5)      # 5 random points in [0,2] × [0,3]
+size(X)              # => (5, 2)
 ```
 """
 function randX(P::AbstractMatrix, n::Int=1)
@@ -501,9 +598,23 @@ down-weighted in the longitude average. Domain: ``\\sum_i w_i > 0`` and
   composes directly with `combine(groupby(...), ... => wcentroid => [:LON, :LAT])`.
 
 # Example
+Population-weighted centroid of four NC cities (rounded for a stable, cross-platform
+doctest — the raw `Float64`s carry full precision):
+
+```jldoctest
+r = wcentroid([-78.64, -80.84, -79.79, -77.94], [35.78, 35.23, 36.07, 34.23], [469.0, 897.0, 299.0, 123.0])
+round.((r.LON, r.LAT); digits=4)
+
+# output
+
+(-79.8886, 35.4459)
+```
+
+Because it returns a `(LON, LAT)` NamedTuple, it composes directly with `combine` for a
+per-group weighted centroid:
+
 ```julia
 using DataFrames
-# Two clusters keyed by :k; weighted (population) centroid per group
 df = DataFrame(
     k   = [:A, :A, :B, :B],
     LON = [-78.64, -80.84, -79.79, -77.94],
@@ -511,7 +622,6 @@ df = DataFrame(
     POP = [469.0, 897.0, 299.0, 123.0],
 )
 combine(groupby(df, :k), [:LON, :LAT, :POP] => wcentroid => [:LON, :LAT])
-# one row per group with its cos-lat-corrected weighted centroid
 ```
 
 See also: [`ala`](@ref), [`randX`](@ref)
