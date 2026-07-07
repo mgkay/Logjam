@@ -146,7 +146,7 @@ Interstate roads (if used) are derived from FAF5: https://geodata.bts.gov/datase
 # Examples
 ```julia-repl
 # Create a world map using CairoMakie
-fig, ax = makemap()
+fig, ax = makemap()          # => (Figure, GeoAxis)
 
 # Create a U.S. map
 fig, ax = makemap(region=:US)

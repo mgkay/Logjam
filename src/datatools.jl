@@ -53,8 +53,8 @@ Geographic data derived from [1], population data from [2], and `CBSA` from [3].
 # Example
 ```julia
 df = usplace()
-names(df)                       # LON precedes LAT
-filter(r -> r.ST == :NC, df)    # places in North Carolina
+names(df)   # => ["STFIP", "PLFIP", "NAME", "ST", "LON", "LAT", "POP", "ALAND", "AWATER", "LSAD", "FUNCSTAT", "CBSA", "ISCUS"]  (LON precedes LAT)
+filter(r -> r.ST == :NC, df)    # => 776 places in North Carolina
 ```
 """
 function usplace()
@@ -92,7 +92,8 @@ Area data from [1], population and center of population data from [2], and CBSA 
 # Example
 ```julia
 df = uscounty()
-first(df, 5)                    # LON precedes LAT
+names(df)     # => ["STFIP", "COFIP", "NAME", "ST", "LON", "LAT", "POP", "ALAND", "AWATER", "CBSA"]
+first(df, 5)  # LON precedes LAT
 ```
 """
 function uscounty()
@@ -128,7 +129,8 @@ Area data from [1]. Population and center of population data from [2].
 # Example
 ```julia
 df = uscentract()
-filter(r -> r.ST == :NC, df)    # census tracts in North Carolina (ST is a Symbol)
+names(df)   # => ["STFIP", "COFIP", "TRFIP", "ST", "LON", "LAT", "POP", "ALAND", "AWATER", "ISCUS"]
+filter(r -> r.ST == :NC, df)    # => 2655 census tracts in North Carolina (ST is a Symbol)
 ```
 """
 function uscentract()
@@ -165,6 +167,7 @@ Area data from [1]. Population and center of population data from [2].
 # Example
 ```julia
 df = uscenblkgrp()
+names(df)   # => ["STFIP", "COFIP", "TRFIP", "BGFIP", "LON", "LAT", "POP", "ALAND", "AWATER"]  (no NAME/ST)
 nrow(df)                        # number of block groups
 first(df, 5)                    # LON precedes LAT
 ```
@@ -199,7 +202,8 @@ Geographic data derived from [1]. Population data derived from [2]. `ISCUS` dete
 # Example
 ```julia
 df = uszcta5()
-first(df, 5)                    # LON precedes LAT
+names(df)     # => ["ZCTA5", "LON", "LAT", "POP", "ALAND", "AWATER", "ISCUS"]
+first(df, 5)  # LON precedes LAT
 ```
 """
 function uszcta5()
@@ -228,7 +232,8 @@ All data derived from `uszcta5`.
 # Example
 ```julia
 df = uszcta3()
-first(df, 5)                    # LON precedes LAT
+names(df)     # => ["ZCTA3", "LON", "LAT", "POP", "ALAND", "AWATER", "ISCUS"]
+first(df, 5)  # LON precedes LAT
 ```
 """
 function uszcta3()
@@ -262,7 +267,8 @@ CBSA delineations and classifications from [1]. Geographic and population data f
 # Example
 ```julia
 df = uscbsa()
-filter(r -> r.IS_MSA, df)       # Metropolitan Statistical Areas only (IS_MSA::Bool)
+names(df)   # => ["CBSA", "NAME", "LON", "LAT", "POP", "ALAND", "AWATER", "IS_MSA", "CSA", "ISCUS"]
+filter(r -> r.IS_MSA, df)       # => 382 of 918 are Metropolitan Statistical Areas (IS_MSA::Bool)
 ```
 """
 function uscbsa()
@@ -293,7 +299,8 @@ CSA delineations and classifications from [1]. Geographic and population data fr
 # Example
 ```julia
 df = uscsa()
-first(df, 5)                    # LON precedes LAT; NAME::String
+names(df)     # => ["CSA", "NAME", "LON", "LAT", "POP", "ALAND", "AWATER"]
+first(df, 5)  # LON precedes LAT; NAME::String
 ```
 """
 function uscsa()
@@ -438,7 +445,8 @@ https://geodata.bts.gov/datasets/usdot::freight-analysis-framework-faf5-network-
 # Example
 ```julia
 df = faf5nodes()
-first(df, 5)                    # IDX, LON, LAT, ...
+names(df)     # => ["IDX", "LON", "LAT", "ENTRY_EXIT", "EXIT_NUM", "INTERCHANGE", "FACILITY_TYPE", "FACILITY_NAME", "STATEID", "FAFID"]
+first(df, 5)  # IDX, LON, LAT, ...
 ```
 """
 function faf5nodes()
@@ -488,7 +496,8 @@ https://geodata.bts.gov/datasets/usdot::freight-analysis-framework-faf5-network-
 # Example
 ```julia
 df = faf5links()
-first(df, 5)                    # SRC, DST, DIST, ...
+names(df)     # => ["SRC", "DST", "DIST", "STFIP", "COFIP", "SPEED", "NHS", "SIGN", "NAME", "FCLASS", "URBAN", "AB_SPEED", "BA_SPEED", "AB_TIME", "BA_TIME", "AB_LANES", "BA_LANES", "DIR", "STRAHNET", "NHFN", "TOLL_TYPE", "TOLL_LINK", "BORDER_LINK", "FAFZONE", "STATUS"]
+first(df, 5)  # SRC, DST, DIST, ...
 ```
 """
 function faf5links()
@@ -507,7 +516,7 @@ road network backgrounds.
 # Example
 ```julia
 x, y = faf5interstate()
-length(x)                       # NaN-separated interstate polylines
+length(x), length(x) == length(y)   # => (246969, true)  NaN-separated interstate polylines
 # Plot as a road-network background (requires a Makie axis `ax`):
 # lines!(ax, x, y, color=(:steelblue, 0.3), linewidth=0.5)
 ```
