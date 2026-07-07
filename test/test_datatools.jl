@@ -14,7 +14,7 @@ end
     df = uscounty()
     @test isa(df, DataFrame)
     @test !isempty(df)
-    @test all(issubset(names(df), ["STFIP", "COFIP", "NAME", "ST", "LAT", "LON", "POP", "ALAND", "AWATER", "CBSA"]))
+    @test all(issubset(names(df), ["STFIP", "COFIP", "NAME", "ST", "LAT", "LON", "POP", "ALAND", "AWATER", "CBSA", "ISCUS"]))
 end
 
 # Test for uscentract function
@@ -30,7 +30,7 @@ end
     df = uscenblkgrp()
     @test isa(df, DataFrame)
     @test !isempty(df)
-    @test all(issubset(names(df), ["STFIP", "COFIP", "TRFIP", "BGFIP", "LAT", "LON", "POP", "ALAND", "AWATER"]))
+    @test all(issubset(names(df), ["STFIP", "COFIP", "TRFIP", "BGFIP", "LAT", "LON", "POP", "ALAND", "AWATER", "ISCUS"]))
 end
 
 # Test for uszcta5 function
@@ -68,7 +68,7 @@ end
     df = uscsa()
     @test isa(df, DataFrame)
     @test !isempty(df)
-    @test all(issubset(names(df), ["CSA", "NAME", "LAT", "LON", "POP", "ALAND", "AWATER"]))
+    @test all(issubset(names(df), ["CSA", "NAME", "LAT", "LON", "POP", "ALAND", "AWATER", "ISCUS"]))
 end
 
 # G1.1: census loaders are LON-first (LON column precedes LAT column)
@@ -98,6 +98,19 @@ end
     df = uscsa()
     @test eltype(df.NAME) == String
     @test count(ismissing, df.NAME) == 0
+end
+
+# v0.2.9: every US-prefixed census loader carries ISCUS::Bool as its final column
+# (uniform schema — guards against the pre-0.2.9 hit-or-miss inconsistency)
+@testset "ISCUS uniform across census loaders (v0.2.9)" begin
+    loaders = [usplace, uscounty, uscentract, uscenblkgrp,
+               uszcta5, uszcta3, uscbsa, uscsa]
+    for loader in loaders
+        df = loader()
+        @test "ISCUS" in names(df)
+        @test eltype(df.ISCUS) == Bool
+        @test names(df)[end] == "ISCUS"
+    end
 end
 
 # Test for st2fips function

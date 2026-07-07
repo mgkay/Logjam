@@ -1,5 +1,17 @@
 # Logjam Release Notes
 
+## v0.2.9
+
+### Improvements
+
+- **Uniform `ISCUS` column.** `uscounty`, `uscenblkgrp`, and `uscsa` now carry an
+  `ISCUS::Bool` column ("within continental U.S.") as their final column, matching
+  the five census loaders (`usplace`, `uscentract`, `uszcta5`, `uszcta3`, `uscbsa`)
+  that already had it — so all eight US-prefixed census tables share the field and
+  downstream code can rely on it. `ISCUS` is computed from each row's `LON`/`LAT`
+  against the continental-U.S. bounding box, identical to the existing loaders.
+  Additive and non-breaking: existing columns and their order are unchanged.
+
 ## v0.2.8
 
 ### Breaking changes

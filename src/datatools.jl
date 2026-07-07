@@ -42,7 +42,7 @@ Geographic and population data for each place in the U.S., where each place is a
 - `ISCUS`: Boolean indicating whether place is within continental U.S. (true or false).
 
 # Sources
-Geographic data derived from [1], population data from [2], and `CBSA` from [3]. `ICUS` determined from `LAT` and `LON`.
+Geographic data derived from [1], population data from [2], and `CBSA` from [3]. `ISCUS` determined from `LAT` and `LON`.
 
 1.  U.S. Census Bureau, 2020 Gazetteer Files, [2020_Gaz_place_national.txt](https://www2.census.gov/geo/docs/maps-data/data/gazetteer/2020_Gazetteer/2020_Gaz_place_national.zip)
 
@@ -79,9 +79,10 @@ Geographic and population data for each U.S. county, including latitude-longitud
 - `ALAND`: Float representing land area of county in square miles.
 - `AWATER`: Float representing water area of county in square miles.
 - `CBSA`: Integer or None representing Core-Based Statistical Area code associated with county.
+- `ISCUS`: Boolean indicating whether county is within continental U.S. (true or false).
 
 # Sources
-Area data from [1], population and center of population data from [2], and CBSA data from [3].
+Area data from [1], population and center of population data from [2], and CBSA data from [3]. `ISCUS` determined from `LAT` and `LON`.
 
 1. U.S. Census Bureau, 2020 Gazetteer Files, [2020_Gaz_county_national.txt](https://www2.census.gov/geo/docs/maps-data/data/gazetteer/2020_Gazetteer/2020_Gaz_county_national.zip)
 
@@ -92,7 +93,7 @@ Area data from [1], population and center of population data from [2], and CBSA 
 # Example
 ```julia
 df = uscounty()
-names(df)     # => ["STFIP", "COFIP", "NAME", "ST", "LON", "LAT", "POP", "ALAND", "AWATER", "CBSA"]
+names(df)     # => ["STFIP", "COFIP", "NAME", "ST", "LON", "LAT", "POP", "ALAND", "AWATER", "CBSA", "ISCUS"]
 first(df, 5)  # LON precedes LAT
 ```
 """
@@ -156,9 +157,10 @@ Unlike the other census loaders, block groups carry no `NAME` or `ST` column: bl
 - `POP`: Integer representing population of block group.
 - `ALAND`: Float representing land area of block group in square miles.
 - `AWATER`: Float representing water area of block group in square miles.
+- `ISCUS`: Boolean indicating whether block group is within continental U.S. (true or false).
 
 # Sources
-Area data from [1]. Population and center of population data from [2].
+Area data from [1]. Population and center of population data from [2]. `ISCUS` determined from `LAT` and `LON`.
 
 1. U.S. Census Bureau, TIGER/Line Shapefiles for 2020 Census Block Groups, [https://www2.census.gov/geo/tiger/TIGER2020/BG/]
 
@@ -167,7 +169,7 @@ Area data from [1]. Population and center of population data from [2].
 # Example
 ```julia
 df = uscenblkgrp()
-names(df)   # => ["STFIP", "COFIP", "TRFIP", "BGFIP", "LON", "LAT", "POP", "ALAND", "AWATER"]  (no NAME/ST)
+names(df)   # => ["STFIP", "COFIP", "TRFIP", "BGFIP", "LON", "LAT", "POP", "ALAND", "AWATER", "ISCUS"]  (no NAME/ST)
 nrow(df)                        # number of block groups
 first(df, 5)                    # LON precedes LAT
 ```
@@ -290,16 +292,17 @@ Geographic and population data for each U.S. CSA. The latitude-longitude of each
 - `POP`: Integer representing population of CSA.
 - `ALAND`: Float representing land area of CSA in square miles.
 - `AWATER`: Float representing water area of CSA in square miles.
+- `ISCUS`: Boolean indicating whether CSA is within continental U.S. (true or false).
 
 # Sources
-CSA delineations and classifications from [1]. Geographic and population data from `uscbsa()`.
+CSA delineations and classifications from [1]. Geographic and population data from `uscbsa()`. `ISCUS` determined from `LAT` and `LON`.
 
 1. U.S. Census Bureau, 2023 Combined Statistical Area (CSA) Codes, [list2_2023.xls](https://www2.census.gov/programs-surveys/metro-micro/geographies/reference-files/2020/delineation-files/list2_2023.xls)
 
 # Example
 ```julia
 df = uscsa()
-names(df)     # => ["CSA", "NAME", "LON", "LAT", "POP", "ALAND", "AWATER"]
+names(df)     # => ["CSA", "NAME", "LON", "LAT", "POP", "ALAND", "AWATER", "ISCUS"]
 first(df, 5)  # LON precedes LAT; NAME::String
 ```
 """
