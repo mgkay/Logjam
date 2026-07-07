@@ -3,6 +3,7 @@ using Test
 using CairoMakie
 using GeoMakie
 
+include("test_doctests.jl")
 include("test_loctools.jl")
 include("test_disttools.jl")
 include("test_transtools.jl")
