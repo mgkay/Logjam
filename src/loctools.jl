@@ -382,32 +382,20 @@ function _aladist(x, y, dist)
     end
 end
 
-# Default allocate: assign each demand point to its nearest new facility, build a
-# sparse n×m weight matrix, and relocate any orphaned (all-zero-row) facility to a
-# random demand point until every facility is used (mirrors ala.m `default_alloc`).
+# Default allocate: assign each EF to its nearest NF and build the sparse n×m weight matrix.
+# An NF allocated no EFs simply gets a zero row (left unused); such a run returns a higher
+# `TC` and is discarded by the multi-run (`nruns`) minimum in `ala`. Deterministic (no RNG).
 function _ala_alloc(X, w, P, dist)
     m = length(w)
-    Xw = copy(X)
     wf = Float64.(collect(w))
-    local W, D
-    done = false
-    while !done
-        D = dists(Xw, P, dist)                       # n×m distance matrix
-        assign = [argmin(@view D[:, j]) for j in 1:m]
-        W = sparse(assign, 1:m, wf, size(Xw, 1), m)
-        idx0 = findall(iszero, vec(sum(W, dims=2)))  # unallocated facilities
-        if isempty(idx0)
-            done = true
-        else                                          # relocate orphans to random EFs
-            perm = sortperm(rand(size(P, 1)))
-            Xw[idx0, :] = P[perm[1:length(idx0)], :]
-        end
-    end
+    D = dists(X, P, dist)                        # n×m distance matrix (NF × EF)
+    assign = [argmin(@view D[:, j]) for j in 1:m]
+    W = sparse(assign, 1:m, wf, size(X, 1), m)
     return W, sum(W .* D)
 end
 
-# Default locate: per-facility continuous minisum. For each facility, minimise the
-# weighted sum of distances to its allocated demand points via `Optim.optimize`.
+# Default locate: per-NF continuous minisum. For each NF, minimise the weighted sum of
+# distances to its allocated EFs via `Optim.optimize`.
 function _ala_locate(W, X, dist, P)
     Xnew = copy(X)
     for i in axes(W, 1)
@@ -438,21 +426,20 @@ function _ala_run(X, alloc_fn, locate_fn)
 end
 
 """
-    ala(X0, w, P; dist=:mi, alloc=<default>, locate=<default>, nruns=1) -> (X, TC, W)
+    ala(X0, w, P; dist=:mi, alloc=<default>, locate=<default>, nruns=1, verbose=true) -> (X, TC, W)
 
-Alternating location–allocation for locating `n` new facilities among `m` weighted
-demand points.
+Alternating location–allocation: locate `n` new facilities (NFs) to serve `m` weighted
+existing facilities (EFs).
 
-Starting from `n` facility locations `X0`, alternate two steps until the total cost
-`TC` stops decreasing: **allocate** each demand point to its nearest facility, then
-**locate** each facility at the continuous minisum of its allocated points. The default
-allocate step relocates any orphaned (unused) facility to a random demand point so no
-zero-weight facility persists.
+Starting from `n` NF locations `X0`, alternate two steps until the total cost `TC` stops
+decreasing: **allocate** each EF to its nearest NF, then **locate** each NF at the continuous
+minisum of its allocated EFs. A run may leave an NF unused (allocated no EFs); that run
+returns a higher `TC` and is discarded when `nruns > 1`, so take several runs.
 
 # Formulation
-Given demand points ``P = \\{P_j\\}_{j=1}^m``, weights ``w_j \\ge 0``, and ``n`` new
-facilities, choose facility locations ``X = \\{X_i\\}_{i=1}^n \\subset \\mathbb{R}^2``
-and allocation ``W \\in \\{0,1\\}^{n \\times m}`` to minimise
+Given EFs ``P = \\{P_j\\}_{j=1}^m``, weights ``w_j \\ge 0``, and ``n`` NFs, choose NF
+locations ``X = \\{X_i\\}_{i=1}^n \\subset \\mathbb{R}^2`` and allocation
+``W \\in \\{0,1\\}^{n \\times m}`` to minimise
 
 ```math
 \\min_{X,\\,W}\\; TC = \\sum_{j=1}^{m} w_j\\, d\\!\\left(X_{\\sigma(j)}, P_j\\right),
@@ -461,54 +448,53 @@ and allocation ``W \\in \\{0,1\\}^{n \\times m}`` to minimise
 
 alternating
 
-- **allocate:** ``\\sigma(j) = \\arg\\min_i d(X_i, P_j)`` (nearest facility);
+- **allocate:** ``\\sigma(j) = \\arg\\min_i d(X_i, P_j)`` (nearest NF);
 - **locate:** ``X_i \\leftarrow \\arg\\min_{X} \\sum_{j:\\sigma(j)=i} w_j\\, d(X, P_j)``
-  (per-facility minisum),
+  (per-NF minisum),
 
-iterating until ``TC`` is non-decreasing.
-
-**Orphan rule:** if ``\\{j : \\sigma(j) = i\\} = \\varnothing`` for some ``i``, relocate
-``X_i`` to a random ``P_j`` and re-allocate; loop until every facility is used. The
-distance ``d`` defaults to the great-circle distance ``d_{gc}`` (`dist=:mi`). With
-`nruns` random starts, the minimum-`TC` solution is returned.
+iterating until ``TC`` is non-decreasing. The distance ``d`` defaults to the great-circle
+distance ``d_{gc}`` (`dist=:mi`). With `nruns` random starts, the minimum-`TC` result is
+returned.
 
 # Arguments
-- `X0`: n×2 matrix of initial facility locations (LON, LAT).
-- `w`: length-m vector of demand weights (`w_j ≥ 0`).
-- `P`: m×2 matrix of demand-point locations (LON, LAT).
+- `X0`: n×2 matrix of initial NF locations (LON, LAT).
+- `w`: length-m weight vector (`w_j ≥ 0`).
+- `P`: m×2 matrix of EF locations (LON, LAT).
 - `dist`: distance metric — `:mi` (default), `:km`, `:rad` (great-circle), or `1`/`2`
   (rectilinear/Euclidean).
-- `alloc`: allocate handle `X -> (W, TC)` overriding the default nearest-facility
-  allocation (e.g. for forced/constrained partitions).
-- `locate`: locate handle `(W, X) -> X` overriding the default per-facility minisum.
-- `nruns`: number of independent random restarts. Run 1 uses `X0`; runs 2…`nruns` use
-  fresh `randX(P, n)` starts. The best (minimum-`TC`) result is returned.
+- `alloc`: allocate handle `X -> (W, TC)` overriding the default nearest-NF allocation
+  (e.g. for forced/constrained partitions).
+- `locate`: locate handle `(W, X) -> X` overriding the default per-NF minisum.
+- `nruns`: number of independent restarts. Run 1 uses `X0`; runs 2…`nruns` use fresh
+  `randX(P, n)` starts. The best (minimum-`TC`) result is returned. Take several runs — a
+  single run can leave an NF unused.
+- `verbose`: print each run's `TC` (default: `true`).
 
 # Returns
-- `(X, TC, W)`: n×2 facility locations, total cost `TC`, and the n×m sparse allocation
-  matrix `W` where `W[i,j]` is the weight facility `i` serves from demand point `j`.
+- `(X, TC, W)`: n×2 NF locations, total cost `TC`, and the n×m sparse allocation matrix `W`
+  where `W[i,j]` is the weight NF `i` serves from EF `j`.
 
 # Example
-Locate two facilities to serve four North Carolina cities. The `locate` step calls a
-continuous optimizer and the orphan rule draws from the RNG, so `TC` is shown rounded and
-may vary slightly across Optim/Julia versions.
+Locate two NFs to serve four North Carolina cities. `verbose` prints each run; over several
+runs the best `TC` is stable at `34194.6` (great-circle miles), though per-run values and the
+last digits vary with the random restarts.
 
 ```julia
 P  = [-78.64 35.78; -80.84 35.23; -79.79 36.07; -77.94 34.23]  # Raleigh, Charlotte, Greensboro, Wilmington
 w  = [469.0, 897.0, 299.0, 123.0]
 X0 = [-78.6 35.8; -80.0 35.5]
-X, TC, W = ala(X0, w, P)          # dist=:mi great-circle minisum
-round(TC; digits=1)               # => 34194.6 (great-circle miles)
+X, TC, W = ala(X0, w, P; nruns=5)   # dist=:mi great-circle minisum; prints Run 1..5
+round(TC; digits=1)                 # => 34194.6
 ```
 
 # References
 - M.G. Kay, *Facility Location* (course notes), NC State University; Matlog `ala`.
 """
-function ala(X0, w, P; dist=:mi, alloc=nothing, locate=nothing, nruns::Int=1)
+function ala(X0, w, P; dist=:mi, alloc=nothing, locate=nothing, nruns::Int=1, verbose::Bool=true)
     size(X0, 2) == size(P, 2) || error("ala: X0 and P must have the same number of columns.")
     length(w) == size(P, 1) || error("ala: length(w) must equal the number of rows in P.")
     n = size(X0, 1)
-    n <= size(P, 1) || error("ala: number of facilities (n=$n) cannot exceed number of demand points (m=$(size(P, 1))).")
+    n <= size(P, 1) || error("ala: number of NFs (n=$n) cannot exceed number of EFs (m=$(size(P, 1))).")
     nruns >= 1 || error("ala: nruns must be ≥ 1.")
 
     alloc_fn = alloc === nothing ? (X -> _ala_alloc(X, w, P, dist)) : alloc
@@ -519,10 +505,12 @@ function ala(X0, w, P; dist=:mi, alloc=nothing, locate=nothing, nruns::Int=1)
     for run in 1:nruns
         Xstart = run == 1 ? Matrix{Float64}(X0) : Matrix{Float64}(randX(P, n))
         X, TC, W = _ala_run(Xstart, alloc_fn, locate_fn)
+        verbose && println("  Run ", run, ": TC = ", round(TC; digits=1))
         if TC < bestTC
             bestTC, bestX, bestW = TC, X, W
         end
     end
+    verbose && nruns > 1 && println("  Best:   TC = ", round(bestTC; digits=1))
     return bestX, bestTC, bestW
 end
 
