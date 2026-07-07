@@ -485,12 +485,16 @@ distance ``d`` defaults to the great-circle distance ``d_{gc}`` (`dist=:mi`). Wi
   matrix `W` where `W[i,j]` is the weight facility `i` serves from demand point `j`.
 
 # Example
+Locate two facilities to serve four North Carolina cities. The `locate` step calls a
+continuous optimizer and the orphan rule draws from the RNG, so `TC` is shown rounded and
+may vary slightly across Optim/Julia versions.
+
 ```julia
-# Locate two facilities to serve four North Carolina cities (LON, LAT; population weights)
 P  = [-78.64 35.78; -80.84 35.23; -79.79 36.07; -77.94 34.23]  # Raleigh, Charlotte, Greensboro, Wilmington
 w  = [469.0, 897.0, 299.0, 123.0]
 X0 = [-78.6 35.8; -80.0 35.5]
 X, TC, W = ala(X0, w, P)          # dist=:mi great-circle minisum
+round(TC; digits=1)               # => 34194.6 (great-circle miles)
 ```
 
 # References
@@ -537,9 +541,15 @@ Useful for generating random facility locations for optimization problems.
 - n×d matrix of random points, uniformly distributed within min/max of each dimension.
 
 # Example
+`randX` draws from the RNG, so the coordinates vary run to run (and the exact stream is not
+stable across Julia versions); only the shape is fixed. Seed for reproducibility within a
+session.
+
 ```julia
+using Random; Random.seed!(1)
 P = [0 0; 2 0; 2 3]
-X = randX(P, 5)  # 5 random points in [0,2] × [0,3]
+X = randX(P, 5)      # 5 random points in [0,2] × [0,3]
+size(X)              # => (5, 2)
 ```
 """
 function randX(P::AbstractMatrix, n::Int=1)
@@ -588,9 +598,23 @@ down-weighted in the longitude average. Domain: ``\\sum_i w_i > 0`` and
   composes directly with `combine(groupby(...), ... => wcentroid => [:LON, :LAT])`.
 
 # Example
+Population-weighted centroid of four NC cities (rounded for a stable, cross-platform
+doctest — the raw `Float64`s carry full precision):
+
+```jldoctest
+r = wcentroid([-78.64, -80.84, -79.79, -77.94], [35.78, 35.23, 36.07, 34.23], [469.0, 897.0, 299.0, 123.0])
+round.((r.LON, r.LAT); digits=4)
+
+# output
+
+(-79.8886, 35.4459)
+```
+
+Because it returns a `(LON, LAT)` NamedTuple, it composes directly with `combine` for a
+per-group weighted centroid:
+
 ```julia
 using DataFrames
-# Two clusters keyed by :k; weighted (population) centroid per group
 df = DataFrame(
     k   = [:A, :A, :B, :B],
     LON = [-78.64, -80.84, -79.79, -77.94],
@@ -598,7 +622,6 @@ df = DataFrame(
     POP = [469.0, 897.0, 299.0, 123.0],
 )
 combine(groupby(df, :k), [:LON, :LAT, :POP] => wcentroid => [:LON, :LAT])
-# one row per group with its cos-lat-corrected weighted centroid
 ```
 
 See also: [`ala`](@ref), [`randX`](@ref)

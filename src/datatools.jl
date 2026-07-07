@@ -326,10 +326,15 @@ Valid two-character symbols of the state or territory are
 $(join(sort(collect(keys(state_fips))), ", "))
 
 # Examples
-```julia
-st2fips(:NC)          # => 37
-st2fips.([:NC, :NY])  # => [37, 36]
+```jldoctest
+st2fips(:NC)
+
+# output
+
+37
 ```
+
+Broadcasts over a collection: `st2fips.([:NC, :NY])` returns `[37, 36]`.
 """
 function st2fips(state::Symbol)
     if state in keys(state_fips)
@@ -360,11 +365,15 @@ Valid FIPS codes are: $(join(sort(collect(keys(fips_state))), ", "))
 - `ArgumentError` if the FIPS code is not valid.
 
 # Examples
-```julia
-fips2st(37)      # => :NC
-fips2st(36)      # => :NY
-fips2st.(37:39)  # => [:NC, :ND, :OH]
+```jldoctest
+fips2st(37)
+
+# output
+
+:NC
 ```
+
+Broadcasts over a range: `fips2st.(37:39)` returns `[:NC, :ND, :OH]`.
 """
 function fips2st(fips::Integer)
     if fips in keys(fips_state)
@@ -578,18 +587,26 @@ With `str=true`, returns the formatted table as a string (separator lines stripp
 instead of printing. Default behavior prints to stdout and returns `nothing`.
 
 # Examples
-```julia
-julia> prt([1000 0.1234; 2000 0.5678])
-       1        2
-────────────────────
-  1  1,000   0.1234
-  2  2,000   0.5678
+```jldoctest
+prt([1000 0.1234; 2000 0.5678])
 
-julia> prt([1 2; 3 4]; rows=["a","b"], cols=["X","Y"], row_title="ID")
-  ID    X    Y
-──────────────
-   a    1    2
-   b    3    4
+# output
+
+       1       2
+────────────────
+1  1,000  0.1234
+2  2,000  0.5678
+```
+
+```jldoctest
+prt([1 2; 3 4]; rows=["a", "b"], cols=["X", "Y"], row_title="ID")
+
+# output
+
+ID  X  Y
+────────
+ a  1  2
+ b  3  4
 ```
 """
 function prt(X::AbstractMatrix; rows=1:size(X, 1), cols=1:size(X, 2),
@@ -828,10 +845,19 @@ can violate the associated constraint by a large amount.
 - `atol`: Tolerance for snapping (default: `1e-8`).
 
 # Example
-```julia
-snapvals([2.9999999997, 1e-12, 0.5])   # => [3.0, 0.0, 0.5]
-snapvals([1.0, 2.0, 3.0, 4.0], 2, 2)   # => [1.0 3.0; 2.0 4.0]
+```jldoctest
+snapvals([2.9999999997, 1e-12, 0.5])
+
+# output
+
+3-element Vector{Float64}:
+ 3.0
+ 0.0
+ 0.5
 ```
+
+With dimensions, the result is reshaped: `snapvals([1.0, 2.0, 3.0, 4.0], 2, 2)` returns
+`[1.0 3.0; 2.0 4.0]`.
 """
 function snapvals(x; atol::Real=1e-8)
     arr = Array(x)
@@ -867,19 +893,24 @@ Determines whether a given point lies within a specified bounding box.
   - `false` otherwise.
 
 # Example
-```julia
+```jldoctest
 bbox = ((0, 10), (0, 15))
-isptinbbox((5, 10), bbox)   # => true   (inside)
-isptinbbox((15, 10), bbox)  # => false  (outside)
+(isptinbbox((5, 10), bbox), isptinbbox((15, 10), bbox))   # inside, outside
 
-# DataFrame filter idiom (primary; matches course usage): keep the rows whose
-# (LON, LAT) falls inside a bounding box.
+# output
+
+(true, false)
+```
+
+DataFrame filter idiom (primary; matches course usage) — keep the rows whose `(LON, LAT)`
+falls inside a bounding box, and the bare-matrix broadcast over an N×2 coordinate matrix:
+
+```julia
 using Logjam, DataFrames
 df = usplace()
 ncbox = ((-84.5, -75.0), (33.5, 36.7))          # ((xmin, xmax), (ymin, ymax))
 filter(r -> isptinbbox((r.LON, r.LAT), ncbox), df)
 
-# Bare-matrix broadcast idiom over the rows of an N×2 coordinate matrix:
 X = [-80.0 35.5; -78.0 40.0]
 isptinbbox.(eachrow(X), Ref(ncbox))   # => Bool[1, 0]
 ```
@@ -912,16 +943,24 @@ vector of coordinates per hub, enabling per-hub formatting (e.g., different colo
   `X[i]` and `Y[i]` contain NaN-separated coordinates for hub i's allocation lines.
 
 # Example
-```julia
-k = [100.0, 100.0, 150.0]
-C = [0 3 7 10; 3 0 4 8; 7 4 0 5]
-y, TC, W = ufl(k, C; verbose=false)
+Each hub's segments are `[hub, spoke, NaN, hub, spoke, NaN, …]`; an unused hub yields an
+empty vector.
 
-hubs = [-80.0 35.0; -78.0 36.0; -79.0 35.5]
-spokes = [-80.5 35.2; -78.5 35.8; -79.2 36.1; -78.0 35.0]
-
+```jldoctest
+W = [1.0 0.0; 0.0 1.0]          # hub 1 serves spoke 1; hub 2 serves spoke 2
+hubs = [0.0 0.0; 1.0 1.0]
+spokes = [0.5 0.5; 2.0 2.0]
 X, Y = alloclines(W, hubs, spokes)
+X
+
+# output
+
+2-element Vector{Vector{Float64}}:
+ [0.0, 0.5, NaN]
+ [1.0, 2.0, NaN]
 ```
+
+In practice `W` comes from an allocation solver, e.g. `_, _, W = ufl(k, C; verbose=false)`.
 """
 function alloclines(W::AbstractMatrix, hub_xy::AbstractMatrix, spoke_xy::AbstractMatrix;
                     tol::Real=sqrt(eps(Float64)))

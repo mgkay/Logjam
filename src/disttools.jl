@@ -11,15 +11,21 @@ between two points specified by longitude-latitude coordinates.
 # Arguments
 - `xy₁`: Tuple or vector of (longitude, latitude) for the first point.
 - `xy₂`: Tuple or vector of (longitude, latitude) for the second point.
-- `unit`: Distance unit, either `:mi` (miles, default) or `:km` (kilometers).
+- `unit`: Distance unit — `:mi` (miles, default), `:km` (kilometers), or `:rad` (radians of arc).
 
 # Returns
 - Great circle distance in the specified unit.
 
 # Example
-```julia
-# Distance from Raleigh to Charlotte
-dgc((-78.6382, 35.7796), (-80.8431, 35.2271))  # ≈ 130 miles
+Distance from Raleigh to Charlotte (rounded for a stable, cross-platform doctest — the
+raw `Float64` carries full precision).
+
+```jldoctest
+round(dgc((-78.6382, 35.7796), (-80.8431, 35.2271)); digits=1)
+
+# output
+
+129.8
 ```
 """
 function dgc(xy1, xy2; unit=:mi)
@@ -53,9 +59,12 @@ Calculate rectilinear (Manhattan, L₁) distance between two points.
 - Sum of absolute differences: Σ|x₁ᵢ - x₂ᵢ|.
 
 # Example
-```julia
-d1([0, 0], [3, 4])  # Returns 7.0
-d1([1, 2, 3], [4, 6, 2])  # Returns 8.0
+```jldoctest
+(d1([0, 0], [3, 4]), d1([1, 2, 3], [4, 6, 2]))
+
+# output
+
+(7.0, 8.0)
 ```
 """
 d1(x₁, x₂) = float(sum(abs.(x₁ .- x₂)))
@@ -73,9 +82,12 @@ Calculate Euclidean (L₂) distance between two points.
 - Euclidean distance: √(Σ(x₁ᵢ - x₂ᵢ)²).
 
 # Example
-```julia
-d2([0, 0], [3, 4])  # Returns 5.0
-d2([1, 2, 3], [4, 6, 2])  # Returns ≈5.0990
+```jldoctest
+d2([0, 0], [3, 4])
+
+# output
+
+5.0
 ```
 """
 d2(x₁, x₂) = sqrt(sum((x₁ .- x₂).^2))
@@ -116,26 +128,37 @@ The symbol forms ``:mi``/``:km`` return the great-circle distance on the sphere 
 named unit, and ``:rad`` returns radians of arc.
 
 # Examples
-```julia
-# Euclidean (default)
+Euclidean (default):
+
+```jldoctest
 X1 = [0.0 0.0; 10.0 0.0]
 X2 = [5.0 0.0; 5.0 5.0]
-D = dists(X1, X2)  # 2×2 matrix
+dists(X1, X2)
 
-# Manhattan distance
-D = dists(X1, X2, 1)
+# output
 
-# General lₚ and Chebychev (l∞)
-D = dists(X1, X2, 3.0)   # (Σ|Δ|³)^(1/3)
-D = dists(X1, X2, Inf)   # maximum(abs, Δ)
-
-# Great circle distance (lon-lat coordinates)
-cities = [-78.64 35.78; -122.42 37.77]  # Raleigh, SF
-dc = [-77.04 38.91]                      # Washington DC
-D = dists(cities, dc, :mi)               # Statute miles
-D = dists(cities, dc, :km)               # Kilometers
-D = dists(cities, dc, :rad)              # Radians of arc
+2×2 Matrix{Float64}:
+ 5.0  7.07107
+ 5.0  7.07107
 ```
+
+Great-circle distance from lon-lat coordinates (rounded for a stable doctest):
+
+```jldoctest
+cities = [-78.64 35.78; -122.42 37.77]   # Raleigh, San Francisco
+dc = [-77.04 38.91]                       # Washington, DC
+round.(dists(cities, dc, :mi); digits=1)  # statute miles
+
+# output
+
+2×1 Matrix{Float64}:
+  233.4
+ 2434.8
+```
+
+Other metrics follow the same call form: `dists(X1, X2, 1)` (Manhattan), `dists(X1, X2,
+3.0)` (general lₚ), `dists(X1, X2, Inf)` (Chebychev), and `:km`/`:rad` for great-circle in
+kilometers or radians.
 
 See also: [`dgc`](@ref), [`d1`](@ref), [`d2`](@ref)
 """
@@ -226,12 +249,20 @@ caller. Degenerate ``a_j = 0`` gives floor ``0``, so ``D^{aa}_{ij} = d_{gc}``.
 - `D`: n×m matrix where `D[i,j] = max(dgc(X[i,:], Xa[j,:]; unit), (2/3)√(a[j]/π))`.
 
 # Example
-```julia
-# Two facilities, two demand points (LON, LAT); demand areas in mi²
+Two facilities, two demand points (LON, LAT); demand areas in mi² (rounded for a stable
+doctest):
+
+```jldoctest
 X  = [-78.64 35.78; -80.84 35.23]     # Raleigh, Charlotte
 Xa = [-79.79 36.07; -77.94 34.23]     # Greensboro, Wilmington
-a  = [0.0, 500.0]                      # Wilmington floored by a 500 mi² disk
-D  = dgca(X, Xa, a)                    # 2×2 raw distances (no circuity)
+a  = [0.0, 500.0]                     # Wilmington floored by a 500 mi² disk
+round.(dgca(X, Xa, a); digits=1)      # 2×2 raw distances (no circuity)
+
+# output
+
+2×2 Matrix{Float64}:
+ 67.4  114.2
+ 82.7  178.6
 ```
 
 See also: [`dgc`](@ref), [`dists`](@ref)
