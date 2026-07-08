@@ -329,7 +329,8 @@ to improve.
 - `p`: number of NFs to open.
 - `C`: `n`×`m` variable-cost matrix over `n` candidate NF sites and `m` existing facilities
   (EFs); `C[i,j]` = cost of serving EF `j` from an NF at site `i`.
-- `verbose`: print the selection trace (default: `true`).
+- `verbose`: print a one-line note confirming `p` NFs were selected by the ADD phase
+  (default: `true`). (The ADD/EXCHANGE steps themselves are silent — this is not a per-step trace.)
 
 # Returns
 - `(y, TC, W)`: indices of the `p` open NF sites; total cost `TC = sum(C[allocated])`
@@ -483,7 +484,14 @@ last digits vary with the random restarts.
 P  = [-78.64 35.78; -80.84 35.23; -79.79 36.07; -77.94 34.23]  # Raleigh, Charlotte, Greensboro, Wilmington
 w  = [469.0, 897.0, 299.0, 123.0]
 X0 = [-78.6 35.8; -80.0 35.5]
-X, TC, W = ala(X0, w, P; nruns=5)   # dist=:mi great-circle minisum; prints Run 1..5
+X, TC, W = ala(X0, w, P; nruns=5)   # dist=:mi great-circle minisum
+# prints (verbose=true, the default):
+#   Run 1: TC = 34194.6
+#   Run 2: TC = 34194.6
+#   Run 3: TC = 34194.6
+#   Run 4: TC = 34194.6
+#   Run 5: TC = 34194.6
+#   Best:   TC = 34194.6
 round(TC; digits=1)                 # => 34194.6
 ```
 
@@ -615,8 +623,6 @@ df = DataFrame(
 )
 combine(groupby(df, :k), [:LON, :LAT, :POP] => wcentroid => [:LON, :LAT])
 ```
-
-See also: [`ala`](@ref), [`randX`](@ref)
 """
 function wcentroid(LON, LAT, w)
     sw = sum(w)
