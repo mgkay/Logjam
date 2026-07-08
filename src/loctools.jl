@@ -319,7 +319,7 @@ function ufl(k, C; verbose = true)
 end
 
 """
-    pmedian(p, C; verbose=true) -> (Vector{Int}, Float64, SparseMatrixCSC)
+    pmedian(p, C) -> (Vector{Int}, Float64, SparseMatrixCSC)
 
 p-median facility location: open exactly `p` new facilities (NFs; no fixed costs) to minimize
 total assignment cost. Uses [`ufladd`](@ref) with `k=0` to select `p`, then [`uflxchg`](@ref)
@@ -329,8 +329,6 @@ to improve.
 - `p`: number of NFs to open.
 - `C`: `n`×`m` variable-cost matrix over `n` candidate NF sites and `m` existing facilities
   (EFs); `C[i,j]` = cost of serving EF `j` from an NF at site `i`.
-- `verbose`: print a one-line note confirming `p` NFs were selected by the ADD phase
-  (default: `true`). (The ADD/EXCHANGE steps themselves are silent — this is not a per-step trace.)
 
 # Returns
 - `(y, TC, W)`: indices of the `p` open NF sites; total cost `TC = sum(C[allocated])`
@@ -347,7 +345,7 @@ C = [ 0  3  7 10  6  4
      10  7  3  0  7  8
       6  6  6  7  0  2
       4  7  8  8  2  0]
-y, TC, W = pmedian(2, C; verbose=false)
+y, TC, W = pmedian(2, C)
 (y, TC)
 
 # output
@@ -359,10 +357,9 @@ y, TC, W = pmedian(2, C; verbose=false)
 - R.L. Francis, L.F. McGinnis, J.A. White, *Facility Layout and Location: An Analytical
   Approach*, 2nd ed., Ex. 8.8 (cost matrix). Ported from Matlog `pmedian`.
 """
-function pmedian(p, C; verbose = true)
+function pmedian(p, C)
     1 <= p <= size(C, 1) || error("p must be between 1 and $(size(C, 1))")
     y = ufladd(0, C; p = p)[1]
-    verbose && println(" p-median ADD: $(p) facilities selected")
     return uflxchg(0, C, y)
 end
 
@@ -476,23 +473,26 @@ returned.
   where `W[i,j]` is the weight NF `i` serves from EF `j`.
 
 # Example
-Locate two NFs to serve four North Carolina cities. `verbose` prints each run; over several
-runs the best `TC` is stable at `34194.6` (great-circle miles), though per-run values and the
-last digits vary with the random restarts.
+Locate three NFs to serve six North Carolina cities. With `nruns=5` random restarts the runs
+land in different local optima — some strand an NF at high cost — so the minimum-`TC` result is
+returned. `verbose` (the default) prints each run's `TC` and the final best; seed the RNG for a
+reproducible trace (exact values depend on the Julia RNG version).
 
 ```julia
-P  = [-78.64 35.78; -80.84 35.23; -79.79 36.07; -77.94 34.23]  # Raleigh, Charlotte, Greensboro, Wilmington
-w  = [469.0, 897.0, 299.0, 123.0]
-X0 = [-78.6 35.8; -80.0 35.5]
+using Random; Random.seed!(7)
+# Raleigh, Charlotte, Greensboro, Wilmington, Asheville, Fayetteville (LON, LAT)
+P  = [-78.64 35.78; -80.84 35.23; -79.79 36.07; -77.94 34.23; -82.55 35.60; -78.88 35.05]
+w  = [469.0, 897.0, 299.0, 123.0, 94.0, 208.0]    # ~population weights
+X0 = [-78.6 35.8; -80.0 35.5; -82.0 35.6]          # three NF starts
 X, TC, W = ala(X0, w, P; nruns=5)   # dist=:mi great-circle minisum
 # prints (verbose=true, the default):
-#   Run 1: TC = 34194.6
-#   Run 2: TC = 34194.6
-#   Run 3: TC = 34194.6
-#   Run 4: TC = 34194.6
-#   Run 5: TC = 34194.6
-#   Best:   TC = 34194.6
-round(TC; digits=1)                 # => 34194.6
+#   1: TC = 45055.8
+#   2: TC = 39093.4
+#   3: TC = 39093.4
+#   4: TC = 34270.6
+#   5: TC = 45055.8
+#   Final: TC = 34270.6
+round(TC; digits=1)                 # => 34270.6
 ```
 
 # References
@@ -513,12 +513,12 @@ function ala(X0, w, P; dist=:mi, alloc=nothing, locate=nothing, nruns::Int=1, ve
     for run in 1:nruns
         Xstart = run == 1 ? Matrix{Float64}(X0) : Matrix{Float64}(randX(P, n))
         X, TC, W = _ala_run(Xstart, alloc_fn, locate_fn)
-        verbose && println("  Run ", run, ": TC = ", round(TC; digits=1))
+        verbose && println("  ", run, ": TC = ", round(TC; digits=1))
         if TC < bestTC
             bestTC, bestX, bestW = TC, X, W
         end
     end
-    verbose && nruns > 1 && println("  Best:   TC = ", round(bestTC; digits=1))
+    verbose && nruns > 1 && println("  Final: TC = ", round(bestTC; digits=1))
     return bestX, bestTC, bestW
 end
 
