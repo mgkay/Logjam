@@ -251,15 +251,15 @@ using DataFrames
         P = [0.0 0.0; 1.0 0.0; 0.0 1.0; 1.0 1.0]
         w = [1.0, 1.0, 1.0, 1.0]
 
-        @testset "N1: orphan relocation" begin
-            Random.seed!(20270705)
-            # Facility 3 starts far away and would never be nearest → orphaned.
+        @testset "N1: an unused NF is left as a zero row (no relocation)" begin
+            # NF 3 starts far away and is never nearest → allocated no EFs (a zero row).
             X0 = [0.2 0.2; 0.8 0.8; 100.0 100.0]
-            X, TC, W = ala(X0, w, P; dist=2)
-            @test size(X, 1) == 3                      # all facilities retained
+            X, TC, W = ala(X0, w, P; dist=2, verbose=false)
+            @test size(X, 1) == 3                          # all NF rows retained (unused NF left in place)
             @test size(W) == (3, 4)
-            @test !any(vec(sum(W, dims=2)) .== 0)      # no all-zero (orphaned) row
-            @test all(sum(W, dims=1) .≈ 1.0)           # every demand point allocated once
+            @test count(vec(sum(W, dims=2)) .== 0) == 1    # exactly one NF unused
+            @test sum(W[3, :]) == 0                        # it is NF 3 (the far one)
+            @test all(sum(W, dims=1) .≈ 1.0)               # every EF still allocated once
             @test TC < Inf
         end
 
@@ -270,7 +270,7 @@ using DataFrames
             # Custom locate always parks every facility at the origin.
             mylocate = (W, X) -> zeros(size(X))
             X0 = [50.0 50.0; -50.0 -50.0]
-            X, TC, W = ala(X0, w, P; dist=2, alloc=myalloc, locate=mylocate)
+            X, TC, W = ala(X0, w, P; dist=2, alloc=myalloc, locate=mylocate, verbose=false)
             @test W == Wfixed                          # custom allocation honored
             @test all(X .== 0.0)                        # custom locate honored
         end
@@ -278,9 +278,9 @@ using DataFrames
         @testset "N3: nruns returns best-of" begin
             X0 = [0.9 0.1; 0.1 0.9]
             Random.seed!(4242)
-            _, TC1, _ = ala(X0, w, P; dist=2, nruns=1)
+            _, TC1, _ = ala(X0, w, P; dist=2, nruns=1, verbose=false)
             Random.seed!(4242)
-            _, TC5, _ = ala(X0, w, P; dist=2, nruns=5)
+            _, TC5, _ = ala(X0, w, P; dist=2, nruns=5, verbose=false)
             # Run 1 is identical (same seed, same X0), extra runs can only improve.
             @test TC5 <= TC1 + 1e-9
         end
@@ -291,7 +291,7 @@ using DataFrames
             Pnc = [-78.64 35.78; -80.84 35.23; -79.79 36.07; -77.94 34.23]
             wnc = [469.0, 897.0, 299.0, 123.0]
             X0 = [-78.6 35.8; -80.0 35.5]
-            X, TC, W = ala(X0, wnc, Pnc)               # dist=:mi default
+            X, TC, W = ala(X0, wnc, Pnc; verbose=false)  # dist=:mi default
             @test size(X) == (2, 2)
             @test size(W) == (2, 4)
             @test issparse(W)
