@@ -33,6 +33,7 @@ LogjamNominatimExt = ["HTTP", "JSON3"]
 LogjamOSMExt = ["LightOSM", "NearestNeighbors"]
 
 [compat]
+Artifacts = "1"
 CSV = "0.10"
 CairoMakie = "0.12 - 0.15"
 DataFrames = "1.6 - 1"
