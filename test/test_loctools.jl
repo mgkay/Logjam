@@ -125,17 +125,17 @@ using DataFrames
 
     @testset "pmedian" begin
         # Test p-median with p=2
-        y, TC = pmedian(2, C; verbose=true)
+        y, TC = pmedian(2, C)
         @test length(y) == 2
         @test TC < Inf
         @test all(i -> 1 <= i <= 3, y)
 
         # Test error for invalid p
-        @test_throws ErrorException pmedian(0, C; verbose=false)
-        @test_throws ErrorException pmedian(4, C; verbose=false)
+        @test_throws ErrorException pmedian(0, C)
+        @test_throws ErrorException pmedian(4, C)
 
         # Test with verbose=false
-        y_quiet, TC_quiet = pmedian(2, C; verbose=false)
+        y_quiet, TC_quiet = pmedian(2, C)
         @test length(y_quiet) == 2
     end
 
@@ -222,7 +222,7 @@ using DataFrames
         end
 
         @testset "pmedian returns W" begin
-            y, TC, W = pmedian(2, C; verbose=false)
+            y, TC, W = pmedian(2, C)
             @test size(W) == (3, 4)
             @test issparse(W)
             @test all(sum(W, dims=1) .== 1)
@@ -353,6 +353,6 @@ using DataFrames
         @test ufldrop(ki, Ci)[2] isa Float64
         @test uflxchg(ki, Ci, [1, 3])[2] isa Float64
         @test ufl(ki, Ci; verbose=false)[2] isa Float64
-        @test pmedian(2, Ci; verbose=false)[2] isa Float64
+        @test pmedian(2, Ci)[2] isa Float64
     end
 end
