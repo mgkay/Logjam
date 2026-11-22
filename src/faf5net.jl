@@ -103,9 +103,11 @@ const _RAMP_WORDS = r"\bRAMPS?\b|(COLLECTOR|CONNECTOR)\s*/\s*DISTRIBUTOR|\bC/D L
 # "COLLECTOR/DISTRBUTOR", "COLLECTION/DISTRIBUTION"); "DOWNTOWN DISTRIBUTOR" is a road. And a ramp named "X TO Y" (as
 # RN10 widened it): a one-way link with a route designation on at least one side ("I 96 EB TO I 696 EB",
 # "GRAND RIVER RD TO I 69 EB"); with none on either side it is a road ("GOING TO THE SUN HWY", "DIBC PLAZA TO CANADA").
-# The pattern does not reach a link whose SIGN is an Interstate designation by the flag's sign test (RN12): FAF5 signs
-# "I 95 NB APPROACH TO I 80" as I 95, the Interstate's own carriageway. The name rule's other words still do ("SYSTEM
-# RAMP - I 35 NB" is signed I 35 and is a ramp).
+# On a link whose SIGN is an Interstate designation by the flag's sign test, "X TO Y" is a ramp only when both sides
+# are route designations (RN12 as narrowed by RN17): FAF5 signs "I 95 NB APPROACH TO I 80" as I 95, the Interstate's own
+# carriageway, while "I 95 SB TO I 476 NB" (signed I 476) and "I 581 NB TO I 81 NB" (signed I 581) are the terminal
+# ramps of an Interstate that ends. The name rule's other words reach every link ("SYSTEM RAMP - I 35 NB" is signed
+# I 35 and is a ramp).
 const _CD_ANY_SPELLING = r"COLLE\w*\s*/\s*DIST\w*"
 const _DESIG_TOKEN = "(?:I [AH]\\d+|(?:I|US|CR|FM|M|SR|" * join(_STATE_CODES, "|") * ")[ -]?\\d+[A-Z]?)" *
                      "(?: B| BUS)?(?: (?:[NSEW]B?|IL|OL))?"
@@ -119,10 +121,11 @@ function _isramp_to(name, dir, sign = missing)
     n = _keytext(name)
     n === nothing && return false
     s = _keytext(sign)
-    s !== nothing && occursin(_I_SIGN, s) && return false
+    both = s !== nothing && occursin(_I_SIGN, s)
     for m in eachmatch(r" TO ", n)
         a = SubString(n, 1, prevind(n, m.offset)); b = SubString(n, m.offset + 4)
-        (occursin(_DESIG_SIDE, a) || occursin(_DESIG_SIDE, b)) && return true
+        da, db = occursin(_DESIG_SIDE, a), occursin(_DESIG_SIDE, b)
+        (both ? da && db : da || db) && return true
     end
     return false
 end
@@ -130,11 +133,11 @@ end
 """
     _isramp_name(name, dir, sign = missing) -> Bool
 
-Whether a FAF5 link's NAME (with its DIR, 0 for two-way, and its SIGN) marks a ramp (his rulings RN4, RN10 and RN12,
-2026-11-22): v0.3.0's rule (a ramp, a collector-distributor lane, a turn lane), a collector-distributor lane however it
-is spelled, or "X TO Y" on a one-way link with a route designation on at least one side and a SIGN that is not an
-Interstate designation. CONNECTOR names are roads; a missing name is not a ramp by name (`_ramp_links` adds the
-structural test).
+Whether a FAF5 link's NAME (with its DIR, 0 for two-way, and its SIGN) marks a ramp (his rulings RN4, RN10, RN12 and
+RN17, 2026-11-22): v0.3.0's rule (a ramp, a collector-distributor lane, a turn lane), a collector-distributor lane
+however it is spelled, or "X TO Y" on a one-way link with a route designation on at least one side, or on both sides
+when the link's SIGN is an Interstate designation. CONNECTOR names are roads; a missing name is not a ramp by name
+(`_ramp_links` adds the structural test).
 """
 _isramp_name(name, dir, sign = missing) = _isramp_v030(name) || _isramp_cd(name) || _isramp_to(name, dir, sign)
 
