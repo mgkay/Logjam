@@ -114,6 +114,12 @@ _fnjunctions(n) = (t = _fntables(n); r = LJ._ramp_links(t...); (r, LJ._junctions
         # "X TO Y" is a ramp only on a one-way link; the other parts of the rule do not look at the direction
         @test !LJ._isramp_name("I 96 EB TO I 696 EB", 0) && !LJ._isramp_name("GRAND RIVER RD TO I 69 EB", 0)
         @test LJ._isramp_name("I 40 EB RAMP", 0) && LJ._isramp_name("I 80 COLLECCTOR/DISTRIBUTOR LANE", 0)
+        # "X TO Y" does not reach a link signed as an Interstate (RN12); the rule's other words still do
+        @test LJ._isramp_name("I 95 NB APPROACH TO I 80", 1) && !LJ._isramp_name("I 95 NB APPROACH TO I 80", 1, "I 95")
+        @test !LJ._isramp_name("I 95 SB to I 476 NB", 1, "I 476") && !LJ._isramp_name("I 96 EB TO I 696 EB", 1, "I 93 N")
+        @test LJ._isramp_name("SYSTEM RAMP - I 35 NB", 1, "I 35") && LJ._isramp_name("I 80 COLLECCTOR/DISTRIBUTOR LANE", 1, "I 80")
+        @test LJ._isramp_name("I 96 EB TO I 696 EB", 1, "US 1") && LJ._isramp_name("I 96 EB TO I 696 EB", 1, "I 40 B")
+        @test LJ._isramp_name("I 96 EB TO I 696 EB", 1, missing) && LJ._isramp_name("I 96 EB TO I 696 EB", 1, " ")
         # the map keeps v0.3.0's rule until N4, and it is the first part of the rule here
         ext = Base.get_extension(Logjam, :LogjamMapExt)
         @test ext._RAMP_NAME.pattern == LJ._RAMP_WORDS.pattern
@@ -234,10 +240,12 @@ _fnjunctions(n) = (t = _fntables(n); r = LJ._ramp_links(t...); (r, LJ._junctions
 
         # the name rule, part by part
         v030 = LJ._isramp_v030.(L.NAME); cd = LJ._isramp_cd.(L.NAME); to = LJ._isramp_to.(L.NAME, L.DIR)
-        named = LJ._isramp_name.(L.NAME, L.DIR)
+        named = LJ._isramp_name.(L.NAME, L.DIR, L.SIGN)
+        to12 = LJ._isramp_to.(L.NAME, L.DIR, L.SIGN)
         toN0 = [!v030[k] && occursin(r"\bTO\b", nm[k]) for k in eachindex(nm)]
         println("  faf5net ramps by name: v0.3.0 rule ", count(v030), "; C/D however spelled, beyond it ", count(cd .& .!v030),
-                "; X TO Y, beyond it ", count(to .& .!v030), " of N0's ", count(toN0), " TO names; all ", count(named))
+                "; X TO Y, beyond it ", count(to .& .!v030), " of N0's ", count(toN0), " TO names, ", count(to12 .& .!v030),
+                " on links not signed as Interstates (RN12); all ", count(named))
         @test count(v030) == 137_156                          # N0, and v0.3.0's map filter
         @test count(cd .& .!v030) == 35                       # N1: four misspelt names; N0's 50 also held 9 turnarounds and 6 DOWNTOWN DISTRIBUTOR
         @test sort(unique(nm[cd .& .!v030])) == ["I 75 NB COLLECTOR/DISTRBUTOR LANE", "I 75 WB COLLECTION/DISTRIBUTION LANE",
@@ -245,7 +253,16 @@ _fnjunctions(n) = (t = _fntables(n); r = LJ._ramp_links(t...); (r, LJ._junctions
         @test count(toN0) == 337                              # N0
         @test count(to .& .!v030) == count(to .& toN0) == 333 # N1: one-way, a designation on one side at least (RN10)
         @test sort(unique(nm[toN0 .& .!to])) == ["DIBC PLAZA TO CANADA", "GOING TO THE SUN HWY"]
-        @test count(named) == 137_156 + 35 + 333
+        # RN12: thirteen X TO Y links are signed as Interstates (N2): the three "I 95 NB APPROACH TO I 80", and the
+        # terminal ramps where I-476 ends at I-95 and I-581 at I-81, which FAF5 signs with the ending Interstate
+        @test count(to12 .& .!v030) == 320
+        rn12 = to .& .!to12 .& .!v030                         # no longer ramps ("SYSTEM RAMP - I 95 LOCAL TO I 95" still is)
+        @test sort(unique(zip(sgn[rn12], nm[rn12]))) ==
+              [("I 476", "I 476 SB TO I 95 NB"), ("I 476", "I 476 SB TO I 95 SB"), ("I 476", "I 95 NB TO I 476 NB"),
+               ("I 476", "I 95 SB TO I 476 NB"), ("I 581", "I 581 NB TO I 81 NB"), ("I 581", "I 81 SB TO I 581 SB"),
+               ("I 95", "I 95 NB APPROACH TO I 80")]
+        @test count(sgn[rn12] .== "I 95") == 3 && count(rn12) == 13 && !any(named[rn12])
+        @test count(named) == 137_156 + 35 + 320
         @test !any(named[nm .== "DOWNTOWN DISTRIBUTOR"])
 
         # the structural test
@@ -254,7 +271,7 @@ _fnjunctions(n) = (t = _fntables(n); r = LJ._ramp_links(t...); (r, LJ._junctions
         println("  faf5net ramps by the structural test: ", count(st), " (by class ",
                 join(["$c: $(count(st .& (L.FCLASS .== c)))" for c in sort(unique(L.FCLASS))], ", "), "); ramps in all ", count(isr))
         @test count(st) == 2_272                              # N1 (N0 measured classes 1 and 2 only, by another cluster)
-        @test count(isr) == 139_796
+        @test count(isr) == 139_783                           # N2, RN12 (N1: 139,796)
         @test all(LJ._keytext(L.SIGN[k]) === nothing && LJ._keytext(L.NAME[k]) === nothing && L.DIR[k] != 0 for k in findall(st))
 
         # the Interstate flag
@@ -339,10 +356,10 @@ _fnjunctions(n) = (t = _fntables(n); r = LJ._ramp_links(t...); (r, LJ._junctions
         println("  faf5net junctions: ", nc, " (interchange ", count(==(:interchange), J.kind), ", at-grade ", count(==(:atgrade), J.kind),
                 "); nodes in junctions ", count(>(0), J.cl), "; at-grade clusters of 2+ nodes ", length(ag), ", widest ",
                 round(agext, digits = 1), " m; Interstate junctions in the lower 48 ", nI, " (Lecture 4.1's network: 754)")
-        @test nc == 22_579                                    # N1
-        @test count(==(:interchange), J.kind) == 15_914 && count(==(:atgrade), J.kind) == 6_665
-        @test count(>(0), J.cl) == 156_175
+        @test nc == 22_580                                    # N2, RN12 (N1: 22,579)
+        @test count(==(:interchange), J.kind) == 15_915 && count(==(:atgrade), J.kind) == 6_665
+        @test count(>(0), J.cl) == 156_168                    # N2, RN12 (N1: 156,175)
         @test agext < 400                                     # 150 m within one route pair, chained: 302.9 m at most (N1)
-        @test nI == 858                                       # N1; 4.1's 754 (N0), its own clusters under RN6's merge 788
+        @test nI == 857                                       # N2, RN12 (N1: 858); 4.1's 754 (N0), its clusters under RN6 788
     end
 end
