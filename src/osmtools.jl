@@ -277,3 +277,295 @@ function _osm_download end
 
 osm_roads(bb::Tuple{Real,Real,Real,Real}; kwargs...) =
     osm_roads(((bb[1], bb[2]), (bb[3], bb[4])); kwargs...)
+
+# =============================================================================
+# Joining an OpenStreetMap network to the U.S. road network (CR 19, his ruling RD3, PCV N3b)
+# =============================================================================
+
+# The classes a national road is joined to. FAF5's FCLASS, which `usrdlink` keeps, is the FHWA functional class, and
+# `osm_roads` gives each OpenStreetMap highway tag its FHWA class by `OSM_CLASSES`, so the two networks share one scale:
+# a national road of class c joins an OpenStreetMap road of class c - 1, c or c + 1. A national code outside 1 to 7
+# (FAF5's 0, which is no FHWA class) joins any class.
+_join_classes(c) = (!ismissing(c) && 1 <= c <= 7) ? (max(1, c - 1):min(7, c + 1)) : (1:7)
+
+# The miles within which an OpenStreetMap node of an adjacent class is looked for, around the point where a national
+# link meets the box edge (PCV N3b: at most 0.21 mi was needed on Lecture 4.2's two Raleigh boxes).
+const _JOIN_RADIUS = 0.5
+
+# the correspondence as a markdown table, for `joinroads`' docstring: made from `OSM_CLASSES` and `_join_classes`
+function _join_class_table()
+    span(r) = length(r) == 2 ? "$(first(r)), $(last(r))" : "$(first(r)) to $(last(r))"
+    rows = String[]
+    for c in 1:7
+        tags = [t[1] for t in OSM_CLASSES if t[3] == c]
+        push!(rows, "| $c | $(first(t[4] for t in OSM_CLASSES if t[3] == c)) | $(join(tags, ", ")) | $(span(_join_classes(c))) |")
+    end
+    push!(rows, "| any other (FAF5's 0) | none | none | $(span(_join_classes(0))) |")
+    return join(["| National FCLASS | FHWA class | OpenStreetMap highway tags of that FCLASS | OpenStreetMap FCLASS joined |",
+                 "|:----------------|:-----------|:------------------------------------------|:----------------------------|", rows...], "\n")
+end
+
+# The part [t0, t1] of the segment from p to q (p + t (q - p), 0 <= t <= 1) inside the closed box (x0, x1, y0, y1), by
+# Liang and Barsky's clipping, or `nothing` when the segment misses the box.
+function _join_clip(px, py, qx, qy, box)
+    x0, x1, y0, y1 = box
+    dx, dy = qx - px, qy - py
+    t0, t1 = 0.0, 1.0
+    for (p, q) in ((-dx, px - x0), (dx, x1 - px), (-dy, py - y0), (dy, y1 - py))
+        if p == 0
+            q < 0 && return nothing
+        else
+            r = q / p
+            p < 0 ? (t0 = max(t0, r)) : (t1 = min(t1, r))
+        end
+    end
+    return t0 <= t1 ? (t0, t1) : nothing
+end
+
+# the box as (xmin, xmax, ymin, ymax): the one given, as `mapbbox` returns it or as four numbers, or the extent of the
+# OpenStreetMap nodes
+function _join_box(box, lon, lat)
+    box === nothing && return (minimum(lon), maximum(lon), minimum(lat), maximum(lat))
+    b = box isa Tuple{Tuple{Real,Real},Tuple{Real,Real}} ? (box[1]..., box[2]...) : box
+    (b isa Tuple{Real,Real,Real,Real} && b[1] <= b[2] && b[3] <= b[4]) ||
+        throw(ArgumentError("box must be ((xmin, xmax), (ymin, ymax)), as mapbbox returns it, or (xmin, xmax, ymin, ymax), " *
+                            "with xmin <= xmax and ymin <= ymax; got $(repr(box))"))
+    return Float64.(b)
+end
+
+const _JOIN_NODE_COLS = ("IDX", "LON", "LAT")
+const _JOIN_LINK_COLS = ("SRC", "DST", "DIST", "SPEED", "FCLASS", "DIR", "NAME", "SOURCE")   # osm_roads' first eight
+
+function _join_check(N, L, what)
+    for (T, cols, t) in ((N, _JOIN_NODE_COLS, "nodes"), (L, _JOIN_LINK_COLS, "links"))
+        miss = [c for c in cols if !(c in names(T))]
+        isempty(miss) || throw(ArgumentError("the $what $t have no column $(join(miss, ", ")): the $t need " *
+                                             "$(join(cols, ", ")), as $(what == "national" ? "usrdnode and usrdlink" : "osm_roads") return them"))
+    end
+    for (i, d) in enumerate(L.DIR)
+        (!ismissing(d) && d in (-1, 0, 1)) ||
+            throw(ArgumentError("DIR of $what link $i is $(repr(d)): 0 (two-way), 1 (from SRC to DST) or -1 (from DST to SRC)"))
+    end
+    for (i, (s, d)) in enumerate(zip(L.SRC, L.DST))
+        (ismissing(s) || ismissing(d)) && throw(ArgumentError("$what link $i has a missing SRC or DST"))
+    end
+    return nothing
+end
+
+"""
+    joinroads(N, L, Nosm, Losm; box = nothing, radius = $(_JOIN_RADIUS), verbose = false) -> (dfN, dfL)
+
+The U.S. road network with an OpenStreetMap network joined in, for routes that start or end on a city's streets and
+run far beyond them: inside the OpenStreetMap network's box its streets replace the national roads, outside it the
+national roads stay, and each national road that crosses the box edge is joined to the streets by a connector at the
+edge. `N` and `L` are the national network as `usrdnode` and `usrdlink` return it (with any of their keywords), `Nosm`
+and `Losm` the OpenStreetMap network as `osm_roads` returns it; none of the four is changed.
+
+1. Inside the box, every national node goes, and with it every national link with an end inside or whose straight line
+   crosses the box.
+2. Each national link that crossed the box edge is joined, at its end outside the box, by a connector to the
+   OpenStreetMap node nearest the point where the link met the edge, on a road of the same or an adjacent class (the
+   table below) that continues the link's direction of travel. When no such node lies within `radius` miles of that
+   point, the connector goes to the nearest node on a road of any class that continues it, and is counted
+   (`verbose`).
+3. The national links left, the OpenStreetMap links and the connectors are stacked and renumbered with
+   `prune_reindex`, so the nodes are numbered from 1 and the network is ready for `links2graph`.
+
+# Arguments
+- `N`, `L`: the national network: nodes with `IDX`, `LON`, `LAT`; links with `osm_roads`' first eight columns (`SRC`,
+  `DST`, `DIST`, `SPEED`, `FCLASS`, `DIR`, `NAME`, `SOURCE`), which `usrdlink` has.
+- `Nosm`, `Losm`: the OpenStreetMap network, the same columns.
+
+# Keywords
+- `box = nothing`: the box inside which OpenStreetMap's streets replace the national roads, `((xmin, xmax), (ymin,
+  ymax))` as `mapbbox` returns it, or the four numbers. With `nothing` it is the extent of the OpenStreetMap nodes,
+  which needs nothing but the tables and is the network's own box when it was cropped to one, as `osm_roads(bb;
+  crop = true)` and `cropnetwork` crop it. A whole tile that `osm_roads` reads without cropping has ways that run on
+  past the tile's edge, so its extent is wider than the area it covers: give its box (`box = bb`). A box given crops
+  the OpenStreetMap network to it too, so that no road of either network lies where the other has one.
+- `radius = $(_JOIN_RADIUS)`: miles, around the point where a national link meets the box edge, within which a node of
+  an adjacent class is looked for.
+- `verbose = false`: with `true`, report the national links and nodes dropped, the connectors made and how many of
+  them went to a road of a class that is not adjacent.
+
+# Classes
+Both networks' `FCLASS` is the FHWA functional class: FAF5's, which `usrdlink` keeps (1 Interstate, 2 other freeway or
+expressway, 3 other principal arterial, 4 minor arterial, 5 major collector, 6 minor collector, 7 local), and the one
+`osm_roads` gives each OpenStreetMap highway tag (the table in its docstring). FAF5 also writes 0, which is no FHWA
+class (its links are mostly unnamed, ramps, traffic circles and roads in Canada). A national road joins these classes:
+
+$(_join_class_table())
+
+# Connectors
+A connector runs from the national link's node outside the box (`SRC`) to the OpenStreetMap node (`DST`). Its `DIST`
+is the great circle distance between them (`dgc`), its `SPEED` the slower of the two roads' speeds, its `FCLASS` and
+`NAME` the national road's, since it stands for the part of that road the box cut off, and its `SOURCE` is
+`"CONNECTOR"`. It goes each way the national link can be traveled, to a node from which the OpenStreetMap road goes on
+that way: into the box, a node with a link of an accepted class leading on, away from the national road; out of the
+box, a node that such a link reaches from farther away. One node usually serves both ways, and the connector is
+two-way (`DIR = 0`). Where the OpenStreetMap road is divided, so that each carriageway is one-way, the two ways are two
+connectors, each one-way (`DIR = 1` into the box, `-1` out of it) to the carriageway of its direction, since a two-way
+connector to one carriageway would lead against it. A one-way national link has its one connector.
+
+# Returns
+- `dfN`: nodes `IDX` (1 to n), `LON`, `LAT`, `SOURCE` (`"FAF5"` and `"OSM"`), the national nodes first.
+- `dfL`: links with `osm_roads`' first eight columns, in its order, so `vcat` with an `osm_roads` table works; `SOURCE`
+  is `"FAF5"`, `"OSM"` or `"CONNECTOR"`. The national network's other columns follow (`SIGN`, `TYPE`, `INTERSTATE`,
+  `AB_TIME`, `BA_TIME`, `STFIP`, `COFIP`, `URBAN` from `usrdlink`), `missing` on the OpenStreetMap links and the
+  connectors, and then any of the OpenStreetMap network's own (`MAXSPEED`, `ACCESS`, `CONDITIONAL` from a download),
+  `missing` on the others. Since `AB_TIME` and `BA_TIME` are missing there, `links2graph(dfL; weight = :time)` times
+  an OpenStreetMap link and a connector at `60 * DIST / SPEED` and a national link by its own times.
+
+# Example
+A national road running east through a box of streets, joined at both edges:
+
+```jldoctest
+julia> using DataFrames
+
+julia> N = DataFrame(IDX = 1:5, LON = [-79.4, -79.0, -78.6, -78.2, -77.8], LAT = 35.8, SOURCE = "FAF5");
+
+julia> L = DataFrame(SRC = 1:4, DST = 2:5, DIST = 22.5, SPEED = 65, FCLASS = 1, DIR = 0, NAME = "I 40", SOURCE = "FAF5");
+
+julia> Nosm = DataFrame(IDX = 1:5, LON = [-78.65, -78.6, -78.55, -78.6, -78.6], LAT = [35.8, 35.8, 35.8, 35.83, 35.77],
+                        SOURCE = "OSM");
+
+julia> Losm = DataFrame(SRC = [1, 2, 2, 3, 2, 4, 2, 5], DST = [2, 1, 3, 2, 4, 2, 5, 2], DIST = [2.8, 2.8, 2.8, 2.8, 2.1, 2.1, 2.1, 2.1],
+                        SPEED = [65, 65, 65, 65, 25, 25, 25, 25], FCLASS = [1, 1, 1, 1, 7, 7, 7, 7], DIR = 1,
+                        NAME = ["Freeway", "Freeway", "Freeway", "Freeway", "Main St", "Main St", "Main St", "Main St"], SOURCE = "OSM");
+
+julia> dfN, dfL = joinroads(N, L, Nosm, Losm);
+
+julia> (nrow(dfN), [count(==(s), dfL.SOURCE) for s in ("FAF5", "OSM", "CONNECTOR")])
+(9, [2, 8, 2])
+
+julia> [(r.SRC, r.DST, r.DIR, round(r.DIST, digits = 1), r.SPEED) for r in eachrow(dfL) if r.SOURCE == "CONNECTOR"]
+2-element Vector{Tuple{Int64, Int64, Int64, Float64, Int64}}:
+ (2, 5, 0, 19.6, 65)
+ (3, 7, 0, 19.6, 65)
+```
+"""
+function joinroads(N::AbstractDataFrame, L::AbstractDataFrame, Nosm::AbstractDataFrame, Losm::AbstractDataFrame;
+                   box = nothing, radius::Real = _JOIN_RADIUS, verbose::Bool = false)
+    _join_check(N, L, "national"); _join_check(Nosm, Losm, "OpenStreetMap")
+    radius >= 0 || throw(ArgumentError("radius is in miles and cannot be negative; got $radius"))
+    nrow(Nosm) > 0 || throw(ArgumentError("the OpenStreetMap network has no nodes"))
+    nx, ny = Float64.(N.LON), Float64.(N.LAT)
+    ox, oy = Float64.(Nosm.LON), Float64.(Nosm.LAT)
+    bx = _join_box(box, ox, oy)
+    inbox(x, y) = bx[1] <= x <= bx[2] && bx[3] <= y <= bx[4]
+
+    # the OpenStreetMap nodes in the box (every one, by default) and the links between them; each node's links by the
+    # way they are traveled, out of it and into it
+    okeep = [inbox(ox[i], oy[i]) for i in eachindex(ox)]
+    any(okeep) || throw(ArgumentError("no OpenStreetMap node lies in the box $bx"))
+    orow = Dict(x => i for (i, x) in enumerate(Nosm.IDX))
+    oa = [get(orow, x, 0) for x in Losm.SRC]; ob = [get(orow, x, 0) for x in Losm.DST]
+    olink = [a > 0 && b > 0 && okeep[a] && okeep[b] for (a, b) in zip(oa, ob)]
+    outs = [Int[] for _ in ox]; ins = [Int[] for _ in ox]
+    for k in findall(olink)
+        Losm.DIR[k] != -1 && (push!(outs[oa[k]], k); push!(ins[ob[k]], k))
+        Losm.DIR[k] != 1 && (push!(outs[ob[k]], k); push!(ins[oa[k]], k))
+    end
+
+    # the national nodes inside, the links dropped, and each dropped link's ends outside: the node, the point where the
+    # link meets the edge, and the ways it can be traveled from there (into the box, out of it)
+    nrowof = Dict(x => i for (i, x) in enumerate(N.IDX))
+    nin = [inbox(nx[i], ny[i]) for i in eachindex(nx)]
+    drop = falses(nrow(L))
+    ends = Tuple{Int,Int,Tuple{Float64,Float64},Bool,Bool}[]          # (link, node, edge point, into, out of)
+    for k in 1:nrow(L)
+        a, b = get(nrowof, L.SRC[k], 0), get(nrowof, L.DST[k], 0)
+        (a > 0 && b > 0) || continue                                    # prune_reindex leaves such a link out
+        t = _join_clip(nx[a], ny[a], nx[b], ny[b], bx)                  # the part of the link from a to b in the box
+        t === nothing && continue
+        drop[k] = true
+        d = L.DIR[k]
+        for (v, s, vsrc) in ((a, t[1], true), (b, t[2], false))        # a meets the edge at t0, b at t1
+            nin[v] && continue
+            p = (nx[a] + s * (nx[b] - nx[a]), ny[a] + s * (ny[b] - ny[a]))
+            push!(ends, (k, v, p, vsrc ? d != -1 : d != 1, vsrc ? d != 1 : d != -1))
+        end
+    end
+
+    # The fastest OpenStreetMap link at node u, of a class in `acc`, that continues a connector from national node v:
+    # into the box, a link leaving u for a node farther from v; out of it, a link reaching u from a node farther from
+    # v. 0 when u has none.
+    function onward(u, v, into, acc)
+        pv = (nx[v], ny[v]); du = dgc(pv, (ox[u], oy[u]))
+        sp = 0
+        for k in (into ? outs[u] : ins[u])
+            coalesce(Losm.FCLASS[k] in acc, false) || continue
+            w = oa[k] == u ? ob[k] : oa[k]
+            dgc(pv, (ox[w], oy[w])) > du && (sp = max(sp, coalesce(Losm.SPEED[k], 0)))
+        end
+        return sp
+    end
+    # the OpenStreetMap nodes within r miles of the edge point p (every node when r is Inf), nearest first
+    function near(p, r)
+        cand = Tuple{Float64,Int}[]
+        dy = r / 60; dx = r / (60 * max(cosd(p[2]), 0.05))             # a window wider than r miles, then dgc
+        for u in eachindex(ox)
+            okeep[u] || continue
+            isfinite(r) && (abs(oy[u] - p[2]) > dy || abs(ox[u] - p[1]) > dx) && continue
+            d = dgc(p, (ox[u], oy[u]))
+            d <= r && push!(cand, (d, u))
+        end
+        return sort!(cand)
+    end
+
+    csrc = Int[]; cdst = Int[]; cdist = Float64[]; cspeed = Int[]; cclass = Int[]; cdir = Int[]
+    cname = Union{Missing,String}[]
+    nfall = 0; nnone = 0
+    for (k, v, p, into, outof) in ends
+        acc = _join_classes(L.FCLASS[k])
+        cand = near(p, radius); every = nothing
+        pick = Dict{Bool,Tuple{Int,Int,Bool}}()                         # way => (node, speed, by the fallback)
+        for way in (true, false)
+            (way ? into : outof) || continue
+            u, sp = 0, 0
+            for (_, x) in cand
+                sp = onward(x, v, way, acc)
+                sp > 0 && (u = x; break)
+            end
+            fb = u == 0
+            if fb
+                every === nothing && (every = near(p, Inf))
+                for (_, x) in every
+                    sp = onward(x, v, way, 1:7)
+                    sp > 0 && (u = x; break)
+                end
+            end
+            u == 0 ? (nnone += 1) : (pick[way] = (u, sp, fb))
+        end
+        both = haskey(pick, true) && haskey(pick, false) && pick[true][1] == pick[false][1]
+        for (way, (u, sp, fb)) in sort!(collect(pick), by = first, rev = true)
+            both && !way && continue
+            push!(csrc, N.IDX[v]); push!(cdst, u); push!(cdist, dgc((nx[v], ny[v]), (ox[u], oy[u])))
+            osp = both ? max(sp, pick[false][2]) : sp
+            push!(cspeed, min(coalesce(L.SPEED[k], osp), osp)); push!(cclass, coalesce(L.FCLASS[k], 0))
+            push!(cdir, both ? 0 : (way ? 1 : -1)); push!(cname, ismissing(L.NAME[k]) ? missing : String(L.NAME[k]))
+            nfall += (fb || (both && pick[false][3]))
+        end
+    end
+
+    # stacked: the OpenStreetMap node numbers moved past the national ones, then renumbered from 1
+    off = (isempty(N.IDX) ? 0 : maximum(N.IDX)) - minimum(Nosm.IDX) + 1
+    C = DataFrame(SRC = csrc, DST = Nosm.IDX[cdst] .+ off, DIST = cdist, SPEED = cspeed, FCLASS = cclass, DIR = cdir,
+                  NAME = cname, SOURCE = fill("CONNECTOR", length(csrc)))
+    Lo = Losm[olink, :]
+    Lo.SRC = Lo.SRC .+ off; Lo.DST = Lo.DST .+ off
+    No = Nosm[okeep, :]
+    No.IDX = No.IDX .+ off
+    dfL = vcat(L[.!drop, :], Lo, C; cols = :union)
+    select!(dfL, [collect(_JOIN_LINK_COLS); setdiff(names(dfL), _JOIN_LINK_COLS)])
+    dfN = vcat(N[.!nin, :], No; cols = :union)
+    select!(dfN, [collect(_JOIN_NODE_COLS); setdiff(names(dfN), _JOIN_NODE_COLS)])
+    if verbose
+        @info "Joined: $(count(drop)) national links and $(count(nin)) national nodes dropped inside the box $bx; " *
+              "$(length(csrc)) connectors for $(length(ends)) link ends ($(count(==(0), cdir)) two-way), $nfall to a road " *
+              "of a class that is not adjacent (none adjacent within $radius mi of the edge)" *
+              (nnone > 0 ? "; $nnone ways of travel with no OpenStreetMap road to continue them, not joined" : "")
+    end
+    isempty(csrc) && @warn "No national link crosses the edge of the box $bx, so the OpenStreetMap network is not joined to the national one."
+    return prune_reindex(dfN, dfL; src_col = :SRC, dst_col = :DST, node_col = :IDX)
+end

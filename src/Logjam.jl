@@ -12,7 +12,8 @@ and their names:
   `maxpayld`, `qmax_ltl`, `totlogcost`, `aggshmt`, `minTLC`.
 - **Distances:** `dgc`, `dgca`, `d1`, `d2`, `dists`.
 - **Road networks:** `thin`, `addconnectors`, `links2graph`, `shortestpaths`, `tracepath`, `pathroads`,
-  `x2ln`, `cropnetwork`, `prune_reindex`, and `osm_roads` for OpenStreetMap (a download needs LightOSM).
+  `x2ln`, `cropnetwork`, `prune_reindex`, and `osm_roads` for OpenStreetMap (a download needs LightOSM), which
+  `joinroads` joins to the U.S. road network.
 - **Routing:** `segcost`, `rteTC`, `rte2loc`, `isorigin`, `rte2ldmx`, `rtesegsum`, `rte2idx`, `sh2rte`,
   `mincostinsert`, `twoopt`, `pairwisesavings`, `savings`.
 - **Data and geocoding:** `usplace`, `usstate`, `uscounty`, `uscentract`, `uscenblkgrp`, `uszcta5`,
@@ -95,6 +96,7 @@ export links2graph, x2ln, cropnetwork, shortestpaths, tracepath, pathroads
 
 # Export OSM functions (a download requires the LightOSM extension)
 export osm_roads
+export joinroads    # an OpenStreetMap network joined to the U.S. road network at its box's edge (CR 19, RD3; the name is provisional, for his interface review)
 
 # Export routing functions
 export segcost, rteTC, isorigin, rte2loc
