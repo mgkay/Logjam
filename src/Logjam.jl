@@ -114,6 +114,7 @@ include("datatools.jl")
 include("maptools.jl")
 include("disttools.jl")
 include("roadtools.jl")
+include("faf5net.jl")      # the derived FAF5 road network (CR 19): route keys, the Interstate flag, ramps; internal
 include("routetools.jl")
 include("osmtools.jl")
 include("geocode.jl")
