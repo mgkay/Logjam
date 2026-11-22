@@ -1,0 +1,3 @@
+# The derived network's test extract is compared byte for byte with what the derivation writes (LF line endings), so
+# it is checked out with LF on every platform, whatever core.autocrlf says (test/test_faf5net.jl, T1.3).
+test/fixtures/faf5net_raleigh/*.csv text eol=lf

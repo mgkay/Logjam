@@ -1,0 +1,27 @@
+name	value	how computed
+junctions	754	scratch copy of make_faf5_interstate.jl (out = scratch), its printed `nc` after merging within RMERGE = 1.5 mi
+nodes	34746	nrow(interstate_nodes.csv)
+links	35165	nrow(interstate_links.csv)
+miles	42975.242	sum(DIST) of interstate_links.csv (DIST rounded to 3 dp by the script)
+max_IDX	1949186	maximum(dfN.IDX), as Code block 31 shows
+thin_nodes	600	nrow of thin(dfN, dfL) (v0.3.0 thin; Code block 35, before prune_reindex)
+thin_links	989	nrow of thin(dfN, dfL)
+thin_reindex_nodes	600	prune_reindex(thin(dfN, dfL)...) nodes (as _probe-faf5-ex4.jl line 12)
+thin_reindex_links	989	prune_reindex(thin(dfN, dfL)...) links
+thin_reindex_miles	41590.743	sum(DIST) after thin and prune_reindex
+raleigh_nodes	227	cropnetwork(dfN, dfL, RRal[:,1], RRal[:,2]; xexpand=0, yexpand=0), RRal = [-79.2618 35.2497; -78.1964 36.1762] (4-net-1.qmd Code block 34)
+raleigh_links	228	same crop, links
+raleigh_thin_nodes	11	thin(rN, rL) nodes
+raleigh_thin_links	12	thin(rN, rL) links
+ex4_lecture_intersections	566	Code block 56 as published (ends removed until none, thinned again), no component filter
+ex4_components_after_ends	1	connected_components after Code block 56; sizes 566
+ex4_lecture_terminals	17	Code blocks 57-58 as published: terminals(T, 11), coverage and linehaul rows together
+ex4_lecture_max_to_terminal_h	5.50	Code block 58 maximum(toterm)
+ex4_lecture_max_terminal_to_terminal_h	9.64	Code block 58 maximum(near)
+ex4_probe_intersections	566	_probe-faf5-ex4.jl line 25: largest connected component after Code block 56
+ex4_probe_links	952	same, links
+ex4_probe_miles	40087	same, round(Int, sum(DIST))
+ex4_probe_plain_terminals	17	_probe-faf5-ex4.jl lines 32-40: plain set cover (coverage row only)
+ex4_probe_plain_farthest_h	8.69	same: farthest terminal from its nearest other terminal
+ex4_probe_linehaul_terminals	17	_probe-faf5-ex4.jl lines 41-47: linehaul row added, re-solved
+ex4_probe_linehaul_farthest_h	9.64	same: farthest terminal from its nearest other; status OPTIMAL

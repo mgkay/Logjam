@@ -1,11 +1,13 @@
 # test_faf5net.jl -- the derived FAF5 road network (CR 19), on synthetic cases and on FAF5 as Logjam ships it. Part one
 # (PCV N1): route keys, the Interstate flag, the ramp rule and the junctions (his rulings RN3 to RN10, RN17). Part two
-# (PCV N2): the derivation (RN13 to RN19). The expected FAF5 counts are N0's measurements where N0 measured the same
-# thing, and N1's or N2's own otherwise (each says which).
+# (PCV N2): the derivation (RN13 to RN19). Part three (PCV N3): the shipped data and its accessors (D7, RD1, RD2) and
+# the checks of SC 1 (T1.3, T1.4), SC 3 (T3.1 to T3.3) and SC 4 (T4.1 to T4.5, T4.7). The expected FAF5 counts are N0's
+# measurements where N0 measured the same thing, and N1's or N2's own otherwise (each says which).
 
 using Test
 using Logjam
 using DataFrames
+using Graphs, SimpleWeightedGraphs
 using CairoMakie, GeoMakie            # the map extension, whose v0.3.0 ramp rule stays as it is until N4
 
 const LJ = Logjam
@@ -384,6 +386,17 @@ end
 _fnderive(n) = (t = _fnfull(n); (t..., LJ._faf5net(t...)))
 _fnat(n, p) = findfirst(==(p), n.xy)                          # a synthetic node's IDX by its position
 
+# One derivation of FAF5 as Logjam ships it, shared by N2's checks and N3's (T3.1, T4.3), so the suite derives once;
+# released at the end of this file
+const _FN_FAF5 = Ref{Any}(nothing)
+function _fnfaf5()
+    if _FN_FAF5[] === nothing
+        N = faf5nodes(); L = faf5links()
+        _FN_FAF5[] = (; N, L, R = LJ._faf5net(N, L))
+    end
+    return _FN_FAF5[]
+end
+
 @testset "faf5net: the derivation (N2, RN13 to RN19)" begin
     @testset "T2.7: a diamond is one node, its ramps gone, the freeway one two-way link each side" begin
         n = _FNNet(); _fnfreeway!(n, [-2000.0, -300.0, 300.0, 2000.0]); _fndiamond!(n, 0.0, "SR 54")
@@ -480,8 +493,7 @@ _fnat(n, p) = findfirst(==(p), n.xy)                          # a synthetic node
     end
 
     @testset "on FAF5 as Logjam ships it" begin
-        N = faf5nodes(); L = faf5links()
-        R = LJ._faf5net(N, L)
+        N, L, R = _fnfaf5()
         I = R.info; C = I.C; J = I.J
         nodes, links, nodemap = R.nodes, R.links, R.nodemap
         der = Set(nodes.IDX)
@@ -572,3 +584,347 @@ _fnat(n, p) = findfirst(==(p), n.xy)                          # a synthetic node
         @test length(C.pairs) == 22_464 && count(C.accept) == 20_108
     end
 end
+
+# ---------------------------------------------------------------------------------------------------------------------
+# Part three (PCV N3): the shipped data and its accessors (D7, RD1, RD2); SC 1 (T1.3, T1.4), SC 3 (T3.1 to T3.3) and
+# SC 4 (T4.1 to T4.5, T4.7). Every expected number is N0's or N2's measurement, or Lecture 4.1's published content.
+# ---------------------------------------------------------------------------------------------------------------------
+
+include("faf5net_fixture_helpers.jl")
+
+# Lecture 4.1, as published: Code block 34's Raleigh rectangle (lon, lat), and the first row of Ex. 3's table of
+# OSRM's routes from High Point to Goldsboro (#tbl-osrm, its fastest: miles, minutes; queried 2026-10-09)
+const _FN_RRAL = [-79.2618 35.2497; -78.1964 36.1762]
+const _FN_OSRM = (138.36, 180.4)
+
+# N0's baseline, 4.1's committed Interstate network measured (test/fixtures/faf5net_baseline.tsv): name => value
+function _fnbaseline()
+    d = Dict{String,Float64}()
+    for (i, l) in enumerate(eachline(joinpath(@__DIR__, "fixtures", "faf5net_baseline.tsv")))
+        i == 1 && continue
+        f = split(l, '\t'); d[String(f[1])] = parse(Float64, f[2])
+    end
+    return d
+end
+
+_fnpct(x, b) = 100(x / b - 1)
+_fnmins(t, v, d) = t > 0 ? t : 60d / v           # 4.1 Code block 51: FAF5's free-flow minutes, else 60 d / v
+
+# 4.1 Code block 47: the NC places of more than 100,000 people
+_fncities() = select!(filter(r -> (r.STFIP == st2fips(:NC)) && (r.POP > 100_000), usplace()), :NAME, :LAT, :LON, :POP)
+
+# A cropped network's two graphs, 4.1 Code blocks 45 and 51: miles, and minutes (a connector at 20 mph)
+function _fngraphs(Lc)
+    con = isequal.(Lc.SOURCE, "CONNECTOR")
+    tAB = [c ? 60d / 20 : _fnmins(t, v, d) for (c, t, v, d) in zip(con, Lc.AB_TIME, Lc.SPEED, Lc.DIST)]
+    tBA = [c ? 60d / 20 : _fnmins(t, v, d) for (c, t, v, d) in zip(con, Lc.BA_TIME, Lc.SPEED, Lc.DIST)]
+    fw, bw = Lc.DIR .!= -1, Lc.DIR .!= 1
+    I, J = [Lc.SRC[fw]; Lc.DST[bw]], [Lc.DST[fw]; Lc.SRC[bw]]
+    return (SimpleWeightedDiGraph(I, J, [Lc.DIST[fw]; Lc.DIST[bw]]; combine = min),
+            SimpleWeightedDiGraph(I, J, [tAB[fw]; tBA[bw]]; combine = min))
+end
+
+# 4.1 Code blocks 48 and 51: miles on distance-weighted paths and minutes on time-weighted paths between the cities
+function _fnrouting(N, L, df)
+    N, L = prune_reindex(N, L)
+    Nc, Lc = cropnetwork(N, L, df.LON, df.LAT)
+    Nc, Lc = addconnectors(Nc, Lc, df.LON, df.LAT; add_nf_nf = false)
+    g, gT = _fngraphs(Lc)
+    return first(shortestpaths(g, nrow(df))), first(shortestpaths(gT, nrow(df)))
+end
+
+# 4.1 Code block 53 (Ex. 3): the shortest and the fastest route from High Point to Goldsboro, the miles and the minutes
+# of each (as [shortest, fastest])
+function _fnex3(N, L)
+    N, L = prune_reindex(N, L)
+    hp = loc2lonlat("High Point"; state = :NC); gb = loc2lonlat("Goldsboro"; state = :NC)
+    X, Y = [hp.LON, gb.LON], [hp.LAT, gb.LAT]
+    N3, L3 = cropnetwork(N, L, X, Y; xexpand = 0.2, yexpand = 0.5)
+    N3, L3 = addconnectors(N3, L3, X, Y; add_nf_nf = false)
+    g, gT = _fngraphs(L3)
+    pD = tracepath(dijkstra_shortest_paths(g, 1).parents, 1, 2)
+    pF = tracepath(dijkstra_shortest_paths(gT, 1).parents, 1, 2)
+    return sum.(segcost.([pD, pF], Ref(weights(g)))), sum.(segcost.([pD, pF], Ref(weights(gT))))
+end
+
+# T1.4: what faf5nodes() and faf5links() returned at v0.3.0 (7b36241; datatools.jl and the faf5 artifact are unchanged
+# since). Per column: its element type's name, whether it admits missing, its missing count, and its sum (a number
+# column) or its total length in characters (a text column). Measured 2026-11-22 (PCV N3).
+const _FN_V030 = Dict(
+    "faf5nodes" => (344_998, [
+        ("IDX", :Int64, false, 0, 334409109638), ("LON", :Float64, false, 0, -3.1928504788986996e7),
+        ("LAT", :Float64, false, 0, 1.3084324648401154e7), ("ENTRY_EXIT", :String7, true, 343440, 7009),
+        ("EXIT_NUM", :String7, true, 343928, 2511), ("INTERCHANGE", :String, true, 343434, 23899),
+        ("FACILITY_TYPE", :String31, true, 340054, 75049), ("FACILITY_NAME", :String, true, 340052, 78336),
+        ("STATEID", :Int64, false, 0, 0), ("FAFID", :Int64, false, 0, 0)]),
+    "faf5links" => (483_530, [
+        ("SRC", :Int64, false, 0, 471409459993), ("DST", :Int64, false, 0, 471569908184),
+        ("DIST", :Float64, false, 0, 580314.2748923659), ("STFIP", :Int64, false, 0, 14344240),
+        ("COFIP", :Int64, false, 0, 14390497912), ("SPEED", :Int64, false, 0, 23044907),
+        ("NHS", :Int64, false, 0, 2869947), ("SIGN", :String15, true, 247001, 1167136),
+        ("NAME", :String, true, 38692, 3248619), ("FCLASS", :Int64, false, 0, 1126237),
+        ("URBAN", :Int64, true, 1758, 32141799454), ("AB_SPEED", :Float64, false, 0, 2.0773163042438976e7),
+        ("BA_SPEED", :Float64, false, 0, 2.0453057968024906e7), ("AB_TIME", :Float64, false, 0, 775814.6647614709),
+        ("BA_TIME", :Float64, false, 0, 777246.6249872458), ("AB_LANES", :Int64, false, 0, 931565),
+        ("BA_LANES", :Int64, false, 0, 256178), ("DIR", :Int64, false, 0, 318378),
+        ("STRAHNET", :Int64, false, 0, 636718), ("NHFN", :Int64, false, 0, 527224),
+        ("TOLL_TYPE", :Int64, false, 0, 8396), ("TOLL_LINK", :Int64, false, 0, 1243),
+        ("BORDER_LINK", :Int64, false, 0, 41), ("FAFZONE", :Int64, false, 0, 145409445),
+        ("STATUS", :Int64, false, 0, 483562)]))
+
+@testset "faf5net: the shipped data, its accessors and the checks (N3)" begin
+    @testset "T1.4: faf5nodes() and faf5links() as v0.3.0 returned them" begin
+        for (f, tbl) in (("faf5nodes", faf5nodes()), ("faf5links", faf5links()))
+            n, cols = _FN_V030[f]
+            @test nrow(tbl) == n && names(tbl) == first.(cols)
+            for (c, T, u, nm, s) in cols
+                v = tbl[!, c]; E = nonmissingtype(eltype(v))
+                @test nameof(E) == T && (eltype(v) !== E) == u && count(ismissing, v) == nm
+                if E <: AbstractFloat
+                    @test isapprox(sum(skipmissing(v)), s; rtol = 1e-12)
+                elseif E <: Integer
+                    @test sum(skipmissing(v)) == s
+                else
+                    @test sum(length, skipmissing(v); init = 0) == s
+                end
+            end
+        end
+    end
+
+    @testset "T1.3: a Raleigh extract of FAF5 derives to its committed files, byte for byte" begin
+        N, L = fn_read_extract()
+        @test (nrow(N), nrow(L)) == (214, 295)
+        for (f, b) in zip(FN_DERIVED, fn_derived_bytes(N, L))
+            @test b == read(joinpath(FN_FIXTURE_DIR, f))
+        end
+        # the extract is FAF5 as Logjam ships it, cut to the box, and reads back as the same values
+        Nx, Lx = fn_cut(faf5nodes(), faf5links())
+        for (f, b) in zip(FN_EXTRACT, fn_extract_bytes(Nx, Lx))
+            @test b == read(joinpath(FN_FIXTURE_DIR, f))
+        end
+        @test isequal(N, Nx) && isequal(L, Lx)
+    end
+
+    @testset "D7, RD1, RD2: the faf5net artifact, read once, a copy per call" begin
+        for f in (:usrdnode, :usrdlink, :usrdnodemap)
+            @test Base.isexported(Logjam, f) && !occursin("No documentation found", string(Base.Docs.doc(getfield(Logjam, f))))
+        end
+        t1 = @elapsed (N0 = usrdnode(); L0 = usrdlink(); M0 = usrdnodemap())
+        t2 = @elapsed (usrdnode(); usrdlink(); usrdnodemap())
+        t3 = @elapsed usrdlink(interstate = true, region = :CUS)
+        println("  faf5net accessors: first calls ", round(t1, digits = 2), " s (the files read), then ", round(1000t2),
+                " ms for the three copies; usrdlink(interstate = true, region = :CUS) ", round(1000t3), " ms")
+        # the shipped files are the derivation of FAF5 as Logjam ships it, value for value and type for type
+        _, _, R = _fnfaf5()
+        for (a, b) in ((N0, R.nodes), (L0, R.links), (M0, R.nodemap))
+            @test isequal(a, b) && eltype.(eachcol(a)) == eltype.(eachcol(b))
+        end
+        @test (nrow(N0), nrow(L0), nrow(M0), count(ismissing, M0.IDX)) == (145_722, 210_119, 344_998, 310)
+        # a copy per call: changing one leaves the next untouched
+        N0.LON[1] = 0.0; L0.DIST[1] = -1.0; M0.IDX[1] = -1; push!(L0, copy(L0[2, :]))
+        @test usrdnode().LON[1] != 0.0 && usrdlink().DIST[1] != -1.0 && usrdnodemap().IDX[1] != -1 && nrow(usrdlink()) == 210_119
+        @test usrdlink(interstate = true).DIST !== usrdlink(interstate = true).DIST
+    end
+
+    @testset "T4.5: the keywords, and the Interstates of the lower 48 thinned (RD2); T3.3 reported" begin
+        N0 = usrdnode(); L0 = usrdlink()
+        (x0, x1), (y0, y1) = CUS_LIMITS
+        incus = Set(N0.IDX[(x0 .<= N0.LON .<= x1) .& (y0 .<= N0.LAT .<= y1)])
+        cus = in.(L0.SRC, Ref(incus)) .& in.(L0.DST, Ref(incus))
+        for (kw, want) in (((interstate = true, region = :CUS), L0.INTERSTATE .& cus),
+                           ((fclass = 1:3,), in.(L0.FCLASS, Ref(1:3))),
+                           ((fclass = 2,), L0.FCLASS .== 2),
+                           ((interstate = true,), L0.INTERSTATE),
+                           ((region = :CUS,), cus),
+                           ((interstate = true, fclass = [1, 2], region = :CUS), L0.INTERSTATE .& (L0.FCLASS .<= 2) .& (L0.FCLASS .>= 1) .& cus))
+            Lk = usrdlink(; kw...); Nk = usrdnode(; kw...)
+            @test nrow(Lk) > 0 && isequal(Lk, L0[want, :])                        # exactly the links the keywords name
+            @test isequal(Nk, N0[in.(N0.IDX, Ref(Set([Lk.SRC; Lk.DST]))), :])     # exactly the nodes they use
+        end
+        @test isequal(usrdlink(fclass = 1), usrdlink(fclass = [1])) && isequal(usrdnode(fclass = 4), usrdnode(fclass = (4,)))
+        @test isequal(usrdnode(interstate = false, fclass = nothing, region = nothing), N0)
+        @test_throws ArgumentError usrdlink(region = :US)
+        @test_throws ArgumentError usrdnode(region = "CUS")
+        @test_throws ArgumentError usrdlink(fclass = "1")
+        @test_throws ArgumentError usrdnode(fclass = 1.5)
+        # 4.1's network: the Interstates of the lower 48, ready for thin
+        NI = usrdnode(interstate = true, region = :CUS); LI = usrdlink(interstate = true, region = :CUS)
+        @test all(LI.INTERSTATE) && all(in(incus), LI.SRC) && all(in(incus), LI.DST)
+        tN, tL = thin(NI, LI)
+        @test nrow(tN) > 0 && nrow(tL) > 0 && issubset([tL.SRC; tL.DST], 1:nrow(tN))
+        tN2, tL2 = thin(select(NI, :IDX, :LON, :LAT), select(LI, :SRC, :DST, :DIST))   # every link two-way, as 4.1's files
+        rN, rL = cropnetwork(select(NI, :IDX, :LON, :LAT), select(LI, :SRC, :DST, :DIST, :DIR), _FN_RRAL[:, 1], _FN_RRAL[:, 2];
+                             xexpand = 0, yexpand = 0)
+        trN, _ = thin(rN, rL)
+        b = _fnbaseline()
+        println("  faf5net lower-48 Interstates: ", nrow(NI), " nodes (", round(_fnpct(nrow(NI), b["nodes"]), digits = 1), "% against 4.1's ",
+                Int(b["nodes"]), "), ", nrow(LI), " links (", round(_fnpct(nrow(LI), b["links"]), digits = 1), "% against ", Int(b["links"]),
+                "): every interchange collapses, not only 4.1's ", Int(b["junctions"]), "; thinned ", nrow(tN), " / ", nrow(tL),
+                " (every link two-way ", nrow(tN2), " / ", nrow(tL2), "; 4.1's ", Int(b["thin_nodes"]), " / ", Int(b["thin_links"]),
+                "); Raleigh rectangle ", nrow(rN), " nodes (4.1's ", Int(b["raleigh_nodes"]), "), ", nrow(rL), " links, thinned ",
+                nrow(trN), " (", Int(b["raleigh_thin_nodes"]), ")")
+        # T3.3, report only: 4.1 Ex. 4's intersections (Code block 56: the ends removed until none is left, thinned again);
+        # its terminals need a MIP solver (JuMP and HiGHS), which is not among Logjam's dependencies, so they are not run
+        for (lab, (iN, iL)) in (("DIR kept", prune_reindex(tN, tL)), ("every link two-way", prune_reindex(tN2, tL2)))
+            while true
+                deg = zeros(Int, nrow(iN))
+                foreach(x -> deg[x] += 1, [iL.SRC; iL.DST])
+                all(>(1), deg) && break
+                iN, iL = prune_reindex(iN, iL[(deg[iL.SRC] .> 1) .& (deg[iL.DST] .> 1), :])
+            end
+            iN, iL = prune_reindex(thin(iN, iL)...)
+            println("  faf5net T3.3 (report only): 4.1 Ex. 4's intersections on the derived Interstates (", lab, "): ", nrow(iN),
+                    " (4.1's ", Int(b["ex4_lecture_intersections"]), "); terminals not computed: Ex. 4's set covering needs JuMP and HiGHS")
+            @test nrow(iN) > 0
+        end
+    end
+
+    @testset "T4.7: the link table stacks with an osm_roads table (D11)" begin
+        O = DataFrame([c => T[] for (c, T) in LJ._OSM_LINK_TYPES])
+        push!(O, (1, 2, 0.25, 25, 4, 0, "HILLSBOROUGH ST", "OSM", 25, missing, missing))
+        F = usrdlink(region = :CUS)[1:3, :]
+        @test names(F)[1:8] == first.(LJ._OSM_LINK_TYPES)[1:8] && eltype.(eachcol(F))[1:8] == last.(LJ._OSM_LINK_TYPES)[1:8]
+        V = vcat(F[:, 1:8], O[:, 1:8])
+        @test nrow(V) == 4 && names(V) == names(O)[1:8] && eltype.(eachcol(V)) == last.(LJ._OSM_LINK_TYPES)[1:8]
+        U = vcat(F, O; cols = :union)
+        @test nrow(U) == 4 && names(U)[1:8] == names(O)[1:8] && U.SOURCE == ["FAF5", "FAF5", "FAF5", "OSM"]
+    end
+
+    @testset "T3.1, T3.2: the lower 48's Interstates against 4.1's network (RN11, RN18)" begin
+        N, L, R = _fnfaf5()
+        I = R.info; C = I.C; J = I.J
+        nodes, links = R.nodes, R.links
+        b = _fnbaseline()
+        ks = findall(LJ._usrdkeep(nodes, links, true, nothing, :CUS))     # usrdlink(interstate = true, region = :CUS)
+        mi0 = sum(I.fdist[ks]); mi = sum(links.DIST[ks])                  # without the stubs, and with them
+        fl = [LJ._isinterstate(L.SIGN[k], L.NAME[k], L.FCLASS[k]) for k in 1:nrow(L)]
+        acc = falses(length(C.chains))
+        for (q, (i, j)) in enumerate(C.pairs)
+            C.accept[q] && (acc[i] = acc[j] = true)
+        end
+        Ich = [i for i in eachindex(C.chains) if fl[C.chains[i][1]] && !C.inside[i] && !(L.STFIP[C.chains[i][1]] in (2, 15, 72))]
+        un = sum(C.len[[i for i in Ich if !acc[i]]]; init = 0.0); cw = sum(C.len[Ich])
+        println("  faf5net T3.1: lower-48 Interstate miles without stubs ", round(mi0, digits = 3), " (", round(_fnpct(mi0, b["miles"]), digits = 2),
+                "% against 4.1's ", b["miles"], "; limit 5%), with stubs ", round(mi, digits = 3), " (", round(_fnpct(mi, b["miles"]), digits = 2),
+                "%); unpaired Interstate carriageway ", round(un, digits = 1), " of ", round(cw, digits = 1), " mi (",
+                round(100un / cw, digits = 2), "%; limit 1%)")
+        @test abs(_fnpct(mi0, b["miles"])) <= 5
+        @test un / cw <= 0.01
+        # reported (RN11): junction nodes meeting the Interstate links of two or more routes
+        jimg = Set(N.IDX[I.img[J.site[c]]] for c in eachindex(J.site))
+        ir = Dict{Int,Set{String}}()
+        for k in ks
+            rs = ismissing(links.SIGN[k]) ? String[] : [String(s) for s in split(links.SIGN[k], ';') if occursin(LJ._I_SIGN, s)]
+            for x in (links.SRC[k], links.DST[k])
+                x in jimg && union!(get!(ir, x, Set{String}()), [something(LJ._route(s, missing), s) for s in rs])
+            end
+        end
+        nj = count(v -> length(v) >= 2, values(ir))
+        println("  faf5net T3.1 (RN11, reported): junctions ", Int(b["junctions"]), " by 4.1's rule, 788 by RN6's merge, ", nj, " derived")
+        @test nj > 0
+        # T3.2, the differences, listed: the unsigned Interstates, and 4.1's ramp and main-line rule against this one on
+        # the lower 48's class 1 links (4.1: a main line is signed "I ..."; a ramp is unsigned as an Interstate and named
+        # a ramp, a C/D lane, a connector or a turn lane, or unnamed)
+        us = [r for r in ks if !any(s -> occursin(LJ._I_SIGN, s), split(coalesce(links.SIGN[r], ""), ';'))]
+        sgn = String.(coalesce.(L.SIGN, "")); nm = uppercase.(String.(coalesce.(L.NAME, "")))
+        low48 = .!in.(L.STFIP, Ref((2, 15, 72))); fc1 = L.FCLASS .== 1; isr = I.isramp
+        main41 = fc1 .& startswith.(sgn, "I ") .& low48
+        ramp41 = fc1 .& .!startswith.(sgn, "I ") .& low48 .& (occursin.(r"RAMP|COLLECTOR|DISTRIBUTOR|CONNECTOR|TURN LANE", nm) .| (nm .== ""))
+        function ex(m)                                              # the three commonest (SIGN, NAME), with their counts
+            cnt = Dict{Tuple{String,String},Int}()
+            for k in findall(m)
+                cnt[(sgn[k], nm[k])] = get(cnt, (sgn[k], nm[k]), 0) + 1
+            end
+            top = first(sort!(collect(cnt), by = x -> (-x[2], x[1])), 3)
+            return join(["$(isempty(s) ? "-" : s) / $(isempty(t) ? "-" : t) ($c)" for ((s, t), c) in top], ", ")
+        end
+        for (lab, m) in (("4.1 main line, not flagged here (Business routes)", main41 .& .!fl .& .!isr),
+                         ("4.1 main line, a ramp here (ramps signed as Interstates)", main41 .& isr),
+                         ("flagged here, not a 4.1 main line (not class 1, or found by NAME)", fl .& low48 .& .!main41 .& .!isr),
+                         ("4.1 ramp, a road here (CONNECTOR names, unnamed links outside the structural test)", ramp41 .& .!isr),
+                         ("a ramp here, not a 4.1 ramp (class 1, not signed as an Interstate)", isr .& fc1 .& low48 .& .!startswith.(sgn, "I ") .& .!ramp41))
+            println("  faf5net T3.2: ", lab, ": ", count(m), " links", count(m) > 0 ? "; e.g. " * ex(m) : "")
+        end
+        println("  faf5net T3.2: unsigned Interstates (flagged, no Interstate SIGN): ", length(us), " links; ",
+                unique(zip(coalesce.(links.SIGN[us], ""), coalesce.(links.NAME[us], ""))))
+        @test length(us) == 6                                       # N2: I-296, signed US 131
+    end
+
+    @testset "T4.3: components one to one, but FAF5's pieces made only of ramps (RN1, RN19)" begin
+        N, L, R = _fnfaf5()
+        I = R.info; T = I.T
+        nodes, links, nodemap = R.nodes, R.links, R.nodemap
+        pos = Dict(x => i for (i, x) in enumerate(nodes.IDX))
+        p = LJ._uf(nrow(nodes))
+        for k in 1:nrow(links)
+            LJ._join!(p, pos[links.SRC[k]], pos[links.DST[k]])
+        end
+        cd = [LJ._root!(p, i) for i in 1:nrow(nodes)]
+        rows = Dict(x => v for (v, x) in enumerate(N.IDX))
+        nf = maximum(I.fcomp)
+        f2d = [Set{Int}() for _ in 1:nf]; d2f = Dict{Int,Set{Int}}()
+        for (fi, x) in zip(nodemap.FAF5_IDX, nodemap.IDX)
+            c = I.fcomp[rows[fi]]
+            (ismissing(x) || c == 0) && continue
+            push!(f2d[c], cd[pos[x]]); push!(get!(d2f, cd[pos[x]], Set{Int}()), c)
+        end
+        onlyramps = trues(nf)
+        for k in 1:T.nL
+            I.isramp[k] || (onlyramps[I.fcomp[T.S[k]]] = false)
+        end
+        splits = count(s -> length(s) > 1, f2d); merges = count(s -> length(s) > 1, values(d2f)); noimg = findall(isempty, f2d)
+        println("  faf5net T4.3: FAF5 ", nf, " components, derived ", length(unique(cd)), "; splits ", splits, ", merges ", merges,
+                "; without an image ", length(noimg), ", FAF5's components made only of ramps ", count(onlyramps))
+        @test nf == 171 && length(unique(cd)) == 26                 # N0: 171; N2: 26 = 171 less 145
+        @test splits == 0 && merges == 0 && noimg == findall(onlyramps) && length(noimg) == 145
+    end
+
+    @testset "T4.1, T4.2: 4.1's ten NC cities, distances and times against FAF5 as published (RN19)" begin
+        N, L, _ = _fnfaf5()
+        df = _fncities(); n = nrow(df)
+        @test n == 10
+        D1, T1 = _fnrouting(N, L, df)
+        D2, T2 = _fnrouting(usrdnode(), usrdlink(), df)
+        for (lab, A, B, tol) in (("T4.1 distance", D2, D1, ((1, 5), (3, 10))), ("T4.2 time", T2, T1, ((3, 8), (5, 12))))
+            npairs = 0
+            for (band, sel, (mlim, elim)) in (("over 50 mi", (i, j) -> D1[i, j] > 50, tol[1]),
+                                              ("50 mi or less", (i, j) -> D1[i, j] <= 50, tol[2]))
+                idx = [(i, j) for i in 1:n for j in 1:n if i != j && sel(i, j)]
+                e = [_fnpct(A[i, j], B[i, j]) for (i, j) in idx]
+                w = argmax(abs.(e)); m = sum(abs.(e)) / length(e)
+                npairs += length(e)
+                println("  faf5net ", lab, ", ", length(e), " pairs ", band, ": mean |error| ", round(m, digits = 2), "% (limit ", mlim,
+                        "%), worst ", round(e[w], digits = 2), "% ", df.NAME[idx[w][1]], " to ", df.NAME[idx[w][2]], " (limit ", elim, "%)")
+                @test m <= mlim && abs(e[w]) <= elim
+            end
+            @test npairs == 90                                      # the 90 ordered pairs of ten cities
+        end
+    end
+
+    @testset "T4.4: High Point to Goldsboro against 4.1 Ex. 3's OSRM route (no network)" begin
+        N, L, _ = _fnfaf5()
+        fD, fT = _fnex3(N, L)                                       # FAF5 as published, as Ex. 3 computes it
+        dD, dT = _fnex3(usrdnode(), usrdlink())
+        oD, oT = _FN_OSRM
+        println("  faf5net T4.4: OSRM ", oD, " mi, ", oT, " min; FAF5's shortest route ", round(fD[1], digits = 3), " mi (",
+                round(fD[1] - oD, digits = 3), "), ", round(fT[1], digits = 3), " min (", round(fT[1] - oT, digits = 3),
+                "); the derived network's ", round(dD[1], digits = 3), " mi (", round(dD[1] - oD, digits = 3), "), ",
+                round(dT[1], digits = 3), " min (", round(dT[1] - oT, digits = 3), "); fastest routes ", round(fD[2], digits = 1),
+                " and ", round(dD[2], digits = 1), " mi")
+        @test abs(dD[1] - oD) <= abs(fD[1] - oD)                    # miles: as close to OSRM as FAF5's are
+        # Ex. 3's table, read from the lecture where it is reachable
+        lec = get(ENV, "LOGJAM_LECTURE_DATA", "")
+        qmd = isempty(lec) ? "" : normpath(joinpath(lec, "..", "4-net-1.qmd"))
+        if isfile(qmd)
+            ls = readlines(qmd)
+            c = findfirst(l -> occursin("{#tbl-osrm}", l), ls)
+            k = c === nothing ? nothing : findlast(l -> startswith(l, "| 1 |"), ls[1:c])
+            m = k === nothing ? nothing : match(r"^\| 1 \| ([\d.]+) \| ([\d.]+) \|", ls[k])
+            @test m !== nothing && parse.(Float64, m.captures) == collect(_FN_OSRM)
+        else
+            @info "Lecture 4.1 not reachable (LOGJAM_LECTURE_DATA): Ex. 3's OSRM table not re-read"
+        end
+    end
+end
+
+_FN_FAF5[] = nothing                    # the shared derivation, released

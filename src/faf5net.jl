@@ -1,9 +1,11 @@
 # faf5net.jl -- the derived FAF5 road network (CR 19). Part one: what route a link carries, which links are
 # Interstates, what a ramp is, and where the junctions are (PCV N1, his rulings RN3 to RN10, RN12 as narrowed by RN17).
 # Part two: the derivation itself (PCV N2, his rulings RN13 to RN19), `_faf5net`, which tools/v0_3_2/make_faf5net.jl
-# runs to write the shipped files. Internal: nothing here is exported or public (the accessors are N3). From N4 the
-# map's road layer reads the same ramp rule, so the derivation and the map agree on what a ramp is. Until then the map
-# keeps v0.3.0's rule (ext/LogjamMapExt.jl), which is the first part of the one here.
+# runs to write the shipped files. Part three (PCV N3, his rulings RD1 and RD2, D7): how those files are written, and
+# the three exported accessors, `usrdnode`, `usrdlink` and `usrdnodemap`, which read them from the `faf5net` artifact;
+# everything else here is internal. From N4 the map's road layer reads the same ramp rule, so the derivation and the
+# map agree on what a ramp is. Until then the map keeps v0.3.0's rule (ext/LogjamMapExt.jl), which is the first part
+# of the one here.
 #
 # The functions read FAF5-shaped tables: nodes with IDX, LON and LAT; links with SRC and DST (node IDX values), DIR (0
 # two-way, 1 one-way from SRC to DST, -1 one-way from DST to SRC), FCLASS, SIGN and NAME (either may be missing). The
@@ -1015,3 +1017,227 @@ function _faf5net(N, L)
             fcomp)
     return (; nodes, links, nodemap, info)
 end
+
+# ---------------------------------------------------------------------------------------------------------------------
+# The shipped files and their accessors (PCV N3, his rulings RD1 and RD2, D7, D11)
+# ---------------------------------------------------------------------------------------------------------------------
+
+# How the three files are written (tools/v0_3_2/make_faf5net.jl, and the regenerated extract of the tests), the same
+# bytes from run to run, on Julia 1.12 and 1.13: a missing value an empty field; DIST and the times, which the derivation
+# has rounded to 4 decimals, with exactly 4; any other number in its shortest form that reads back as the same value;
+# text quoted when it holds a comma, a quote or a line break; LF line endings.
+const _FAF5NET_FOUR = ("DIST", "AB_TIME", "BA_TIME")
+
+# A value already rounded to 4 decimals, written with exactly 4, as C's "%.4f" writes it.
+function _fixed4(x::Real)
+    k = round(Int, Float64(x) * 10_000)
+    neg = k < 0 || (k == 0 && signbit(x))
+    k = abs(k)
+    return string(neg ? "-" : "", k ÷ 10_000, '.', lpad(k % 10_000, 4, '0'))
+end
+
+function _csvfield(col, x, four)
+    ismissing(x) && return ""
+    x isa Bool && return x ? "true" : "false"
+    x isa Integer && return string(x)
+    x isa AbstractFloat && return col in four ? _fixed4(x) : string(Float64(x))
+    s = string(x)
+    return occursin(r"[,\"\r\n]", s) ? "\"" * replace(s, "\"" => "\"\"") * "\"" : s
+end
+
+"""
+    _faf5net_csv(io_or_path, df; four = ("DIST", "AB_TIME", "BA_TIME"))
+
+Writes `df` as CSV the way the derived network's files are written: a header line, then one line per row, LF endings;
+a missing value as an empty field; the columns named in `four` with exactly 4 decimals (their values already rounded
+to 4); every other number in its shortest form that reads back as the same value; text quoted when it holds a comma,
+a quote or a line break. `four = ()` writes every number exactly (the tests' FAF5 extract).
+"""
+function _faf5net_csv(io::IO, df; four = _FAF5NET_FOUR)
+    cols = names(df)
+    write(io, join(cols, ','), '\n')
+    for r in 1:nrow(df)
+        write(io, join((_csvfield(c, df[r, c], four) for c in cols), ','), '\n')
+    end
+    return nothing
+end
+_faf5net_csv(path::AbstractString, df; kw...) = open(io -> _faf5net_csv(io, df; kw...), path, "w")
+
+# Each file's columns and their types as the derivation makes them (D11), read back as the same table.
+const _USRD_NODE_TYPES = ["IDX" => Int, "LON" => Float64, "LAT" => Float64, "SOURCE" => String]
+const _USRD_LINK_TYPES = ["SRC" => Int, "DST" => Int, "DIST" => Float64, "SPEED" => Int, "FCLASS" => Int, "DIR" => Int,
+                          "NAME" => Union{Missing,String}, "SOURCE" => String, "SIGN" => Union{Missing,String},
+                          "TYPE" => Union{Missing,String}, "INTERSTATE" => Bool, "AB_TIME" => Float64,
+                          "BA_TIME" => Float64, "STFIP" => Int, "COFIP" => Int, "URBAN" => Union{Missing,Int}]
+const _USRD_NODEMAP_TYPES = ["FAF5_IDX" => Int, "IDX" => Union{Missing,Int}]
+
+# Read once per session from the `faf5net` artifact (lazy: downloaded on first use) and kept here, as the FAF5 tables
+# are (C12); each accessor returns a copy, so a caller may change what it gets without changing what the next call
+# gets. The lock is for tasks that call at once.
+const _usrdnode_cache = Ref{Union{Nothing,DataFrame}}(nothing)
+const _usrdlink_cache = Ref{Union{Nothing,DataFrame}}(nothing)
+const _usrdnodemap_cache = Ref{Union{Nothing,DataFrame}}(nothing)
+const _usrd_lock = ReentrantLock()
+
+_usrdread(file, spec) = CSV.read(joinpath(artifact"faf5net", file), DataFrame; types = Dict{String,Type}(spec),
+                                 stringtype = String, pool = false)
+
+function _usrdcached(cache, file, spec)
+    return lock(_usrd_lock) do
+        isnothing(cache[]) && (cache[] = _usrdread(file, spec))
+        cache[]
+    end
+end
+
+_usrdnodes() = _usrdcached(_usrdnode_cache, "faf5net_nodes.csv", _USRD_NODE_TYPES)
+_usrdlinks() = _usrdcached(_usrdlink_cache, "faf5net_links.csv", _USRD_LINK_TYPES)
+
+# The limits of a `region`: `:CUS`, the continental U.S. as `makemap` names it (`CUS_LIMITS`).
+function _usrdlimits(region)
+    region === :CUS && return CUS_LIMITS
+    throw(ArgumentError("region must be :CUS (the continental U.S., CUS_LIMITS) or nothing (the whole network); got $(repr(region))"))
+end
+
+# The classes `fclass` names: one integer or a collection of them.
+function _usrdclasses(fclass)
+    fclass isa Integer && return Set{Int}([fclass])
+    ok = !(fclass isa AbstractString) && applicable(iterate, fclass) && all(x -> x isa Integer, fclass)
+    ok || throw(ArgumentError("fclass must be an integer or a collection of integers (such as 1:3); got $(repr(fclass))"))
+    return Set{Int}(fclass)
+end
+
+# The links of `L` (the derived network's link table, its nodes `N`) the keywords keep (RD2): the Interstates
+# (`INTERSTATE`), the classes `fclass`, the links with both ends inside the region's limits; every one given.
+function _usrdkeep(N, L, interstate::Bool, fclass, region)
+    keep = trues(nrow(L))
+    interstate && (keep .&= L.INTERSTATE)
+    if fclass !== nothing
+        cs = _usrdclasses(fclass)
+        keep .&= in.(L.FCLASS, Ref(cs))
+    end
+    if region !== nothing
+        (x0, x1), (y0, y1) = _usrdlimits(region)
+        inside = Set{Int}(N.IDX[(x0 .<= N.LON .<= x1) .& (y0 .<= N.LAT .<= y1)])
+        keep .&= in.(L.SRC, Ref(inside)) .& in.(L.DST, Ref(inside))
+    end
+    return keep
+end
+
+_usrdany(interstate, fclass, region) = interstate || fclass !== nothing || region !== nothing
+
+"""
+    usrdlink(; interstate = false, fclass = nothing, region = nothing) -> DataFrame
+
+Returns the links of Logjam's U.S. road network, derived from FAF5 (`faf5nodes`, `faf5links`, which stay as FAF5
+publishes them) for long-distance routing and map backgrounds. Each stretch of road between two junctions is one link;
+the two carriageways of a divided road are one two-way link, and a road that is genuinely one-way stays one-way; each
+interchange and each divided-highway intersection is one node, and its ramps are gone; the nodes along each road are
+kept, so it follows the road's course. The network is made by `tools/v0_3_2/make_faf5net.jl` and ships as a lazy
+artifact, downloaded on first use. The file is read once per session and each call returns a copy, so the table may
+be changed freely.
+
+# Keywords
+- `interstate`: `true` keeps only the Interstate links (`INTERSTATE`).
+- `fclass`: one functional class or a collection of them (such as `1:3`) keeps only the links of those classes.
+- `region`: `:CUS`, the continental U.S. as `makemap` names it (`CUS_LIMITS`), keeps only the links with both ends
+  inside it; `nothing` (default) keeps the whole network, Alaska, Hawaii and Puerto Rico included.
+
+A link is kept when it meets every keyword given. `usrdnode` with the same keywords returns the nodes the kept links
+use, so the two tables are one network.
+
+# Columns
+The first eight are `osm_roads`' columns, in its order, so the two tables can be stacked with `vcat`.
+- `SRC`, `DST`: the link's two nodes (`IDX` of `usrdnode`, FAF5's node numbers).
+- `DIST`: miles. A divided road's is its shorter carriageway's; a link whose end was moved to its junction's node adds
+  the straight-line distance moved.
+- `SPEED`: FAF5's posted speed limit (mph).
+- `FCLASS`: FAF5's functional class (1 Interstate, 2 other freeway or expressway, 3 other principal arterial, and so
+  on), the lower of a divided road's two carriageways.
+- `DIR`: 0 two-way, 1 one-way from `SRC` to `DST`, -1 one-way from `DST` to `SRC`.
+- `NAME`: FAF5's road name (`missing` where it has none).
+- `SOURCE`: `"FAF5"`.
+- `SIGN`: the routes the road is signed as, sorted and joined by `;` (`missing` where it has none).
+- `TYPE`: Matlog's road type: `"I"` an Interstate, `"U"` a U.S. route, `"S"` a state route, `"L"` a road with a name
+  and no route, `missing` otherwise.
+- `INTERSTATE`: `true` for an Interstate, Business routes excepted.
+- `AB_TIME`, `BA_TIME`: free-flow minutes from `SRC` to `DST` and from `DST` to `SRC`, a divided road's from each of
+  its carriageways; `links2graph(L; weight = :time)` reads them.
+- `STFIP`, `COFIP`: state and county FIPS codes.
+- `URBAN`: FAF5's urban area code (`missing` outside one).
+
+# Sources
+Derived from U.S. Department of Transportation, Bureau of Transportation Statistics, Freight Analysis Framework (FAF5)
+Network (see `faf5links`).
+
+# Example
+```julia
+L = usrdlink(interstate = true, region = :CUS)     # the Interstates of the lower 48
+sum(L.DIST)                                        # their miles
+N, L = prune_reindex(usrdnode(fclass = 1:3), usrdlink(fclass = 1:3))
+g = links2graph(L; weight = :time)                 # minutes, each direction its own
+```
+"""
+function usrdlink(; interstate::Bool = false, fclass = nothing, region = nothing)
+    L = _usrdlinks()
+    _usrdany(interstate, fclass, region) || return copy(L)
+    return L[_usrdkeep(_usrdnodes(), L, interstate, fclass, region), :]
+end
+
+"""
+    usrdnode(; interstate = false, fclass = nothing, region = nothing) -> DataFrame
+
+Returns the nodes of Logjam's U.S. road network, derived from FAF5 (see `usrdlink`): with no keywords, every node;
+with keywords, exactly the nodes the links `usrdlink` keeps with the same keywords use, so the two tables are one
+network. The file is read once per session and each call returns a copy, so the table may be changed freely.
+
+# Keywords
+As `usrdlink`: `interstate = true` the Interstates, `fclass` one functional class or a collection of them, `region =
+:CUS` the continental U.S. (`CUS_LIMITS`).
+
+# Columns
+- `IDX`: integer node identifier, FAF5's own node number (as in `faf5nodes`), so the numbers are not consecutive.
+- `LON`: longitude of the node (FAF5's).
+- `LAT`: latitude of the node (FAF5's).
+- `SOURCE`: `"FAF5"`.
+
+# Example
+Lecture 4.1's Interstate network of the lower 48, then thinned:
+
+```julia
+N = usrdnode(interstate = true, region = :CUS)
+L = usrdlink(interstate = true, region = :CUS)
+tN, tL = thin(N, L)          # numbered from 1, ready for links2graph
+```
+"""
+function usrdnode(; interstate::Bool = false, fclass = nothing, region = nothing)
+    N = _usrdnodes()
+    _usrdany(interstate, fclass, region) || return copy(N)
+    L = _usrdlinks()
+    keep = _usrdkeep(N, L, interstate, fclass, region)
+    used = Set{Int}(view(L.SRC, keep)); union!(used, view(L.DST, keep))
+    return N[in.(N.IDX, Ref(used)), :]
+end
+
+"""
+    usrdnodemap() -> DataFrame
+
+Returns the node map of Logjam's U.S. road network (`usrdnode`, `usrdlink`): one row for every FAF5 node
+(`faf5nodes`), with the node of the network that stands for it. A node the network keeps maps to itself; each node of
+an interchange or a divided-highway intersection maps to that junction's one node; a node of a dropped carriageway maps
+to the nearest node of the carriageway kept in its place; a node that only ramps touch maps to the nearest kept node
+its ramps reach. The 310 nodes of FAF5's 145 connected pieces made only of ramps keep no link, and their `IDX` is
+`missing`. The file is read once per session and each call returns a copy.
+
+# Columns
+- `FAF5_IDX`: the FAF5 node (`IDX` of `faf5nodes`), each once, in increasing order.
+- `IDX`: the node of `usrdnode` that stands for it, or `missing`.
+
+# Example
+```julia
+M = usrdnodemap()
+nrow(M) == nrow(faf5nodes())          # true: every FAF5 node, once
+count(ismissing, M.IDX)               # 310: the nodes of FAF5's pieces made only of ramps
+img = Dict(zip(M.FAF5_IDX, M.IDX))    # a FAF5 node's derived node, by its IDX
+```
+"""
+usrdnodemap() = copy(_usrdcached(_usrdnodemap_cache, "faf5net_nodemap.csv", _USRD_NODEMAP_TYPES))

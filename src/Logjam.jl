@@ -16,8 +16,8 @@ and their names:
 - **Routing:** `segcost`, `rteTC`, `rte2loc`, `isorigin`, `rte2ldmx`, `rtesegsum`, `rte2idx`, `sh2rte`,
   `mincostinsert`, `twoopt`, `pairwisesavings`, `savings`.
 - **Data and geocoding:** `usplace`, `usstate`, `uscounty`, `uscentract`, `uscenblkgrp`, `uszcta5`,
-  `uszcta3`, `uscbsa`, `uscsa`, `st2fips`, `fips2st`, `faf5nodes`, `faf5links`, `loc2lonlat`,
-  `lonlat2loc`, `lonlat`.
+  `uszcta3`, `uscbsa`, `uscsa`, `st2fips`, `fips2st`, `faf5nodes`, `faf5links`, `usrdnode`, `usrdlink`,
+  `usrdnodemap`, `loc2lonlat`, `lonlat2loc`, `lonlat`.
 - **Maps** (GeoMakie): `makemap`, `mapbbox`, `aligntext`, `alloclines`, `plotroads!`, `plotroute!`, `dcf`,
   and the constants `WORLD_LIMITS`, `US_LIMITS`, `CUS_LIMITS`.
 - **Display:** `prt`, `snapvals`, `thousands`.
@@ -74,6 +74,7 @@ export usstate    # one row per state, aggregated from uscounty(): Lecture 2.5's
 export usplace, uscounty, uscentract, uscenblkgrp, uszcta5, uszcta3
 export uscbsa, uscsa, st2fips, fips2st
 export faf5nodes, faf5links
+export usrdnode, usrdlink, usrdnodemap    # the road network derived from FAF5, its nodes, links and node map (CR 19, RD1)
 export loc2lonlat, lonlat2loc
 export lonlat    # a table's, row's or geocoded places' coordinates as [lon, lat] or an n x 2 matrix (A1, LL)
 
@@ -114,7 +115,7 @@ include("datatools.jl")
 include("maptools.jl")
 include("disttools.jl")
 include("roadtools.jl")
-include("faf5net.jl")      # the derived FAF5 road network (CR 19): route keys, the Interstate flag, ramps, junctions; internal
+include("faf5net.jl")      # the derived FAF5 road network (CR 19): its derivation (internal) and its accessors
 include("routetools.jl")
 include("osmtools.jl")
 include("geocode.jl")
