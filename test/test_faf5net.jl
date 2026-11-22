@@ -1,6 +1,7 @@
-# test_faf5net.jl -- the derived FAF5 road network (CR 19), part one (PCV N1): route keys, the Interstate flag, the
-# ramp rule and the junctions (his rulings RN3 to RN10), on synthetic cases and on FAF5 as Logjam ships it. The expected
-# FAF5 counts are N0's measurements where N0 measured the same thing, and N1's own otherwise (each says which).
+# test_faf5net.jl -- the derived FAF5 road network (CR 19), on synthetic cases and on FAF5 as Logjam ships it. Part one
+# (PCV N1): route keys, the Interstate flag, the ramp rule and the junctions (his rulings RN3 to RN10, RN17). Part two
+# (PCV N2): the derivation (RN13 to RN19). The expected FAF5 counts are N0's measurements where N0 measured the same
+# thing, and N1's or N2's own otherwise (each says which).
 
 using Test
 using Logjam
@@ -364,5 +365,210 @@ _fnjunctions(n) = (t = _fntables(n); r = LJ._ramp_links(t...); (r, LJ._junctions
         @test count(>(0), J.cl) == 156_172                    # N2, RN17 (N1: 156,175; RN12 as worded 156,168)
         @test agext < 400                                     # 150 m within one route pair, chained: 302.9 m at most (N1)
         @test nI == 857                                       # N2, RN17 (N1: 858); 4.1's 754 (N0), its clusters under RN6 788
+    end
+end
+
+# ---------------------------------------------------------------------------------------------------------------------
+# Part two (PCV N2): the derivation, his rulings RN13 to RN19 (T2.1 to T2.11, T4.7)
+# ---------------------------------------------------------------------------------------------------------------------
+
+# A synthetic network with every column the derivation reads: DIST by great circle, 60 mph, times in minutes.
+function _fnfull(n)
+    N, L = _fntables(n)
+    L.DIST = [dgc((N.LON[s], N.LAT[s]), (N.LON[d], N.LAT[d])) for (s, d) in zip(L.SRC, L.DST)]
+    L.SPEED = fill(60, nrow(L)); L.AB_SPEED = fill(60.0, nrow(L)); L.BA_SPEED = fill(60.0, nrow(L))
+    L.AB_TIME = copy(L.DIST); L.BA_TIME = copy(L.DIST)
+    L.STFIP = fill(37, nrow(L)); L.COFIP = fill(37183, nrow(L)); L.URBAN = Union{Missing,Int}[fill(99999, nrow(L))...]
+    return N, L
+end
+_fnderive(n) = (t = _fnfull(n); (t..., LJ._faf5net(t...)))
+_fnat(n, p) = findfirst(==(p), n.xy)                          # a synthetic node's IDX by its position
+
+@testset "faf5net: the derivation (N2, RN13 to RN19)" begin
+    @testset "T2.7: a diamond is one node, its ramps gone, the freeway one two-way link each side" begin
+        n = _FNNet(); _fnfreeway!(n, [-2000.0, -300.0, 300.0, 2000.0]); _fndiamond!(n, 0.0, "SR 54")
+        N, L, R = _fnderive(n)
+        @test nrow(R.nodes) == 5 && nrow(R.links) == 4 && all(==(0), R.links.DIR)
+        @test sort(R.links.SIGN) == ["I 40", "I 40", "SR 54", "SR 54"]
+        @test count(==(:interchange), R.info.J.kind) == 1
+        site = R.nodemap.IDX[_fnat(n, (300.0, 15.0))]
+        @test all(r -> site in (r.SRC, r.DST), eachrow(R.links))   # every link meets the junction's one node
+        @test site in [_fnat(n, p) for p in ((-300.0, 15.0), (300.0, 15.0), (-300.0, -15.0), (300.0, -15.0))]  # on the main road (RN13)
+        @test sort(R.nodemap.FAF5_IDX) == N.IDX && all(in(Set(R.nodes.IDX)), R.nodemap.IDX)
+        # the merged freeway link carries the dropped carriageway's time the other way, here equal to its own
+        k = findfirst(r -> isequal(r.SIGN, "I 40") && _fnat(n, (-2000.0, 15.0)) in (r.SRC, r.DST), eachrow(R.links))
+        @test k !== nothing && isapprox(R.links.BA_TIME[k], R.links.AB_TIME[k]; atol = 1e-3)
+    end
+    @testset "T2.7: a cloverleaf is one node, its twelve ramps gone, both freeways two-way" begin
+        n = _FNNet(); _fnfreeway!(n, [-2000.0, -400.0, -150.0, 150.0, 400.0, 2000.0])
+        _fnroad!(n, [(15.0, y) for y in (-2000.0, -400.0, -150.0, 150.0, 400.0, 2000.0)]; dir = 1, fc = 2, sign = "US 1", name = "US 1")
+        _fnroad!(n, [(-15.0, y) for y in (2000.0, 400.0, 150.0, -150.0, -400.0, -2000.0)]; dir = 1, fc = 2, sign = "US 1", name = "US 1")
+        for (f, l, x) in (((150.0, 15.0), (200.0, 200.0), (-15.0, 150.0)), ((-150.0, -15.0), (-200.0, -200.0), (15.0, -150.0)),
+                          ((-150.0, 15.0), (-200.0, 200.0), (15.0, 150.0)), ((150.0, -15.0), (200.0, -200.0), (-15.0, -150.0)))
+            _fnlink!(n, f, l; dir = 1, fc = 1, name = "RAMP"); _fnlink!(n, l, x; dir = 1, fc = 1, name = "RAMP")
+        end
+        for (a, b) in (((-400.0, 15.0), (15.0, -400.0)), ((15.0, 400.0), (400.0, 15.0)), ((400.0, -15.0), (-15.0, 400.0)),
+                       ((-15.0, -400.0), (-400.0, -15.0)))
+            _fnlink!(n, a, b; dir = 1, fc = 1, name = "I 40 EB TO US 1 NB")
+        end
+        N, L, R = _fnderive(n)
+        @test count(R.info.isramp) == 12
+        @test nrow(R.nodes) == 5 && nrow(R.links) == 4 && all(==(0), R.links.DIR)
+        @test sort(R.links.SIGN) == ["I 40", "I 40", "US 1", "US 1"]
+        @test sort(R.links.TYPE) == ["I", "I", "U", "U"] && count(R.links.INTERSTATE) == 2
+    end
+    @testset "T2.7: a divided at-grade crossing is one node and two two-way roads" begin
+        n = _FNNet()
+        _fnroad!(n, [(-2000.0, 15.0), (0.0, 15.0), (2000.0, 15.0)]; dir = 1, fc = 3, sign = "US 64", name = "US 64")
+        _fnroad!(n, [(2000.0, -15.0), (0.0, -15.0), (-2000.0, -15.0)]; dir = 1, fc = 3, sign = "US 64", name = "US 64")
+        _fnroad!(n, [(0.0, -2000.0), (0.0, -15.0), (0.0, 15.0), (0.0, 2000.0)]; fc = 4, sign = "SR 50")
+        N, L, R = _fnderive(n)
+        @test nrow(R.nodes) == 5 && nrow(R.links) == 4 && all(==(0), R.links.DIR)
+        @test count(isequal("US 64"), R.links.SIGN) == 2 && count(isequal("SR 50"), R.links.SIGN) == 2
+        # with no NAME on either side, classes 3 and up do not have "the same NAME" (rule C): both sides stay one-way
+        n2 = _FNNet()
+        _fnroad!(n2, [(-2000.0, 15.0), (0.0, 15.0), (2000.0, 15.0)]; dir = 1, fc = 3, sign = "US 64")
+        _fnroad!(n2, [(2000.0, -15.0), (0.0, -15.0), (-2000.0, -15.0)]; dir = 1, fc = 3, sign = "US 64")
+        _fnroad!(n2, [(0.0, -2000.0), (0.0, -15.0), (0.0, 15.0), (0.0, 2000.0)]; fc = 4, sign = "SR 50")
+        @test count(!=(0), _fnderive(n2)[3].links.DIR) == 4
+    end
+    @testset "T2.7: a downtown couplet with two street names stays two one-way links" begin
+        n = _FNNet()
+        _fnroad!(n, [(-50.0, -1000.0), (-50.0, 0.0), (-50.0, 200.0), (-50.0, 1000.0)]; dir = 1, fc = 3, name = "SPRING ST")
+        _fnroad!(n, [(50.0, 1000.0), (50.0, 200.0), (50.0, 0.0), (50.0, -1000.0)]; dir = 1, fc = 3, name = "PEACHTREE ST")
+        _fnroad!(n, [(-500.0, 0.0), (-50.0, 0.0), (50.0, 0.0), (500.0, 0.0)]; fc = 4, name = "A ST")
+        _fnroad!(n, [(-500.0, 200.0), (-50.0, 200.0), (50.0, 200.0), (500.0, 200.0)]; fc = 4, name = "B ST")
+        N, L, R = _fnderive(n)
+        sp = R.links[isequal.(R.links.NAME, "SPRING ST"), :]; pt = R.links[isequal.(R.links.NAME, "PEACHTREE ST"), :]
+        @test nrow(sp) == 3 && nrow(pt) == 3 && all(==(1), sp.DIR) && all(==(1), pt.DIR)
+        @test all(==("L"), R.links.TYPE)
+    end
+    @testset "RN15: a rest area on one carriageway is a junction the merged freeway passes" begin
+        n = _FNNet(); _fnfreeway!(n, [-5000.0, -300.0, 300.0, 5000.0])
+        _fnlink!(n, (-300.0, 15.0), (0.0, 150.0); dir = 1, fc = 1, name = "REST AREA RAMP")
+        _fnlink!(n, (0.0, 150.0), (300.0, 15.0); dir = 1, fc = 1, name = "REST AREA RAMP")
+        N, L, R = _fnderive(n)
+        @test R.info.J.kind == [:ramp]
+        @test nrow(R.nodes) == 3 && nrow(R.links) == 2 && all(==(0), R.links.DIR) && all(isequal("I 40"), R.links.SIGN)
+    end
+    @testset "RN15: an interchange with an unnamed road keeps the road connected" begin
+        n = _FNNet(); _fnfreeway!(n, [-2000.0, -300.0, 300.0, 2000.0])
+        _fnroad!(n, [(0.0, -800.0), (0.0, -60.0), (0.0, 60.0), (0.0, 800.0)]; fc = 5)   # no SIGN, no NAME
+        _fnlink!(n, (-300.0, 15.0), (0.0, 60.0); dir = 1, fc = 1, name = "RAMP"); _fnlink!(n, (0.0, 60.0), (300.0, 15.0); dir = 1, fc = 1, name = "RAMP")
+        _fnlink!(n, (300.0, -15.0), (0.0, -60.0); dir = 1, fc = 1, name = "RAMP"); _fnlink!(n, (0.0, -60.0), (-300.0, -15.0); dir = 1, fc = 1, name = "RAMP")
+        N, L, R = _fnderive(n)
+        @test count(==(:ramp), R.info.J.kind) == 2                 # the two halves of the diamond, one per carriageway
+        pos = Dict(x => i for (i, x) in enumerate(R.nodes.IDX))
+        p = LJ._uf(nrow(R.nodes))
+        for r in eachrow(R.links)
+            LJ._join!(p, pos[r.SRC], pos[r.DST])
+        end
+        @test length(unique(LJ._root!(p, i) for i in 1:nrow(R.nodes))) == 1
+        @test count(ismissing, R.links.SIGN) == 2 && count(isequal("I 40"), R.links.SIGN) == 2
+    end
+    @testset "D5: each stretch takes FAF5's time each way" begin
+        n = _FNNet()
+        _fnroad!(n, [(-2000.0, 15.0), (-1000.0, 15.0), (0.0, 15.0), (2000.0, 15.0)]; dir = 1, fc = 1, sign = "I 40", name = "I 40")
+        _fnroad!(n, [(2100.0, -15.0), (-2100.0, -15.0)]; dir = 1, fc = 1, sign = "I 40", name = "I 40")   # longer: dropped
+        N, L = _fnfull(n)
+        L.AB_TIME[4] = 5.0                                         # the westbound carriageway's one link: 5 minutes
+        R = LJ._faf5net(N, L)
+        @test nrow(R.links) == 3 && all(==(0), R.links.DIR)
+        @test sum(R.links.BA_TIME) ≈ 5.0 atol = 1e-3              # shared over the three kept links by DIST
+        @test sort(R.links.AB_TIME) ≈ sort(round.(L.AB_TIME[1:3], digits = 4))
+        @test R.links.BA_TIME ./ R.links.DIST ≈ fill(5.0 / sum(L.DIST[1:3]), 3) rtol = 1e-3
+    end
+
+    @testset "on FAF5 as Logjam ships it" begin
+        N = faf5nodes(); L = faf5links()
+        R = LJ._faf5net(N, L)
+        I = R.info; C = I.C; J = I.J
+        nodes, links, nodemap = R.nodes, R.links, R.nodemap
+        der = Set(nodes.IDX)
+        # T2.4, T4.7: the columns, osm_roads' eight first, typed
+        @test names(links) == ["SRC", "DST", "DIST", "SPEED", "FCLASS", "DIR", "NAME", "SOURCE", "SIGN", "TYPE", "INTERSTATE",
+                               "AB_TIME", "BA_TIME", "STFIP", "COFIP", "URBAN"]
+        @test names(links)[1:8] == first.(LJ._OSM_LINK_TYPES)[1:8]
+        @test eltype.(eachcol(links)) == [Int, Int, Float64, Int, Int, Int, Union{Missing,String}, String, Union{Missing,String},
+                                          Union{Missing,String}, Bool, Float64, Float64, Int, Int, Union{Missing,Int}]
+        @test names(nodes) == ["IDX", "LON", "LAT", "SOURCE"] && names(nodemap) == ["FAF5_IDX", "IDX"]
+        @test all(x -> ismissing(x) || x in ("I", "U", "S", "L"), links.TYPE)
+        for (s, t) in (("I 40", "I"), ("US 1", "U"), ("NC 54", "S"))
+            @test count(isequal(s), links.SIGN) > 0 && all(isequal(t), links.TYPE[isequal.(links.SIGN, s)])
+        end
+        @test all(x -> ismissing(x) || (v = split(x, ';'); issorted(v) && allunique(v)), links.SIGN)
+        @test all(==("FAF5"), links.SOURCE) && all(in((-1, 0, 1)), links.DIR)
+        @test issorted(collect(zip(links.SRC, links.DST))) && issorted(nodes.IDX) && issorted(nodemap.FAF5_IDX)
+        flag(k) = LJ._isinterstate(L.SIGN[k], L.NAME[k], L.FCLASS[k])
+        @test all(links.INTERSTATE[r] == (flag(k) || (q = abs(I.role[k]); q > 0 && any(flag, C.chains[C.drop[q]])))
+                  for (r, k) in enumerate(I.ks))                  # D9: either carriageway
+        # T2.1: no ramp survives
+        @test !any(I.isramp[I.ks])
+        # T2.2: each junction is one node
+        first_img = zeros(Int, length(J.site)); ok = true
+        for v in eachindex(J.cl)
+            c = J.cl[v]; c == 0 && continue
+            first_img[c] == 0 ? (first_img[c] = I.img[v]) : (ok &= first_img[c] == I.img[v])
+        end
+        @test ok
+        # T2.3: an accepted pair's kept links two-way; a rejected pair's and an unpaired stretch's links one-way
+        pos = Dict(k => r for (r, k) in enumerate(I.ks))
+        inpair = falses(length(C.chains))
+        for (i, j) in C.pairs
+            inpair[i] = inpair[j] = true
+        end
+        @test all(links.DIR[pos[k]] == 0 for (q, _) in enumerate(C.pairs) if C.accept[q] for k in C.chains[C.keep[q]] if haskey(pos, k))
+        @test all(links.DIR[pos[k]] != 0 for (q, (i, j)) in enumerate(C.pairs) if !C.accept[q] for k in [C.chains[i]; C.chains[j]] if haskey(pos, k))
+        @test all(links.DIR[pos[k]] != 0 for i in eachindex(C.chains) if !inpair[i] for k in C.chains[i] if haskey(pos, k))
+        # T2.5 (RN19): the node map covers every FAF5 node once; every IDX it gives is a derived node; the IDX is
+        # missing exactly for the nodes of FAF5's components made only of ramps
+        @test nrow(nodemap) == nrow(N) && allunique(nodemap.FAF5_IDX)
+        @test all(x -> ismissing(x) || x in der, nodemap.IDX)
+        T = I.T
+        onlyramps = trues(maximum(I.fcomp))
+        for k in 1:T.nL
+            I.isramp[k] || (onlyramps[I.fcomp[T.S[k]]] = false)
+        end
+        rows = Dict(x => v for (v, x) in enumerate(N.IDX))
+        miss = [rows[x] for x in nodemap.FAF5_IDX[ismissing.(nodemap.IDX)]]
+        @test count(onlyramps) == 145 && length(miss) == 310 && all(v -> onlyramps[I.fcomp[v]], miss)
+        @test count(v -> onlyramps[I.fcomp[v]], 1:nrow(N)) == 310
+        # T2.9 (RN5, RN16): by the stretches through N0's start nodes
+        row = Dict(N.IDX[v] => v for v in 1:nrow(N))
+        qof = zeros(Int, length(C.chains))
+        for (q, (i, j)) in enumerate(C.pairs)
+            qof[i] = qof[j] = q
+        end
+        verdict(s, r) = [I.inside0[i] ? :inside : qof[i] == 0 ? :none : C.accept[qof[i]] ? :accept : :reject
+                         for i in eachindex(C.path) if I.rkey[C.R[i]] == r && row[s] in C.path[i][1:end-1]]
+        for (s, r) in ((1460024, "I 277"), (1458948, "I 277"), (1459254, "I 77"), (1459250, "I 77"), (1459505, "US 74"),
+                       (1459511, "US 74"), (1170196, "I 20"), (1170199, "I 20"), (1180446, "I 75"), (1180702, "I 75"))
+            v = verdict(s, r)
+            @test !isempty(v) && all(in((:accept, :inside)), v)  # the freeways merge, or collapse into the junction
+        end
+        for (s, r) in ((1170994, "US 29"), (1170989, "US 19"), (1174060, "US 19"), (1116440, "SR 61"), (1117962, "SR 92"),
+                       (539176, "I 35 FRONTAGE RD"), (521782, "I 410 FRONTAGE RD"))
+            v = verdict(s, r)                                      # the couplets and the frontage roads stay one-way: no
+            @test !isempty(v) && !(:accept in v)                   # pair accepted, and every link they keep one-way
+            @test all(links.DIR[pos[k]] != 0 for i in eachindex(C.path) if I.rkey[C.R[i]] == r && row[s] in C.path[i][1:end-1]
+                      for k in C.chains[i] if haskey(pos, k))
+        end
+        tal = [i for i in eachindex(C.chains) if isequal(L.SIGN[C.chains[i][1]], "FL 363") &&
+               occursin(r"DUVAL|BRONOUGH", uppercase(coalesce(L.NAME[C.chains[i][1]], "")))]
+        @test !isempty(tal) && all(i -> qof[i] > 0 && !C.accept[qof[i]], tal)
+        @test verdict(1570829, "US 401") == [:accept] && verdict(1570821, "US 401") == [:accept]   # RN16's known cost
+        # T2.6: counts by class, against FAF5's (printed for the report)
+        for (lab, FC, DR, DS, S, D) in (("FAF5", L.FCLASS, L.DIR, L.DIST, L.SRC, L.DST),
+                                        ("derived", links.FCLASS, links.DIR, links.DIST, links.SRC, links.DST))
+            println("  faf5net ", lab, " by class (links, miles, one-way %, nodes): ", join(
+                [(s = findall(x -> min(x, 5) == c, FC);
+                  string(c == 5 ? "5+" : c, " ", length(s), " / ", round(Int, sum(DS[s]; init = 0.0)), " / ",
+                         isempty(s) ? 0.0 : round(100count(!=(0), DR[s]) / length(s), digits = 1), " / ", length(unique([S[s]; D[s]]))))
+                 for c in 0:5], "; "))
+        end
+        println("  faf5net derived: ", nrow(nodes), " nodes, ", nrow(links), " links; pairs ", length(C.pairs), " found, ",
+                count(C.accept), " accepted; node map IDX missing ", count(ismissing, nodemap.IDX))
+        @test nrow(nodes) == 145_722 && nrow(links) == 210_119    # N2 (the measured draft J + (i) + (ii) + fuzzy, under RN17)
+        @test length(C.pairs) == 22_464 && count(C.accept) == 20_108
     end
 end

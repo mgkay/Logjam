@@ -1,6 +1,7 @@
-# faf5net.jl -- the derived FAF5 road network (CR 19), part one: what route a link carries, which links are
-# Interstates, what a ramp is, and where the junctions are (PCV N1, his rulings RN3 to RN10). Internal: nothing here is
-# exported or public. The derivation (tools/v0_3_2/make_faf5net.jl, N2) builds on these functions, and from N4 the
+# faf5net.jl -- the derived FAF5 road network (CR 19). Part one: what route a link carries, which links are
+# Interstates, what a ramp is, and where the junctions are (PCV N1, his rulings RN3 to RN10, RN12 as narrowed by RN17).
+# Part two: the derivation itself (PCV N2, his rulings RN13 to RN19), `_faf5net`, which tools/v0_3_2/make_faf5net.jl
+# runs to write the shipped files. Internal: nothing here is exported or public (the accessors are N3). From N4 the
 # map's road layer reads the same ramp rule, so the derivation and the map agree on what a ramp is. Until then the map
 # keeps v0.3.0's rule (ext/LogjamMapExt.jl), which is the first part of the one here.
 #
@@ -434,4 +435,583 @@ function _junctions(N, L, isramp)
     end
     site = [argmin(v -> dgc(_center(T, m), (T.lon[v], T.lat[v])), m) for m in mem]
     return (; cl, site, kind)
+end
+
+# ---------------------------------------------------------------------------------------------------------------------
+# The derivation (PCV N2, his rulings of round n2: RN13 to RN19)
+# ---------------------------------------------------------------------------------------------------------------------
+
+const _PAIR_ENDS = 2.0                  # miles: N0's bound between the facing ends of a route's two directions
+const _FUZZY_ENDS = 0.5                 # miles: ends at two different junctions this close count as one end (RN13)
+const _SEP_FAST = 1000.0                # meters: rule C, a pair of classes 0 to 2 (RN5)
+const _SEP_SLOW = 100.0                 # meters: rule C, a pair of classes 3 and up, with a NAME in common (RN5, RN16)
+const _FRONTAGE = r"FRONTAGE|SERVICE|ACCESS RD"   # a frontage or service road pair stays one-way (RN5)
+const _TWO_SIDED = 120                  # degrees: a route's one-way links this far apart at a junction are both directions
+const _TURN_BACK = 135                  # degrees: a link in and a link out this far apart turn back on each other
+const _M_PER_MI = 1609.344
+const _MI_PER_DEG = _EARTH_MI * pi / 180
+
+_bearing(T, a, b) = atand(T.lat[b] - T.lat[a], (T.lon[b] - T.lon[a]) * cosd(T.lat[a]))
+_angle(x, y) = abs(mod(x - y + 180, 360) - 180)
+
+# RN15: every ramp cluster (a connected component of ramp links) that meets no junction becomes a junction of its own
+# (kind :ramp, its node the member nearest the members' center), and one that meets exactly one junction joins it. An
+# interchange with an unnamed road and a rest area are such clusters.
+function _rampjunctions(T, J, isramp)
+    cl = copy(J.cl); site = copy(J.site); kind = copy(J.kind)
+    comp, nc = _components(T, isramp)
+    mem = [Int[] for _ in 1:nc]
+    for v in 1:T.nN
+        comp[v] > 0 && push!(mem[comp[v]], v)
+    end
+    for c in 1:nc
+        js = unique(cl[v] for v in mem[c] if cl[v] > 0)
+        if isempty(js)
+            push!(kind, :ramp); push!(site, argmin(v -> dgc(_center(T, mem[c]), (T.lon[v], T.lat[v])), mem[c]))
+            cl[mem[c]] .= length(site)
+        elseif length(js) == 1
+            for v in mem[c]
+                cl[v] == 0 && (cl[v] = js[1])
+            end
+        end
+    end
+    return (; cl, site, kind)
+end
+
+# RN13 (i): a junction's node is on its main road, the member touching a routed link of the junction's lowest FCLASS
+# that lies nearest the members' center (ties to the first member).
+function _mainsites(T, L, J, isramp, rid)
+    best = fill(typemax(Int), T.nN)
+    for k in 1:T.nL
+        (isramp[k] || rid[k] == 0) && continue
+        for v in (T.S[k], T.D[k])
+            best[v] = min(best[v], L.FCLASS[k])
+        end
+    end
+    mem = [Int[] for _ in eachindex(J.site)]
+    for v in 1:T.nN
+        J.cl[v] > 0 && push!(mem[J.cl[v]], v)
+    end
+    site = copy(J.site)
+    for c in eachindex(mem)
+        b = minimum(best[v] for v in mem[c])
+        b == typemax(Int) && continue
+        ctr = _center(T, mem[c])
+        site[c] = argmin(v -> dgc(ctr, (T.lon[v], T.lat[v])), [v for v in mem[c] if best[v] == b])
+    end
+    return (; cl = J.cl, site, kind = J.kind)
+end
+
+# The (junction, route) pairs where both directions of the route meet the junction: two of the route's one-way links
+# at its members run more than 120 degrees apart.
+function _twosided(T, J, ow, rid, tl, hd, off, adj)
+    br = [Dict{Int,Vector{Float64}}() for _ in eachindex(J.site)]
+    for v in 1:T.nN
+        c = J.cl[v]; c == 0 && continue
+        for k in view(adj, off[v]:off[v+1]-1)
+            ow[k] && push!(get!(br[c], rid[k], Float64[]), _bearing(T, tl[k], hd[k]))
+        end
+    end
+    two = Set{Tuple{Int,Int}}()
+    for c in eachindex(br), (r, b) in br[c]
+        any(_angle(b[i], b[j]) > _TWO_SIDED for i in eachindex(b) for j in i+1:lastindex(b)) && push!(two, (c, r))
+    end
+    return two
+end
+
+"""
+    _stretches(T, L, isramp, rid, J, off, adj) -> NamedTuple
+
+Each route's one-way links (not ramps) as stretches from stop to stop (RN13, D1: 4.1's junction-to-junction search per
+route). A stretch follows its route's one-way links in the direction of travel through every node that is not a stop
+for that route. A stop for route r: a member of a junction both directions of r meet (`_twosided`); or any other node
+where r's one-way links are not exactly one in and one out (a branch, an end), where r also has a two-way link (the road
+becomes undivided), or where the one in and the one out turn back on each other (more than 135 degrees). A junction
+only one direction of r meets is passed. A loop of one route with no stop is one stretch (`cyc`). The end identity is
+the junction for a stop in a two-sided junction, else 0.
+"""
+function _stretches(T, L, isramp, rid, J, off, adj)
+    nL = T.nL
+    ow = [!isramp[k] && rid[k] != 0 && L.DIR[k] != 0 for k in 1:nL]
+    tl = [L.DIR[k] == -1 ? T.D[k] : T.S[k] for k in 1:nL]
+    hd = [L.DIR[k] == -1 ? T.S[k] : T.D[k] for k in 1:nL]
+    two = _twosided(T, J, ow, rid, tl, hd, off, adj)
+    stopid(v, r) = (c = J.cl[v]; c > 0 && (c, r) in two ? c : 0)
+    function isstop(v, r)
+        stopid(v, r) > 0 && return true
+        nin = 0; nout = 0; kin = 0; kout = 0
+        for k in view(adj, off[v]:off[v+1]-1)
+            (rid[k] == r && !isramp[k]) || continue
+            ow[k] || return true
+            hd[k] == v && (nin += 1; kin = k)
+            tl[k] == v && (nout += 1; kout = k)
+        end
+        (nin == 1 && nout == 1 && kin != kout) || return true
+        return _angle(_bearing(T, tl[kin], hd[kin]), _bearing(T, tl[kout], hd[kout])) > _TURN_BACK
+    end
+    function outlink(v, r)
+        for k in view(adj, off[v]:off[v+1]-1)
+            ow[k] && rid[k] == r && tl[k] == v && return k
+        end
+        return 0
+    end
+    used = falses(nL); st = Vector{Int}[]; cyc = Bool[]
+    for pass in 1:2                     # from every stop first; then the loops no stop reaches
+        for k in 1:nL
+            (ow[k] && !used[k]) || continue
+            pass == 1 && !isstop(tl[k], rid[k]) && continue
+            seq = [k]; used[k] = true
+            while pass == 2 || !isstop(hd[seq[end]], rid[k])
+                nx = outlink(hd[seq[end]], rid[k])
+                (nx == 0 || used[nx]) && break
+                push!(seq, nx); used[nx] = true
+            end
+            push!(st, seq); push!(cyc, pass == 2)
+        end
+    end
+    path = [[tl[seq[1]]; [hd[k] for k in seq]] for seq in st]
+    R = [rid[seq[1]] for seq in st]
+    i0 = [cyc[i] ? 0 : stopid(path[i][1], R[i]) for i in eachindex(st)]
+    i1 = [cyc[i] ? 0 : stopid(path[i][end], R[i]) for i in eachindex(st)]
+    return (; st, path, R, i0, i1, cyc, two)
+end
+
+# The opposing stretches of one route whose end identities match crosswise (equal, or two different junctions within
+# 0.5 mi, RN13), the facing ends within 2 mi of each other, each the other's best by the sum of the two end distances
+# (ties to the lower stretch number). Stretches with `skip` take no part.
+function _pairstretches(T, path, R, i0, i1, skip, cl)
+    nst = length(path); h = _PAIR_ENDS
+    same(a, b, x, y) = a == b || (cl[x] > 0 && cl[y] > 0 && cl[x] != cl[y] && _dmi(T, x, y) <= _FUZZY_ENDS)
+    grid = Dict{Tuple{Int,NTuple{3,Int}},Vector{Int}}()
+    for i in 1:nst
+        skip[i] && continue
+        s = path[i][1]
+        push!(get!(grid, (R[i], _cube(_xyz(T.lon[s], T.lat[s]), h)), Int[]), i)
+    end
+    best = zeros(Int, nst); bsc = fill(Inf, nst)
+    for i in 1:nst
+        skip[i] && continue
+        s, e = path[i][1], path[i][end]
+        q = _cube(_xyz(T.lon[e], T.lat[e]), h)
+        for dx in -1:1, dy in -1:1, dz in -1:1, j in get(grid, (R[i], (q[1] + dx, q[2] + dy, q[3] + dz)), Int[])
+            j == i && continue
+            (same(i1[i], i0[j], e, path[j][1]) && same(i0[i], i1[j], s, path[j][end])) || continue
+            d1 = _dmi(T, e, path[j][1]); d1 <= h || continue
+            d2 = _dmi(T, s, path[j][end]); d2 <= h || continue
+            sc = d1 + d2
+            (sc < bsc[i] || (sc == bsc[i] && j < best[i])) && (bsc[i] = sc; best[i] = j)
+        end
+    end
+    return [(i, best[i]) for i in 1:nst if best[i] > i && best[best[i]] == i]
+end
+
+_median(x) = (s = sort(x); n = length(s); isodd(n) ? s[(n+1)÷2] : (s[n÷2] + s[n÷2+1]) / 2)
+
+# The distance (miles) from node v to the segment from a to b, on a plane through v (N0's measure).
+function _pseg(T, v, a, b)
+    c = cosd(T.lat[v])
+    ax = (T.lon[a] - T.lon[v]) * c * _MI_PER_DEG; ay = (T.lat[a] - T.lat[v]) * _MI_PER_DEG
+    bx = (T.lon[b] - T.lon[v]) * c * _MI_PER_DEG; by = (T.lat[b] - T.lat[v]) * _MI_PER_DEG
+    dx = bx - ax; dy = by - ay; l2 = dx * dx + dy * dy
+    t = l2 == 0 ? 0.0 : clamp(-(ax * dx + ay * dy) / l2, 0.0, 1.0)
+    return hypot(ax + t * dx, ay + t * dy)
+end
+
+# The median separation (meters) of two stretches: from up to 60 evenly spaced nodes of the first to the second's line.
+function _separation(T, pa, pb)
+    n = length(pa)
+    sel = n <= 60 ? (1:n) : round.(Int, range(1, n, length = 60))
+    return _median(sort!([minimum(_pseg(T, pa[i], pb[s], pb[s+1]) for s in 1:length(pb)-1) for i in sel]) .* _M_PER_MI)
+end
+
+# A stretch's class, the FCLASS most of its links have (ties to the lower class).
+function _stretchclass(L, seq)
+    cs = sort([L.FCLASS[k] for k in seq])
+    best, bc, i = cs[1], 0, 1
+    while i <= length(cs)
+        j = i
+        while j < length(cs) && cs[j+1] == cs[i]
+            j += 1
+        end
+        j - i + 1 > bc && (best = cs[i]; bc = j - i + 1)
+        i = j + 1
+    end
+    return best
+end
+
+# Each route key's text, by number.
+function _routekeys(L, rid)
+    keys = fill("", maximum(rid; init = 0))
+    for k in eachindex(rid)
+        r = rid[k]
+        (r == 0 || !isempty(keys[r])) && continue
+        keys[r] = _route(L.SIGN[k], L.NAME[k])
+    end
+    return keys
+end
+
+"""
+    _carriageways(T, L, isramp, rid, J, off, adj, rkey) -> NamedTuple
+
+The stretches (`_stretches`), their pairs (`_pairstretches`) and rule C's verdict on each pair (D3, RN5, RN16): a pair
+of classes 0 to 2 (the lower of the two stretches' classes) is one divided road when its median separation is at most
+1,000 m; a pair of classes 3 and up when it is at most 100 m and the two sides have a NAME in common; a frontage or
+service road pair never. Of an accepted pair the shorter stretch is kept (D1; ties to the first). A stretch with both
+ends in one junction lies inside it (`inside`) and takes no part.
+"""
+function _carriageways(T, L, isramp, rid, J, off, adj, rkey)
+    S = _stretches(T, L, isramp, rid, J, off, adj)
+    chains, path, R, i0, i1 = S.st, S.path, S.R, S.i0, S.i1
+    inside = [i0[i] > 0 && i0[i] == i1[i] for i in eachindex(chains)]
+    pairs = _pairstretches(T, path, R, i0, i1, inside .| S.cyc, J.cl)
+    cls = [_stretchclass(L, seq) for seq in chains]
+    len = [sum(L.DIST[k] for k in seq) for seq in chains]
+    nameset(seq) = sort!(unique!([n for n in (_keytext(L.NAME[k]) for k in seq) if n !== nothing]))
+    np = length(pairs)
+    sep = zeros(np); pcls = zeros(Int, np); same = falses(np); front = falses(np); accept = falses(np)
+    keep = zeros(Int, np); drop = zeros(Int, np)
+    for (q, (i, j)) in enumerate(pairs)
+        sep[q] = _separation(T, path[i], path[j])
+        pcls[q] = min(cls[i], cls[j])
+        a, b = nameset(chains[i]), nameset(chains[j])
+        same[q] = !isempty(intersect(a, b))
+        front[q] = any(x -> occursin(_FRONTAGE, x), [rkey[R[i]]; a; b])
+        accept[q] = !front[q] && (pcls[q] <= 2 ? sep[q] <= _SEP_FAST : (sep[q] <= _SEP_SLOW && same[q]))
+        keep[q], drop[q] = len[i] <= len[j] ? (i, j) : (j, i)
+    end
+    return (; chains, path, R, i0, i1, inside, cyc = S.cyc, two = S.two, cls, len, pairs, sep, pcls, same, front, accept,
+            keep, drop)
+end
+
+"""
+    _collapse(T, N, J, isramp, C, gone, off, adj) -> (img, rule)
+
+The node each node of the network is collapsed to (D6), given which links go before collapsing (`gone`: ramps, the
+longer stretch of each accepted pair, the stretches removed inside a junction). Returns each node's image (a row of
+`N`) and the rule that set it: 0 itself, 1 its junction's node, 2 the facing ends of an accepted pair outside every
+junction, 3 a node of a dropped stretch, 4 an inner node of a stretch removed inside a junction, 5 a node only ramps
+touch, 6 a junction moved.
+
+- A junction's members are one node, its site (`_mainsites`); the facing ends of each accepted pair join it (D3), never
+  joining two junctions; facing ends outside every junction are one node, the member on a remaining link nearest the
+  members' center (ties to the lower IDX).
+- A junction that only the dropped direction meets moves to the kept stretch's node nearest its site (a node in no
+  junction where there is one); one that lies on a stretch removed inside another junction moves to that junction's
+  node; and one at the dropped end of a pair whose ends are two junctions (RN13's 0.5 mi) moves to the kept end's.
+- A dropped stretch's inner nodes go to the nearest node of the stretch kept in its place, a removed inside stretch's
+  inner nodes to its junction's node, and a node only ramps touch, outside every junction, to the nearest of the nodes
+  its ramp cluster reaches that remain.
+"""
+function _collapse(T, N, J, isramp, C, gone, off, adj)
+    nN = T.nN
+    p = _uf(nN)
+    for v in 1:nN
+        J.cl[v] > 0 && _join!(p, v, J.site[J.cl[v]])
+    end
+    jr = zeros(Int, nN)                 # the junction of each set's root, 0 for none
+    for v in 1:nN
+        J.cl[v] > 0 && (jr[_root!(p, v)] = J.cl[v])
+    end
+    for (q, (i, j)) in enumerate(C.pairs)
+        C.accept[q] || continue
+        for (x, y) in ((C.path[i][1], C.path[j][end]), (C.path[i][end], C.path[j][1]))
+            rx, ry = _root!(p, x), _root!(p, y)
+            rx == ry && continue
+            jx, jy = jr[rx], jr[ry]
+            jx > 0 && jy > 0 && jx != jy && continue
+            _join!(p, rx, ry); jr[_root!(p, rx)] = max(jx, jy)
+        end
+    end
+    onlink = falses(nN)
+    for k in 1:T.nL
+        gone[k] || (onlink[T.S[k]] = onlink[T.D[k]] = true)
+    end
+    members = Dict{Int,Vector{Int}}()
+    for v in 1:nN
+        r = _root!(p, v)
+        (r != v || J.cl[v] > 0) && push!(get!(members, r, Int[]), v)
+    end
+    img = collect(1:nN); rule = zeros(Int8, nN)
+    for r in sort!(collect(keys(members)))
+        m = members[r]; r in m || push!(m, r); sort!(m)
+        js = unique(J.cl[v] for v in m if J.cl[v] > 0)
+        if !isempty(js)
+            s = J.site[js[1]]
+        else
+            ctr = _center(T, m)
+            cand = filter(v -> onlink[v], m); isempty(cand) && (cand = m)
+            s = argmin(v -> (dgc(ctr, (T.lon[v], T.lat[v])), N.IDX[v]), cand)
+        end
+        for v in m
+            img[v] = s; rule[v] = isempty(js) ? 2 : 1
+        end
+    end
+    near(v, cands) = argmin(w -> (dgc((T.lon[v], T.lat[v]), (T.lon[w], T.lat[w])), N.IDX[w]), cands)
+    move = Dict{Int,Int}()              # a junction -> the node it moves to
+    for (q, (i, j)) in enumerate(C.pairs)
+        C.accept[q] || continue
+        kp, dp = C.path[C.keep[q]], C.path[C.drop[q]]
+        for v in dp[2:end-1]
+            c = J.cl[v]
+            (c == 0 || haskey(move, c)) && continue
+            cand = [w for w in kp[2:end-1] if J.cl[w] == 0]
+            isempty(cand) && (cand = kp)
+            move[c] = near(J.site[c], cand)
+        end
+    end
+    for (i, inside) in enumerate(C.inside)
+        inside || continue
+        c0 = J.cl[C.path[i][1]]
+        for v in C.path[i][2:end-1]
+            c = J.cl[v]
+            (c == 0 || c == c0 || haskey(move, c)) && continue
+            move[c] = J.site[c0]
+        end
+    end
+    for (q, (i, j)) in enumerate(C.pairs)
+        C.accept[q] || continue
+        kp, dp = C.path[C.keep[q]], C.path[C.drop[q]]
+        for (x, y) in ((kp[1], dp[end]), (kp[end], dp[1]))
+            cx, cy = J.cl[x], J.cl[y]
+            (cx > 0 && cy > 0 && cx != cy && !haskey(move, cy)) || continue
+            move[cy] = J.site[cx]
+        end
+    end
+    target = Dict{Int,Int}()            # an old image (a junction's node) -> its new one
+    for c in sort!(collect(keys(move)))
+        target[img[J.site[c]]] = img[move[c]]
+    end
+    function resolve(x)
+        n = 0
+        while haskey(target, x) && target[x] != x && n < 100
+            x = target[x]; n += 1
+        end
+        return x
+    end
+    if !isempty(target)
+        for v in 1:nN
+            haskey(target, img[v]) && (img[v] = resolve(img[v]); rule[v] = 6)
+        end
+    end
+    for (i, inside) in enumerate(C.inside)
+        inside || continue
+        s = img[J.site[J.cl[C.path[i][1]]]]
+        for v in C.path[i][2:end-1]
+            J.cl[v] == 0 && (img[v] = s; rule[v] = 4)
+        end
+    end
+    for (q, (i, j)) in enumerate(C.pairs)
+        C.accept[q] || continue
+        cand = unique(C.path[C.keep[q]])
+        for v in C.path[C.drop[q]][2:end-1]
+            J.cl[v] == 0 && (img[v] = img[near(v, cand)]; rule[v] = 3)
+        end
+    end
+    comp, nc = _components(T, isramp)
+    reach = [Int[] for _ in 1:nc]
+    for v in 1:nN
+        comp[v] > 0 && onlink[v] && push!(reach[comp[v]], v)
+    end
+    for v in 1:nN
+        (J.cl[v] == 0 && comp[v] > 0 && rule[v] == 0 && !onlink[v]) || continue
+        all(k -> isramp[k], view(adj, off[v]:off[v+1]-1)) || continue
+        cand = unique(img[w] for w in reach[comp[v]])
+        isempty(cand) && continue
+        img[v] = near(v, cand); rule[v] = 5
+    end
+    return img, rule
+end
+
+# A SIGN as the derived network writes it: FAF5's text, with an Interstate's direction letter dropped (RN9).
+function _signtext(sign)
+    s = _keytext(sign)
+    s === nothing && return nothing
+    m = match(_SIGN_DIR, s)
+    return m === nothing ? s : String(m.captures[1])
+end
+
+# A US route ("US 1", "US 1 A", "US 70 B") and a state route ("SR 7", "NC 54", "MA 6A", Missouri's "MO AW", and in a
+# NAME Michigan's "M 14" and "STATE HWY 7").
+const _US_DESIG = r"^US[ -]?\d"
+const _STATE_DESIG = Regex("^(?:SR|STATE ROUTE|STATE HWY|STATE HIGHWAY|STATE ROAD|M|" * join(_STATE_CODES, "|") *
+                           ")(?: [A-Z\\d]|-?\\d)")
+
+"""
+    _roadtype(signs, name, interstate) -> Union{String, Missing}
+
+Matlog's road type letter (his ruling RD4; Matlog's `usrdlink` Type): "I" an Interstate (the flag), "U" a US route, "S"
+a state route, "L" a road with a NAME and no route designation, `missing` (blank) otherwise: a Business Interstate, a
+county or farm-to-market route, any other designation ("HWY 7"), an unnamed road. `signs` are the link's SIGNs (I over
+U over S when it has several); a link with none is read by its NAME when the NAME is a designation.
+"""
+function _roadtype(signs, name, interstate)
+    interstate && return "I"
+    n = _keytext(name)
+    des = !isempty(signs) ? signs : (n !== nothing && occursin(_NAME_DESIG, n)) ? [n] : String[]
+    any(s -> occursin(_US_DESIG, s), des) && return "U"
+    any(s -> occursin(_STATE_DESIG, s), des) && return "S"
+    return isempty(des) && n !== nothing ? "L" : missing
+end
+
+# A link's travel time in its direction of travel (FAF5's AB_TIME or BA_TIME).
+_traveltime(L, k) = L.DIR[k] == -1 ? L.BA_TIME[k] : L.AB_TIME[k]
+
+"""
+    _faf5net(N, L) -> (; nodes, links, nodemap, info)
+
+The derived road network of a FAF5-shaped network (CR 19, PCV N2, his rulings RN13 to RN19), pure: `N` and `L` are
+read, never changed. `N` has IDX, LON and LAT; `L` has SRC, DST, DIST, DIR, FCLASS, SIGN, NAME, SPEED, AB_SPEED,
+BA_SPEED, AB_TIME, BA_TIME, STFIP, COFIP and URBAN, as `faf5nodes()` and `faf5links()` do.
+
+1. Ramps (`_ramp_links`) and junctions (`_junctions`), every ramp cluster outside them a junction too (RN15), each
+   junction's node on its main road (RN13).
+2. Carriageways (`_carriageways`): each route's two directions paired from stop to stop and judged by rule C. Of an
+   accepted pair the shorter stretch is kept, its links two-way (`DIR = 0`), and the other's links go; the kept link's
+   own direction keeps FAF5's time and the other direction gets the dropped stretch's total time shared over the kept
+   links by DIST (D5), so each stretch takes FAF5's time each way. A rejected or unpaired stretch keeps its direction
+   and times. A stretch inside one junction goes, unless it is that junction's only link or another road meets one of
+   its inner nodes (RN13).
+3. Junctions collapse (`_collapse`, D1, D6): each becomes one node; ramps go; a link whose two ends become one node
+   goes; of links on one pair of nodes with one route and the same directions the shortest stays.
+4. Stubs (RN14): a link end that moves adds the great-circle distance it moved to DIST, and each direction's time
+   grows in the same proportion (a link of DIST 0 adds the stub at FAF5's AB_SPEED and BA_SPEED).
+5. Attributes (D11, RD4): links `SRC`, `DST` (FAF5 IDX, FAF5's direction), `DIST`, `SPEED`, `FCLASS` (the lower of the
+   two carriageways'), `DIR`, `NAME`, `SOURCE` ("FAF5"), `SIGN` (the routes both carriageways carry, sorted and
+   `;`-joined, RN2), `TYPE` (`_roadtype`), `INTERSTATE` (either carriageway, D9), `AB_TIME`, `BA_TIME`, `STFIP`,
+   `COFIP`, `URBAN`; nodes `IDX`, `LON`, `LAT`, `SOURCE`; node map `FAF5_IDX`, `IDX`, every FAF5 node once, `IDX`
+   missing for a node whose FAF5 component keeps no derived link (FAF5's components made only of ramps, RN19). DIST
+   and the times are rounded to 4 decimals; every table is sorted by its keys.
+
+`info` holds the intermediate results the tests and the report read (`C.inside` the stretches removed inside a
+junction, `inside0` every stretch with both ends in one junction, the ones kept by RN13 included).
+"""
+function _faf5net(N, L)
+    isramp = _ramp_links(N, L)
+    T = _topology(N, L)
+    rid = _routeids(L, isramp)
+    J = _mainsites(T, L, _rampjunctions(T, _junctions(N, L, isramp), isramp), isramp, rid)
+    off, adj = _incidence(T)
+    rkey = _routekeys(L, rid)
+    C = _carriageways(T, L, isramp, rid, J, off, adj, rkey)
+    nL = T.nL
+    role = zeros(Int, nL); gone = copy(isramp)          # role: 0 alone, q kept for accepted pair q, -q dropped
+    for (i, inside) in enumerate(C.inside)
+        inside && (gone[C.chains[i]] .= true)
+    end
+    for (q, (i, j)) in enumerate(C.pairs)
+        C.accept[q] || continue
+        role[C.chains[C.keep[q]]] .= q; role[C.chains[C.drop[q]]] .= -q
+        gone[C.chains[C.drop[q]]] .= true
+    end
+    # RN13 (ii): a stretch inside one junction stays when the junction keeps no other link or a road meets its inner nodes
+    other = zeros(Int, length(J.site))
+    for k in 1:nL
+        gone[k] && continue
+        for v in (T.S[k], T.D[k])
+            J.cl[v] > 0 && (other[J.cl[v]] += 1)
+        end
+    end
+    inside0 = C.inside; inside = copy(inside0)
+    for (i, ins) in enumerate(inside0)
+        ins || continue
+        seq = C.chains[i]
+        cross = any(v -> any(k -> !(k in seq) && !isramp[k], view(adj, off[v]:off[v+1]-1)), C.path[i][2:end-1])
+        if other[C.i0[i]] == 0 || cross
+            inside[i] = false; gone[seq] .= false
+        end
+    end
+    C = merge(C, (; inside))
+    img, rule = _collapse(T, N, J, isramp, C, gone, off, adj)
+    # the pair's other side, per accepted pair: its signs, flag, class and time; the kept side's length
+    np = length(C.pairs)
+    osign = [String[] for _ in 1:np]; oflag = falses(np); ocls = zeros(Int, np); otime = zeros(np); klen = zeros(np)
+    for q in 1:np
+        C.accept[q] || continue
+        d = C.chains[C.drop[q]]
+        osign[q] = unique!([s for s in (_signtext(L.SIGN[k]) for k in d) if s !== nothing])
+        oflag[q] = any(k -> _isinterstate(L.SIGN[k], L.NAME[k], L.FCLASS[k]), d)
+        ocls[q] = C.cls[C.drop[q]]
+        otime[q] = sum(_traveltime(L, k) for k in d)
+        klen[q] = C.len[C.keep[q]]
+    end
+    # the links, before duplicates
+    a = zeros(Int, nL); b = zeros(Int, nL); dirc = zeros(Int, nL); alive = falses(nL)
+    for k in 1:nL
+        gone[k] && continue
+        a[k], b[k] = img[T.S[k]], img[T.D[k]]
+        a[k] == b[k] && continue
+        alive[k] = true
+        d = role[k] > 0 ? 0 : L.DIR[k]
+        dirc[k] = d == 0 ? 0 : ((d == 1) == (a[k] < b[k]) ? 1 : -1)
+    end
+    # duplicates: one pair of nodes, one route, the same directions; the shortest stays (ties to the first)
+    best = Dict{NTuple{4,Int},Int}()
+    for k in 1:nL
+        alive[k] || continue
+        key = (min(a[k], b[k]), max(a[k], b[k]), rid[k], dirc[k])
+        k0 = get(best, key, 0)
+        if k0 == 0
+            best[key] = k
+        elseif L.DIST[k] < L.DIST[k0]
+            alive[k0] = false; best[key] = k
+        else
+            alive[k] = false
+        end
+    end
+    ks = findall(alive)
+    sort!(ks, by = k -> (N.IDX[a[k]], N.IDX[b[k]], k))
+    n = length(ks)
+    SIGN = Vector{Union{Missing,String}}(missing, n); TYPE = Vector{Union{Missing,String}}(missing, n)
+    INTERSTATE = falses(n); FCLASS = zeros(Int, n); DIR = zeros(Int, n); AB = zeros(n); BA = zeros(n)
+    DIST = zeros(n); STUB = zeros(n)
+    for (r, k) in enumerate(ks)
+        q = abs(role[k])
+        s = _signtext(L.SIGN[k])
+        sg = s === nothing ? String[] : [s]
+        fl = _isinterstate(L.SIGN[k], L.NAME[k], L.FCLASS[k])
+        if q > 0
+            sg = sort!(unique!([sg; osign[q]]))
+            fl |= oflag[q]
+            FCLASS[r] = min(L.FCLASS[k], ocls[q])
+            rev = klen[q] > 0 ? otime[q] * L.DIST[k] / klen[q] : otime[q] / length(C.chains[C.keep[q]])
+            AB[r], BA[r] = L.DIR[k] == -1 ? (rev, L.BA_TIME[k]) : (L.AB_TIME[k], rev)
+        else
+            FCLASS[r] = L.FCLASS[k]; DIR[r] = L.DIR[k]; AB[r] = L.AB_TIME[k]; BA[r] = L.BA_TIME[k]
+        end
+        isempty(sg) || (SIGN[r] = join(sg, ";"))
+        INTERSTATE[r] = fl
+        TYPE[r] = _roadtype(sg, L.NAME[k], fl)
+        st = (a[k] == T.S[k] ? 0.0 : _dmi(T, T.S[k], a[k])) + (b[k] == T.D[k] ? 0.0 : _dmi(T, T.D[k], b[k]))
+        d0 = Float64(L.DIST[k])
+        if d0 > 0
+            f = (d0 + st) / d0; AB[r] *= f; BA[r] *= f
+        else
+            L.AB_SPEED[k] > 0 && (AB[r] += 60st / L.AB_SPEED[k])
+            L.BA_SPEED[k] > 0 && (BA[r] += 60st / L.BA_SPEED[k])
+        end
+        DIST[r] = d0 + st; STUB[r] = st
+    end
+    nm = Union{Missing,String}[ismissing(x) ? missing : String(x) for x in L.NAME[ks]]
+    links = DataFrame(SRC = N.IDX[a[ks]], DST = N.IDX[b[ks]], DIST = round.(DIST, digits = 4), SPEED = L.SPEED[ks],
+                      FCLASS = FCLASS, DIR = DIR, NAME = nm, SOURCE = fill("FAF5", n), SIGN = SIGN, TYPE = TYPE,
+                      INTERSTATE = Vector{Bool}(INTERSTATE), AB_TIME = round.(AB, digits = 4), BA_TIME = round.(BA, digits = 4),
+                      STFIP = L.STFIP[ks], COFIP = L.COFIP[ks], URBAN = L.URBAN[ks])
+    used = falses(T.nN)
+    for k in ks
+        used[a[k]] = used[b[k]] = true
+    end
+    vs = sort!(findall(used), by = v -> N.IDX[v])
+    nodes = DataFrame(IDX = N.IDX[vs], LON = Float64.(N.LON[vs]), LAT = Float64.(N.LAT[vs]), SOURCE = fill("FAF5", length(vs)))
+    # RN19: a node whose FAF5 component keeps no derived link maps to no node
+    fcomp, nfc = _components(T, trues(nL))
+    kept = falses(nfc)
+    for k in ks
+        kept[fcomp[T.S[k]]] = true
+    end
+    order = sortperm(N.IDX)
+    nodemap = DataFrame(FAF5_IDX = N.IDX[order],
+                        IDX = Union{Missing,Int}[fcomp[v] > 0 && kept[fcomp[v]] ? N.IDX[img[v]] : missing for v in order])
+    info = (; isramp, J, T, rid, rkey, C, inside0, role, gone, img, rule, ks, a, b, stub = STUB, fdist = Float64.(L.DIST[ks]),
+            fcomp)
+    return (; nodes, links, nodemap, info)
 end

@@ -33,7 +33,7 @@ include("test_connector_search.jl")  # K8: addconnectors' exact local point loca
 include("test_links2graph.jl")       # K8: links2graph equals the graph the lectures build by hand (S17, CR 17)
 include("test_thin.jl")              # K8: thin on typed arcs, direction-aware, label-independent (CR 18, CR 25, N6)
 include("test_pathroads.jl")         # K8: the roads along a path, equal to Lecture 4.2's streets (CR 30)
-include("test_faf5net.jl")           # N1: the derived FAF5 network's route keys, Interstate flag and ramp rule (CR 19, RN3, RN4)
+include("test_faf5net.jl")           # N1, N2: the derived FAF5 network's route keys, Interstate flag, ramp rule and derivation (CR 19)
 include("test_routetools.jl")
 include("test_routing_k7a.jl")     # K7a: principle 9 checks against Lecture 5.2's stand-ins, per-item tests
 include("test_routing_k7b.jl")     # K7b: the checked route cost, principle 9 checks against Lecture 5.3's definitions
