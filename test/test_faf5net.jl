@@ -1,6 +1,6 @@
-# test_faf5net.jl -- the derived FAF5 road network (CR 19), part one (PCV N1): route keys, the Interstate flag (RN3)
-# and the ramp rule (RN4), on synthetic cases and on FAF5 as Logjam ships it. The expected FAF5 counts are N0's
-# measurements where N0 measured the same thing, and N1's own otherwise (each says which).
+# test_faf5net.jl -- the derived FAF5 road network (CR 19), part one (PCV N1): route keys, the Interstate flag, the
+# ramp rule and the junctions (his rulings RN3 to RN10), on synthetic cases and on FAF5 as Logjam ships it. The expected
+# FAF5 counts are N0's measurements where N0 measured the same thing, and N1's own otherwise (each says which).
 
 using Test
 using Logjam
@@ -16,19 +16,56 @@ function _fnlinks(rows)
               NAME = Union{Missing,String}[r[6] for r in rows], DIST = fill(0.1, length(rows)))
 end
 
-@testset "faf5net: route keys, the Interstate flag, ramps (N1)" begin
-    @testset "_route: one key per road" begin
+# A synthetic network laid out in meters east and north of a point near Raleigh: nodes are made as links name them.
+struct _FNNet
+    xy::Vector{Tuple{Float64,Float64}}
+    rows::Vector{Tuple{Int,Int,Int,Int,Union{Missing,String},Union{Missing,String}}}
+end
+_FNNet() = _FNNet(Tuple{Float64,Float64}[], Tuple{Int,Int,Int,Int,Union{Missing,String},Union{Missing,String}}[])
+_fnnode!(n, p) = (i = findfirst(==(p), n.xy); i === nothing ? (push!(n.xy, p); length(n.xy)) : i)
+_fnlink!(n, a, b; dir = 0, fc = 3, sign = missing, name = missing) =
+    push!(n.rows, (_fnnode!(n, a), _fnnode!(n, b), dir, fc, sign, name))
+_fnroad!(n, pts; kw...) = foreach(i -> _fnlink!(n, pts[i], pts[i+1]; kw...), 1:length(pts)-1)
+function _fntables(n; lon0 = -78.6, lat0 = 35.8)
+    N = DataFrame(IDX = 1:length(n.xy), LON = [lon0 + x / (111320 * cosd(lat0)) for (x, _) in n.xy],
+                  LAT = [lat0 + y / 110540 for (_, y) in n.xy])
+    return N, _fnlinks(n.rows)
+end
+# a freeway along y = 0, its carriageways 30 m apart, eastbound on the north side, with nodes at the given x
+function _fnfreeway!(n, xs; sign = "I 40", fc = 1)
+    _fnroad!(n, [(x, 15.0) for x in xs]; dir = 1, fc, sign, name = sign)
+    _fnroad!(n, [(x, -15.0) for x in reverse(xs)]; dir = 1, fc, sign, name = sign)
+end
+# a diamond at x = c: a two-way crossing road along x = c (`south` names its half south of the freeway) and four ramps
+function _fndiamond!(n, c, sign; south = sign, unnamed = false)
+    _fnroad!(n, [(c, 60.0), (c, 800.0)]; fc = 3, sign)
+    _fnroad!(n, [(c, -800.0), (c, -60.0)]; fc = 3, sign = south)
+    _fnlink!(n, (c, -60.0), (c, 60.0); fc = 3, sign = south == sign ? sign : missing)   # the bridge: no node on the freeway
+    _fnlink!(n, (c - 300, 15.0), (c, 60.0); dir = 1, fc = 1, name = unnamed ? missing : "RAMP")
+    _fnlink!(n, (c, 60.0), (c + 300, 15.0); dir = 1, fc = 1, name = "RAMP")
+    _fnlink!(n, (c + 300, -15.0), (c, -60.0); dir = 1, fc = 1, name = "RAMP")
+    _fnlink!(n, (c, -60.0), (c - 300, -15.0); dir = 1, fc = 1, name = "RAMP")
+end
+_fnjunctions(n) = (t = _fntables(n); r = LJ._ramp_links(t...); (r, LJ._junctions(t..., r)))
+
+@testset "faf5net: route keys, the Interstate flag, ramps, junctions (N1)" begin
+    @testset "_route: one key per road (RN9)" begin
         # state-route prefixes unified (N0's cases of one road under two keys)
         @test LJ._route("FL 429", missing) == LJ._route(missing, "SR 429") == "SR 429"
         for (a, b) in (("OR 99W", "SR 99W"), ("CO 7", "SR 7"), ("SR 7", "VA 7"), ("CA 68", "SR 68"), ("PA 611", "SR 611"))
             @test LJ._route(a, missing) == LJ._route(b, missing) == LJ._route(missing, b)
         end
         @test LJ._route(missing, "STATE HWY 7") == "SR 7"
-        # direction letters dropped; a letter suffix is part of the route
+        # a direction is dropped from an Interstate only; on any other route the letter names the route
         @test LJ._route("I 93 N", missing) == LJ._route("I 93 S", missing) == "I 93"
+        @test LJ._route("I 270 S", missing) == "I 270"
         @test LJ._route(missing, "I 496 EB") == "I 496"
+        @test LJ._route("US 70 N", missing) == "US 70 N" != LJ._route("US 70 S", missing)
+        @test LJ._route("US 70 S", missing) != LJ._route("US 70", missing)
+        @test LJ._route("NY 5 S", missing) == "SR 5 S" != LJ._route("NY 5", missing)
+        @test LJ._route("GA 204 S", missing) == "SR 204 S"
         @test LJ._route("I 35E", missing) == "I 35E" != LJ._route("I 35W", missing)
-        @test LJ._route("MO N", missing) == "MO N"                     # the letter is the route itself
+        @test LJ._route("MO N", missing) == "MO N"
         # Business routes, and bypasses, are routes of their own
         @test LJ._route("I 40 B", missing) == "I 40 B" != LJ._route("I 40", missing)
         @test LJ._route("TX 71 P", missing) == "SR 71 P" != LJ._route("TX 71", missing)
@@ -42,7 +79,7 @@ end
         @test LJ._route("", "  ") === nothing
     end
 
-    @testset "_isinterstate (RN3, T2.10)" begin
+    @testset "_isinterstate (RN3, RN8, T2.10)" begin
         @test LJ._isinterstate("US 131", "I 296", 1)                  # I-296, found by its NAME on a class 1 link
         @test !LJ._isinterstate("US 131", "I 296", 2)                 # NAME counts only on class 1
         @test LJ._isinterstate(missing, "I 496 EB", 1)
@@ -52,24 +89,31 @@ end
         @test LJ._isinterstate("I 93 N", missing, 1) && LJ._isinterstate("I 93 S", missing, 1)
         @test LJ._route("I 93 N", missing) == LJ._route("I 93 S", missing)
         @test LJ._isinterstate("I 35E", missing, 1) && LJ._isinterstate("I 480N", missing, 1)
+        for s in ("I A1", "I A4", "I H1", "I H2", "I H201", "I H3")      # Alaska's and Hawaii's (RN8)
+            @test LJ._isinterstate(s, missing, 1)
+        end
+        @test LJ._isinterstate(missing, "I H1", 1) && !LJ._isinterstate("I HA1", missing, 1)
         @test !LJ._isinterstate("US 50", "JOHN HANSON HWY", 1)         # I-595, which FAF5 has only as US 50
-        @test !LJ._isinterstate("I H1", missing, 1)                    # RN3 as ruled: "I", then a number
         @test !LJ._isinterstate(missing, "I 270 - LOCAL LANES", 1)     # not exactly a designation
         @test !LJ._isinterstate(missing, missing, 1)
     end
 
-    @testset "_isramp_name (RN4, T2.8)" begin
+    @testset "_isramp_name (RN4, RN10, T2.8)" begin
         for n in ("I 96 EB TO I 696 EB", "COLLECCTOR/DISTRIBUTOR", "I 80 COLLECCTOR/DISTRIBUTOR LANE",
                   "I 75 NB COLLECTOR/DISTRBUTOR LANE", "I 75 WB COLLECTION/DISTRIBUTION LANE",
                   "I 15 SB TO I 515 / US 95 NB", "I 395 SB TO I 95 NB/I 495 IL", "I 5 B NB TO I 90 EB",
                   "CR 200 TO US 27 NB", "RAMP", "I 40 EB RAMP", "COLLECTOR/DISTRIBUTOR LANE", "RI 4 CONNECTOR/DISTRIBUTOR LANE",
-                  "TURN LANE", "i 96 eb to i 696 eb")
-            @test LJ._isramp_name(n)
+                  "TURN LANE", "i 96 eb to i 696 eb",
+                  "GRAND RIVER RD TO I 69 EB", "I 196 EB TO CHICAGO DR", "DIBC INSPECTION TO I 75 SB", "I 82 WB TO I !82 EB")
+            @test LJ._isramp_name(n, 1) && LJ._isramp_name(n, -1)
         end
-        for n in ("GOING TO THE SUN HWY", "AIRPORT CONNECTOR", "DOWNTOWN DISTRIBUTOR", "N RAMPART ST",
-                  "I 196 EB TO CHICAGO DR", "I-70 EB TURNAROUND/SERVICE ROAD", "", missing)
-            @test !LJ._isramp_name(n)
+        for n in ("GOING TO THE SUN HWY", "DIBC PLAZA TO CANADA", "AIRPORT CONNECTOR", "DOWNTOWN DISTRIBUTOR", "N RAMPART ST",
+                  "I-70 EB TURNAROUND/SERVICE ROAD", "", missing)
+            @test !LJ._isramp_name(n, 1) && !LJ._isramp_name(n, 0)
         end
+        # "X TO Y" is a ramp only on a one-way link; the other parts of the rule do not look at the direction
+        @test !LJ._isramp_name("I 96 EB TO I 696 EB", 0) && !LJ._isramp_name("GRAND RIVER RD TO I 69 EB", 0)
+        @test LJ._isramp_name("I 40 EB RAMP", 0) && LJ._isramp_name("I 80 COLLECCTOR/DISTRIBUTOR LANE", 0)
         # the map keeps v0.3.0's rule until N4, and it is the first part of the rule here
         ext = Base.get_extension(Logjam, :LogjamMapExt)
         @test ext._RAMP_NAME.pattern == LJ._RAMP_WORDS.pattern
@@ -117,13 +161,80 @@ end
         @test_throws ArgumentError LJ._ramp_links(N[1:19, :], L)    # a link to a node the table lacks
     end
 
+    @testset "_junctions: T2.7's synthetic cases (RN6, RN7)" begin
+        # a diamond is one junction; its unnamed off-ramp is found by the structural test
+        n = _FNNet(); _fnfreeway!(n, [-2000.0, -300.0, 300.0, 2000.0]); _fndiamond!(n, 0.0, "SR 54"; unnamed = true)
+        r, J = _fnjunctions(n)
+        @test count(r) == 4
+        @test length(J.site) == 1 && J.kind == [:interchange] && J.cl[J.site[1]] == 1
+        @test count(>(0), J.cl) == 6                   # the four freeway nodes and the two terminals the ramps join
+        cl, site = J                                   # destructures as (cl, site)
+        @test cl === J.cl && site === J.site
+        # a diamond whose crossing road changes name at the freeway (an unnamed bridge between): its two halves share
+        # only I 40, and are one junction by RN6's 0.25 mi (their centers 60 m apart)
+        n = _FNNet(); _fnfreeway!(n, [-2000.0, -300.0, 300.0, 2000.0]); _fndiamond!(n, 0.0, "SR 54"; south = "MAIN ST")
+        @test length(_fnjunctions(n)[2].site) == 1
+        # a cloverleaf, its loops and its outer connections ("I 40 EB TO US 1 NB") separate clusters, is one junction
+        n = _FNNet(); _fnfreeway!(n, [-2000.0, -400.0, -150.0, 150.0, 400.0, 2000.0])
+        _fnroad!(n, [(15.0, y) for y in (-2000.0, -400.0, -150.0, 150.0, 400.0, 2000.0)]; dir = 1, fc = 2, sign = "US 1")
+        _fnroad!(n, [(-15.0, y) for y in (2000.0, 400.0, 150.0, -150.0, -400.0, -2000.0)]; dir = 1, fc = 2, sign = "US 1")
+        for (f, l, x) in (((150.0, 15.0), (200.0, 200.0), (-15.0, 150.0)), ((-150.0, -15.0), (-200.0, -200.0), (15.0, -150.0)),
+                          ((-150.0, 15.0), (-200.0, 200.0), (15.0, 150.0)), ((150.0, -15.0), (200.0, -200.0), (-15.0, -150.0)))
+            _fnlink!(n, f, l; dir = 1, fc = 1, name = "RAMP"); _fnlink!(n, l, x; dir = 1, fc = 1, name = "RAMP")
+        end
+        for (a, b) in (((-400.0, 15.0), (15.0, -400.0)), ((15.0, 400.0), (400.0, 15.0)), ((400.0, -15.0), (-15.0, 400.0)),
+                       ((-15.0, -400.0), (-400.0, -15.0)))
+            _fnlink!(n, a, b; dir = 1, fc = 1, name = "I 40 EB TO US 1 NB")
+        end
+        r, J = _fnjunctions(n)
+        @test count(r) == 12 && length(J.site) == 1 && J.kind == [:interchange]
+        # two interchanges 1.0 mi apart with different crossings stay two (RN6; 4.1's 1.5 mi merge alone joined them)
+        n = _FNNet(); _fnfreeway!(n, [-2000.0, -300.0, 300.0, 1309.0, 1909.0, 4000.0])
+        _fndiamond!(n, 0.0, "SR 54"); _fndiamond!(n, 1609.0, "US 1")
+        @test length(_fnjunctions(n)[2].site) == 2
+        # two ramps between the same two roads, their centers 1.1 mi apart, share both routes and are one junction (RN6)
+        n = _FNNet(); _fnfreeway!(n, [-2000.0, -300.0, 1750.0, 3000.0])
+        _fnroad!(n, [(-2000.0, 60.0), (0.0, 60.0), (1450.0, 60.0), (3000.0, 60.0)]; fc = 3, sign = "US 1")
+        _fnlink!(n, (-300.0, 15.0), (0.0, 60.0); dir = 1, fc = 1, name = "RAMP")
+        _fnlink!(n, (1450.0, 60.0), (1750.0, 15.0); dir = 1, fc = 1, name = "RAMP")
+        @test length(_fnjunctions(n)[2].site) == 1
+        # a divided at-grade crossing is one junction of two nodes
+        n = _FNNet()
+        _fnroad!(n, [(-2000.0, 15.0), (0.0, 15.0), (2000.0, 15.0)]; dir = 1, fc = 3, sign = "US 64")
+        _fnroad!(n, [(2000.0, -15.0), (0.0, -15.0), (-2000.0, -15.0)]; dir = 1, fc = 3, sign = "US 64")
+        _fnroad!(n, [(0.0, -2000.0), (0.0, -15.0), (0.0, 15.0), (0.0, 2000.0)]; fc = 4, sign = "SR 50")
+        J = _fnjunctions(n)[2]
+        @test length(J.site) == 1 && J.kind == [:atgrade] && count(>(0), J.cl) == 2
+        # a downtown couplet with two street names, 100 m apart: each crossing its own, none joining the carriageways
+        n = _FNNet()
+        _fnroad!(n, [(-50.0, -1000.0), (-50.0, 0.0), (-50.0, 200.0), (-50.0, 1000.0)]; dir = 1, fc = 3, name = "SPRING ST")
+        _fnroad!(n, [(50.0, 1000.0), (50.0, 200.0), (50.0, 0.0), (50.0, -1000.0)]; dir = 1, fc = 3, name = "PEACHTREE ST")
+        _fnroad!(n, [(-500.0, 0.0), (-50.0, 0.0), (50.0, 0.0), (500.0, 0.0)]; fc = 4, name = "A ST")
+        _fnroad!(n, [(-500.0, 200.0), (-50.0, 200.0), (50.0, 200.0), (500.0, 200.0)]; fc = 4, name = "B ST")
+        J = _fnjunctions(n)[2]
+        @test length(J.site) == 4 && all(==(:atgrade), J.kind) && all(c -> count(==(c), J.cl) == 1, 1:4)
+        # an undivided crossing of two two-way roads is an ordinary node, not a junction (RN7)
+        n = _FNNet()
+        _fnroad!(n, [(-1000.0, 0.0), (0.0, 0.0), (1000.0, 0.0)]; fc = 3, sign = "US 64")
+        _fnroad!(n, [(0.0, -1000.0), (0.0, 0.0), (0.0, 1000.0)]; fc = 4, sign = "SR 50")
+        @test isempty(_fnjunctions(n)[2].site)
+        # a freeway joining another without ramps, its two carriageway nodes 300 m apart, is one junction (RN7)
+        n = _FNNet()
+        _fnroad!(n, [(-3000.0, 15.0), (0.0, 15.0), (3000.0, 15.0)]; dir = 1, fc = 1, sign = "I 40")
+        _fnroad!(n, [(3000.0, -15.0), (300.0, -15.0), (-3000.0, -15.0)]; dir = 1, fc = 1, sign = "I 40")
+        _fnroad!(n, [(-3000.0, 1500.0), (0.0, 15.0)]; dir = 1, fc = 1, sign = "I 85")
+        _fnroad!(n, [(300.0, -15.0), (-3000.0, 1470.0)]; dir = 1, fc = 1, sign = "I 85")
+        J = _fnjunctions(n)[2]
+        @test length(J.site) == 1 && J.kind == [:interchange] && count(>(0), J.cl) == 2
+    end
+
     @testset "on FAF5 as Logjam ships it" begin
         N = faf5nodes(); L = faf5links()
         sgn = String.(coalesce.(L.SIGN, "")); nm = uppercase.(String.(coalesce.(L.NAME, "")))
 
         # the name rule, part by part
-        v030 = LJ._isramp_v030.(L.NAME); cd = LJ._isramp_cd.(L.NAME); to = LJ._isramp_to.(L.NAME)
-        named = LJ._isramp_name.(L.NAME)
+        v030 = LJ._isramp_v030.(L.NAME); cd = LJ._isramp_cd.(L.NAME); to = LJ._isramp_to.(L.NAME, L.DIR)
+        named = LJ._isramp_name.(L.NAME, L.DIR)
         toN0 = [!v030[k] && occursin(r"\bTO\b", nm[k]) for k in eachindex(nm)]
         println("  faf5net ramps by name: v0.3.0 rule ", count(v030), "; C/D however spelled, beyond it ", count(cd .& .!v030),
                 "; X TO Y, beyond it ", count(to .& .!v030), " of N0's ", count(toN0), " TO names; all ", count(named))
@@ -132,9 +243,10 @@ end
         @test sort(unique(nm[cd .& .!v030])) == ["I 75 NB COLLECTOR/DISTRBUTOR LANE", "I 75 WB COLLECTION/DISTRIBUTION LANE",
                                                  "I 80 COLLECCTOR/DISTRIBUTOR LANE", "US 3 COLLECTOR/DISTRBUTOR LANE"]
         @test count(toN0) == 337                              # N0
-        @test count(to .& .!v030) == count(to .& toN0) == 304 # N1: both sides route designations (RN4)
-        @test count(named) == 137_156 + 35 + 304
-        @test !any(named[nm .== "GOING TO THE SUN HWY"]) && !any(named[nm .== "DOWNTOWN DISTRIBUTOR"])
+        @test count(to .& .!v030) == count(to .& toN0) == 333 # N1: one-way, a designation on one side at least (RN10)
+        @test sort(unique(nm[toN0 .& .!to])) == ["DIBC PLAZA TO CANADA", "GOING TO THE SUN HWY"]
+        @test count(named) == 137_156 + 35 + 333
+        @test !any(named[nm .== "DOWNTOWN DISTRIBUTOR"])
 
         # the structural test
         isr = LJ._ramp_links(N, L)
@@ -142,25 +254,28 @@ end
         println("  faf5net ramps by the structural test: ", count(st), " (by class ",
                 join(["$c: $(count(st .& (L.FCLASS .== c)))" for c in sort(unique(L.FCLASS))], ", "), "); ramps in all ", count(isr))
         @test count(st) == 2_272                              # N1 (N0 measured classes 1 and 2 only, by another cluster)
-        @test count(isr) == 139_767
+        @test count(isr) == 139_796
         @test all(LJ._keytext(L.SIGN[k]) === nothing && LJ._keytext(L.NAME[k]) === nothing && L.DIR[k] != 0 for k in findall(st))
 
         # the Interstate flag
         fl = [LJ._isinterstate(L.SIGN[k], L.NAME[k], L.FCLASS[k]) for k in 1:nrow(L)]
         bus = occursin.(r"^I \S+ B$", sgn)
+        lettered = occursin.(r"^I [AH]\d+$", sgn)
         byname = fl .& .!startswith.(sgn, "I ")
-        println("  faf5net Interstate flag: ", count(fl), " links, ", count(byname), " by NAME alone; not flagged: ",
-                count(bus), " Business Interstate links, ", count(occursin.(r"^I [AH]\d+$", sgn)), " signed I A1 to A4, I H1 to H3")
+        println("  faf5net Interstate flag: ", count(fl), " links, ", count(byname), " by NAME alone, ", count(lettered),
+                " Alaska's and Hawaii's lettered; not flagged: ", count(bus), " Business Interstate links")
         @test count(bus) == 855 && !any(fl[bus])              # N0: 855 Business Interstate links
+        @test count(lettered) == 584 && all(fl[lettered])     # RN8: I A1 to A4 (389 links), I H1, H2, H201, H3 (195)
         @test count(byname) == 21                             # N0: I-296 (20 links) and one "I 496 EB"
         @test count(fl .& (sgn .== "US 131") .& (nm .== "I 296")) == 20
         @test all(fl[occursin.(r"^I \S+ [NSEW]$", sgn)])      # N0: 41 links with a direction suffix
-        @test count(fl) == 80_905
+        @test count(fl) == 81_489
+        @test count(startswith.(sgn, "I ") .& .!fl) == 855    # every Interstate SIGN but the Business routes
 
         # N0's 588 crossings where one road met itself under two keys (a one-way class 2 or 3 link meeting a link of
-        # another key, with another node of the same pair of keys, the keys sharing a number): state-route prefixes
-        # are unified; the rest are different roads (Business, Bypass, Alternate and Loop routes, frontage and
-        # service roads, a US route beside a state route of the same number).
+        # another key, with another node of the same pair of keys, the keys sharing a number): the 268 that differ
+        # only in a state-route prefix are one key now; the rest are different roads (Business, Bypass, Alternate,
+        # Loop and split routes, frontage and service roads, a US route beside a state route of the same number).
         row = Dict(N.IDX[v] => v for v in 1:nrow(N))
         key0 = [isempty(sgn[k]) ? nm[k] : sgn[k] for k in eachindex(sgn)]
         at = [Int[] for _ in 1:nrow(N)]
@@ -191,10 +306,43 @@ end
         state = [(a, b) for (a, b) in cases if pfx(a) in srp && pfx(b) in srp && pfx(a) != pfx(b) &&
                  replace(a, r"^[A-Z]{2,3} " => "") == replace(b, r"^[A-Z]{2,3} " => "")]
         println("  faf5net route keys: of N0's ", length(cases), " crossings of one road under two keys, ", count(p -> same(p...), cases),
-                " are one key now, among them all ", length(state), " that differ only in a state-route prefix")
+                " are one key now, all ", length(state), " that differ only in a state-route prefix")
         @test length(cases) == 588                            # N0
-        @test count(p -> same(p...), cases) == 281            # N1
-        @test length(state) == 268 && all(p -> same(p...), state)
-        @test !same("US 30", "US 30 B") && !same("TX 71", "TX 71 P") && !same("DE 13", "US 13")
+        @test length(state) == 268 && count(p -> same(p...), cases) == 268 && all(p -> same(p...), state)
+        @test !same("US 30", "US 30 B") && !same("TX 71", "TX 71 P") && !same("DE 13", "US 13") && !same("SR 99 N", "SR 99 S")
+
+        # the junctions
+        J = LJ._junctions(N, L, isr)
+        nc = length(J.site)
+        @test length(J.cl) == nrow(N) && length(J.kind) == nc && all(in((:interchange, :atgrade)), J.kind)
+        @test all(J.cl[J.site[c]] == c for c in 1:nc)         # every junction's node is one of its members
+        @test sort(unique(J.cl[J.cl .> 0])) == 1:nc
+        mem = [Int[] for _ in 1:nc]
+        for v in eachindex(J.cl)
+            J.cl[v] > 0 && push!(mem[J.cl[v]], v)
+        end
+        T = LJ._topology(N, L)
+        ag = [c for c in 1:nc if J.kind[c] == :atgrade && length(mem[c]) > 1]
+        agext = maximum(LJ._dmi(T, a, b) for c in ag for a in mem[c] for b in mem[c]) * 1609.344
+        # Interstate junctions in the lower 48 (4.1's scope): members touching links of two or more Interstate routes
+        rid = LJ._routeids(L, isr)
+        low48 = .!in.(L.STFIP, Ref((2, 15, 72)))
+        Ir = [Int[] for _ in 1:nc]
+        for k in findall(fl .& low48)
+            rid[k] == 0 && continue
+            for v in (T.S[k], T.D[k])
+                c = J.cl[v]; c == 0 && continue
+                rid[k] in Ir[c] || push!(Ir[c], rid[k])
+            end
+        end
+        nI = count(r -> length(r) >= 2, Ir)
+        println("  faf5net junctions: ", nc, " (interchange ", count(==(:interchange), J.kind), ", at-grade ", count(==(:atgrade), J.kind),
+                "); nodes in junctions ", count(>(0), J.cl), "; at-grade clusters of 2+ nodes ", length(ag), ", widest ",
+                round(agext, digits = 1), " m; Interstate junctions in the lower 48 ", nI, " (Lecture 4.1's network: 754)")
+        @test nc == 22_579                                    # N1
+        @test count(==(:interchange), J.kind) == 15_914 && count(==(:atgrade), J.kind) == 6_665
+        @test count(>(0), J.cl) == 156_175
+        @test agext < 400                                     # 150 m within one route pair, chained: 302.9 m at most (N1)
+        @test nI == 858                                       # N1; 4.1's 754 (N0), its own clusters under RN6's merge 788
     end
 end
