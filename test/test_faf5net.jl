@@ -911,7 +911,14 @@ const _FN_V030 = Dict(
                 "); the derived network's ", round(dD[1], digits = 3), " mi (", round(dD[1] - oD, digits = 3), "), ",
                 round(dT[1], digits = 3), " min (", round(dT[1] - oT, digits = 3), "); fastest routes ", round(fD[2], digits = 1),
                 " and ", round(dD[2], digits = 1), " mi")
-        @test abs(dD[1] - oD) <= abs(fD[1] - oD)                    # miles: as close to OSRM as FAF5's are
+        # RN20 (his ruling on round n3): the derived network's route lies within the gap between FAF5's own route and
+        # OSRM's, in miles and in minutes, |derived - FAF5| <= |FAF5 - OSRM| for each (the literal reading, the derived
+        # route within that gap of OSRM, missed in minutes by 0.06 min at N3)
+        println("  faf5net T4.4 (RN20): |derived - FAF5| ", round(abs(dD[1] - fD[1]), digits = 3), " mi against |FAF5 - OSRM| ",
+                round(abs(fD[1] - oD), digits = 3), " mi; ", round(abs(dT[1] - fT[1]), digits = 3), " min against ",
+                round(abs(fT[1] - oT), digits = 3), " min")
+        @test abs(dD[1] - fD[1]) <= abs(fD[1] - oD)                 # miles
+        @test abs(dT[1] - fT[1]) <= abs(fT[1] - oT)                 # minutes
         # Ex. 3's table, read from the lecture where it is reachable
         lec = get(ENV, "LOGJAM_LECTURE_DATA", "")
         qmd = isempty(lec) ? "" : normpath(joinpath(lec, "..", "4-net-1.qmd"))
