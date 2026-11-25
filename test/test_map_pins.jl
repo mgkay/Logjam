@@ -24,11 +24,14 @@ include(joinpath(@__DIR__, "map_pin_cases.jl"))
 # Each case's size, limits, extent and other layers are pinned again in test_map_tiers.jl (T5.6), with the road layer
 # as it is drawn now.
 # N4b (RN26): the regional tier's label is "Major Roads" (it was "Interstate Roads", which it kept through N4); the
-# national tier (region_CUS) keeps "Interstate Roads". The regional cases therefore move under both, in that order.
+# national tier (region_CUS) keeps "Interstate Roads". N4b (RN24): the Interstate's opacity and width on both tiers are
+# measured against v0.3.0's picture (regional 0.32 and 0.7, national 0.32 and 0.85 up to 20 degrees, 0.3 and 0.8 above).
+# The regional cases therefore move under all three, in that order.
 const MMPIN_MOVED = Dict("makemap_activate_type" => "P8", "xy_both_expands" => "S22",
-                         "xy_default" => "N4, N4b (RN26)", "xy_xexpand_0.1" => "N4, N4b (RN26)", "xy_xexpand_0.3" => "N4, N4b (RN26)",
-                         "xy_xexpand_0.05" => "N4, N4b (RN26)", "tuple_pair" => "N4, N4b (RN26)", "region_CUS" => "N4",
-                         "xy_hawaii_not_CUS" => "N4, N4b (RN26)", "xy_outside_US" => "N4, N4b (RN26)")
+                         "xy_default" => "N4, N4b (RN26), N4b (RN24)", "xy_xexpand_0.1" => "N4, N4b (RN26), N4b (RN24)",
+                         "xy_xexpand_0.3" => "N4, N4b (RN26), N4b (RN24)", "xy_xexpand_0.05" => "N4, N4b (RN26), N4b (RN24)",
+                         "tuple_pair" => "N4, N4b (RN26), N4b (RN24)", "region_CUS" => "N4, N4b (RN24)",
+                         "xy_hawaii_not_CUS" => "N4, N4b (RN26), N4b (RN24)", "xy_outside_US" => "N4, N4b (RN26), N4b (RN24)")
 
 # size, requested limits, projected extent (6 significant digits), base layers (label, points, alpha, linewidth, line style)
 const MMPIN_EXPECTED = Dict(

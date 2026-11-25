@@ -32,7 +32,7 @@ _zoom(latspan) = latspan <= 10 ? :close : latspan <= 20 ? :mid : :far
 #              for each class (S22, S23);
 #   :regional  otherwise, at most 10 degrees of latitude: Logjam's U.S. road network (`usrdlink`, derived from FAF5; CR
 #              19, N4), classes 1 to 3 (Interstates, other freeways and expressways, other principal arterials), as one
-#              Lines, the classes by width;
+#              Lines labeled "Major Roads", the classes by width (RN24);
 #   :national  otherwise, at most 30 degrees: the U.S. road network's links flagged `INTERSTATE`, as one Lines;
 #   :none      more than 30 degrees: nothing.
 # Each is cropped to the box (every link whose segment meets it, so the roads run to the frame). The close tier stays
@@ -54,12 +54,19 @@ const _NETWORK_ALPHA = 0.3
 const _NETWORK_WIDTHS = (1.4, 1.0, 0.7, 0.5, 0.3)         # class 1 (Interstate) to class 5 (local, and any class 5 or more)
 const _NETWORK_LAYERS = (:class1, :class2, :class3, :class4, :class5)
 
-# The regional and national tiers keep v0.3.0's Interstate layer's steps by latitude span (`_zoom`): its opacity, and
-# its width as the Interstate's, classes 2 and 3 of the regional tier in the close tier's ratios to it (1.0 / 1.4 and
-# 0.7 / 1.4). The regional tier is always `close` (10 degrees or less), the national `mid` or `far`. The `far` step was
-# 0.35, which is not below 0.35 (S23); it is 0.3, the close tier's opacity.
-const _INTERSTATE_STYLE = (close = (alpha = 0.2, linewidth = 0.6), mid = (alpha = 0.25, linewidth = 0.5),
-                           far = (alpha = 0.3, linewidth = 0.3))
+# The regional and national tiers' steps by latitude span (`_zoom`), the Interstate's opacity and width (RN24, RN25). The
+# regional tier is always `close` (10 degrees or less), the national `mid` or `far`. v0.3.0 drew both carriageways of a
+# divided Interstate, two strokes that overlap at these scales and read darker than one, so one line, which now stands for
+# both, is wider and more opaque than either was, and every opacity stays below 0.35 (S23), so width does the work (the
+# `far` step's 0.3 is RN25's). The numbers are N4b's, chosen from measured ink: the mean ink on the Interstate's pixels in
+# the saved picture, against v0.3.0's picture of the same map, within 10 percent on North Carolina, the Southeast, a
+# Virginia-to-Maryland box, the continental U.S. and a 17-degree box. Classes 2 and 3 of the regional tier, beneath the
+# Interstate, are thinner, in these ratios of its width (classes 1, 2 and 3), and a stroke thinner than a pixel carries
+# less ink, so they are fainter as well: the layer is one color, since a color for each point (one opacity for each class)
+# breaks Lecture 5.3's `to_color(p.color[]).alpha`, which reads the color of every plot.
+const _INTERSTATE_STYLE = (close = (alpha = 0.32, linewidth = 0.7), mid = (alpha = 0.32, linewidth = 0.85),
+                           far = (alpha = 0.3, linewidth = 0.8))
+const _MAJOR_WIDTHS = (1.0, 0.3, 0.15)
 
 # does the segment from (x1, y1) to (x2, y2) meet the closed box [xmin, xmax] x [ymin, ymax]? (Liang and Barsky's clip)
 function _meetsbox(x1, y1, x2, y2, xmin, xmax, ymin, ymax)
@@ -161,11 +168,11 @@ function _networkroads!(ax, limits, over)
 end
 
 # The regional and national tiers as one Lines, labeled "Major Roads" on the regional tier (RN26) and "Interstate Roads"
-# on the national, as v0.3.0's Interstate layer was: opacity and
-# the Interstate's width by `_zoom`'s step, `over` replacing the hue, the opacity and the Interstate's width; on the
-# regional tier each segment has its class's width (a width per point, classes 3, 2 and 1 in that order, so the
-# Interstate is drawn last; CairoMakie strokes each NaN-separated piece of such a Lines on its own). A box with no link in
-# it draws an empty Lines at the Interstate's width, so `layers.roads` is a Lines on these tiers.
+# on the national, as v0.3.0's Interstate layer was: the Interstate's opacity and width by `_zoom`'s step, `over`
+# replacing the hue, the opacity and the Interstate's width; on the regional tier each segment has its class's width (a
+# width for each point, classes 3, 2 and 1 in that order, so the Interstate is drawn last; CairoMakie strokes each
+# NaN-separated piece of such a Lines on its own), classes 2 and 3 in `_MAJOR_WIDTHS` to the Interstate's (RN24). A box
+# with no link in it draws an empty Lines at the Interstate's width, so `layers.roads` is a Lines on these tiers.
 function _wideroads!(ax, tier, limits, over)
     style = _INTERSTATE_STYLE[_zoom(abs(limits[2][2] - limits[2][1]))]
     hue, alpha = get(over, :color, _NETWORK_HUE), get(over, :alpha, style.alpha)
@@ -179,7 +186,7 @@ function _wideroads!(ax, tier, limits, over)
     for k in 3:-1:1
         append!(x, polylines[k][1])
         append!(y, polylines[k][2])
-        append!(w, fill(w1 * _NETWORK_WIDTHS[k] / _NETWORK_WIDTHS[1], length(polylines[k][1])))
+        append!(w, fill(w1 * _MAJOR_WIDTHS[k], length(polylines[k][1])))
     end
     return lines!(ax, x, y; color = (hue, alpha), linewidth = isempty(w) ? w1 : w, label = "Major Roads")
 end

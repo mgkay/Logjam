@@ -33,11 +33,12 @@ const K11CPIN_MOVED = Dict("kwarg_decl_makemap" => "MAP (C5)", "kwarg_decl_plotr
                            # Interstate polyline, so the road layer's point count moves; the label, the opacity and the
                            # Interstate's width stay. The layers are pinned again in test_map_tiers.jl (T5.6).
                            # N4b (RN26): on the regional tier (every case below but Popco's two) the label is "Major Roads".
-                           "nc_cities_default" => "N4, N4b (RN26)", "nc_cities_xe0.2" => "N4, N4b (RN26)",
-                           "carolinas_xe0.1" => "N4, N4b (RN26)", "nc_counties_xe0.05" => "N4, N4b (RN26)",
-                           "nc_counties_xe0.1" => "N4, N4b (RN26)", "popco_xe0.04" => "N4",
-                           "popco_default" => "N4", "high_point_goldsboro" => "N4, N4b (RN26)",
-                           "synthetic_tall_151" => "N4, N4b (RN26)", "synthetic_wide_151" => "N4, N4b (RN26)")
+                           # N4b (RN24): the Interstate's opacity and width, regional 0.32 and 0.7, Popco's 0.32 and 0.85.
+                           "nc_cities_default" => "N4, N4b (RN26), N4b (RN24)", "nc_cities_xe0.2" => "N4, N4b (RN26), N4b (RN24)",
+                           "carolinas_xe0.1" => "N4, N4b (RN26), N4b (RN24)", "nc_counties_xe0.05" => "N4, N4b (RN26), N4b (RN24)",
+                           "nc_counties_xe0.1" => "N4, N4b (RN26), N4b (RN24)", "popco_xe0.04" => "N4, N4b (RN24)",
+                           "popco_default" => "N4, N4b (RN24)", "high_point_goldsboro" => "N4, N4b (RN26), N4b (RN24)",
+                           "synthetic_tall_151" => "N4, N4b (RN26), N4b (RN24)", "synthetic_wide_151" => "N4, N4b (RN26), N4b (RN24)")
 
 _k11cpin_moved(name) = haskey(K11CPIN_MOVED, name) && (@info("K11c pin $name moved under $(K11CPIN_MOVED[name])"); true)
 

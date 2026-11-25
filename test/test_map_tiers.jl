@@ -127,6 +127,11 @@ end
 _t5_tall_deg(span) = ((-79.0, -78.0), (20.0, 20.0 + span))
 _t5_wide_deg(span) = ((-125.0, -65.0), (20.0, 20.0 + span))
 
+# N4b (RN24, RN25): the Interstate's (opacity, width) at each of the latitude-span steps, from measured ink (the regional tier
+# is `close`, the national `mid` and `far`), and classes 2 and 3 of the regional tier in these ratios of its width
+const _T5_STYLE = (close = (0.32, 0.7), mid = (0.32, 0.85), far = (0.3, 0.8))
+const _T5_CLASSW = (1.0, 0.3, 0.15)
+
 const _T5_NC = ((-84.4, -75.4), (33.8, 36.6))          # North Carolina's box, 2.8 degrees of latitude
 const _T5_NATIONAL = ((-100.0, -90.0), (30.0, 41.0))    # 11 degrees: the national tier's mid step
 
@@ -152,8 +157,8 @@ const _T5_NATIONAL = ((-100.0, -90.0), (30.0, 41.0))    # 11 degrees: the nation
         fig, ax, layers = makemap(_T5_NC)
         p = layers.roads
         @test p isa Makie.Lines && string(p.label[]) == "Major Roads"                 # RN26
-        w1 = 0.6
-        width = Dict(1 => w1, 2 => w1 / 1.4, 3 => w1 * 0.7 / 1.4)
+        w1 = _T5_STYLE.close[2]
+        width = Dict(k => w1 * _T5_CLASSW[k] for k in 1:3)                          # classes 2 and 3 thinner (RN24)
         drawn = Set((a, b, k) for (a, b, w) in _t5_pieces(p) for k in 1:3 if isapprox(w, width[k]; rtol = 1e-6))
         @test all(pc -> count(k -> isapprox(pc[3], width[k]; rtol = 1e-6), 1:3) == 1, _t5_pieces(p))   # one class's width each
         want = Set((_t5_seg(dE, i)..., tierclass(L.FCLASS[i])) for i in _t5_crop(dE, _T5_NC) if tierclass(L.FCLASS[i]) <= 3)
@@ -193,8 +198,9 @@ const _T5_NATIONAL = ((-100.0, -90.0), (30.0, 41.0))    # 11 degrees: the nation
     end
 
     @testset "T5.2 D8's boundary shapes: wide-and-short and narrow-and-tall, a hair under and over each line" begin
+        # (the regional and national tiers' opacities are no longer told apart at 0.2 and 0.25, so the label tells them: RN26)
         shape(r) = r.layers.roads === nothing ? :none : r.layers.roads isa NamedTuple ? :close :
-                   _t5_alpha(r.layers.roads) ≈ 0.2 ? :regional : :national
+                   string(r.layers.roads.label[]) == "Major Roads" ? :regional : :national
         for (box, want) in ((k11c_tall(149.0), :close), (k11c_tall(151.0), :regional), (k11c_wide(149.0), :close),
                             (k11c_wide(151.0), :regional),
                             (_t5_tall_deg(9.99), :regional), (_t5_tall_deg(10.01), :national),
@@ -244,8 +250,10 @@ const _T5_NATIONAL = ((-100.0, -90.0), (30.0, 41.0))    # 11 degrees: the nation
     end
 
     @testset "T5.4 the style: one hue, every stroke below 0.35, the classes by width, the Interstate on top" begin
-        for (box, alpha, w1) in ((((-79.2, -78.4), (35.5, 36.1)), 0.3, 1.4), (_T5_NC, 0.2, 0.6), (_T5_NATIONAL, 0.25, 0.5),
-                                 (CUS_LIMITS, 0.3, 0.3), (_t5_tall_deg(29.99), 0.3, 0.3))
+        @test all(s -> 0 < s[1] < 0.35, _T5_STYLE) && _T5_STYLE.far[1] == 0.3                 # RN25: the 20-to-30 step's 0.3
+        for (box, alpha, w1) in ((((-79.2, -78.4), (35.5, 36.1)), 0.3, 1.4), (_T5_NC, _T5_STYLE.close...),
+                                 (_T5_NATIONAL, _T5_STYLE.mid...), (((-100.0, -90.0), (30.0, 50.0)), _T5_STYLE.mid...),
+                                 (CUS_LIMITS, _T5_STYLE.far...), (_t5_tall_deg(29.99), _T5_STYLE.far...))
             @testset "$box" begin
                 fig, ax, layers = makemap(box)
                 plots = _t5_plots(layers.roads)
@@ -260,17 +268,20 @@ const _T5_NATIONAL = ((-100.0, -90.0), (30.0, 41.0))    # 11 degrees: the nation
         fig, ax, layers = makemap(_T5_NC)
         w = Float64.(layers.roads.linewidth[])
         @test w isa Vector && length(w) == length(layers.roads[1][]) && issorted(w)
-        @test sort(unique(round.(w, digits = 4))) == round.([0.3, 0.6 / 1.4, 0.6], digits = 4)
+        w1 = _T5_STYLE.close[2]
+        @test sort(unique(round.(w, digits = 4))) == round.(sort(w1 .* collect(_T5_CLASSW)), digits = 4)
+        @test _T5_CLASSW[1] > _T5_CLASSW[2] > _T5_CLASSW[3] > 0                                # classes 2 and 3 thinner (RN24)
+        @test Makie.to_color(layers.roads.color[]) isa Makie.Colorant     # one color, not one for each point: Lecture 5.3 reads `.alpha` of it
         # national: one Lines, one width; close: five, as S22 (test_map_s22.jl)
         @test makemap(_T5_NATIONAL).layers.roads.linewidth[] isa Real
         @test makemap(((-79.2, -78.4), (35.5, 36.1))).layers.roads isa NamedTuple
         # an empty map of a tier is a Lines with nothing in it (Western Europe: no road of the network)
         r = makemap([2.0, 13.0], [48.0, 52.0])
-        @test r.layers.roads isa Makie.Lines && isempty(r.layers.roads[1][]) && r.layers.roads.linewidth[] ≈ 0.6
+        @test r.layers.roads isa Makie.Lines && isempty(r.layers.roads[1][]) && r.layers.roads.linewidth[] ≈ _T5_STYLE.close[2]
         # roads = (; color, alpha, linewidth): the hue, the opacity, the Interstate's width (the other classes in ratio)
         r = makemap(_T5_NC; roads = (; color = :red, alpha = 0.5, linewidth = 2.0))
         @test _t5_rgb(r.layers.roads) == [1.0, 0.0, 0.0] && _t5_alpha(r.layers.roads) ≈ 0.5
-        @test sort(unique(round.(Float64.(r.layers.roads.linewidth[]), digits = 4))) == round.([2.0 * 0.7 / 1.4, 2.0 / 1.4, 2.0], digits = 4)
+        @test sort(unique(round.(Float64.(r.layers.roads.linewidth[]), digits = 4))) == round.(sort(2.0 .* collect(_T5_CLASSW)), digits = 4)
         r = makemap(_T5_NATIONAL; roads = (; color = :red, alpha = 0.5, linewidth = 2.0))
         @test _t5_rgb(r.layers.roads) == [1.0, 0.0, 0.0] && _t5_alpha(r.layers.roads) ≈ 0.5 && r.layers.roads.linewidth[] == 2.0
         # roads = false draws nothing on every tier
@@ -351,22 +362,25 @@ const _T5_NATIONAL = ((-100.0, -90.0), (30.0, 41.0))    # 11 degrees: the nation
 
     @testset "T5.6 every moved map pin is listed with its reason; the rest of it holds, and its road layer is pinned anew" begin
         roadrow(l) = l[1] in ("Interstate Roads", "Major Roads")
-        # test_map_pins.jl: the road layer as N4 and N4b draw it (label, points, opacity, the Interstate's width, style);
-        # the regional tier's label is "Major Roads" (N4b, RN26), the national tier's "Interstate Roads"
+        # the reasons a moved case carries (N4: the tiers; N4b: RN26, the regional label; RN24, the Interstate's opacity and width)
+        isn4(v) = v == "N4" || startswith(v, "N4,")
+        rn26(v) = occursin("N4b (RN26)", v)
+        rn24(v) = occursin("N4b (RN24)", v)
+        # test_map_pins.jl: the road layer as N4 and N4b draw it (label, points, opacity, the Interstate's width, style); the
+        # regional tier's label is "Major Roads" (RN26), the national tier's "Interstate Roads"; opacity and width are RN24's
+        reg(n) = ("Major Roads", n, _T5_STYLE.close..., "solid")
         N4_MMPIN = Dict(
-            "xy_default"        => ("Major Roads", 9840, 0.2, 0.6, "solid"),
-            "xy_xexpand_0.1"    => ("Major Roads", 8223, 0.2, 0.6, "solid"),
-            "xy_xexpand_0.3"    => ("Major Roads", 9840, 0.2, 0.6, "solid"),
-            "xy_xexpand_0.05"   => ("Major Roads", 7689, 0.2, 0.6, "solid"),
-            "tuple_pair"        => ("Major Roads", 34692, 0.2, 0.6, "solid"),
-            "region_CUS"        => ("Interstate Roads", 81408, 0.3, 0.3, "solid"),
-            "xy_hawaii_not_CUS" => ("Major Roads", 876, 0.2, 0.6, "solid"),
-            "xy_outside_US"     => ("Major Roads", 0, 0.2, 0.6, "solid"),
+            "xy_default"        => reg(9840),
+            "xy_xexpand_0.1"    => reg(8223),
+            "xy_xexpand_0.3"    => reg(9840),
+            "xy_xexpand_0.05"   => reg(7689),
+            "tuple_pair"        => reg(34692),
+            "region_CUS"        => ("Interstate Roads", 81408, _T5_STYLE.far..., "solid"),
+            "xy_hawaii_not_CUS" => reg(876),
+            "xy_outside_US"     => reg(0),
         )
-        isn4(v) = startswith(v, "N4")
         @test sort([k for (k, v) in MMPIN_MOVED if isn4(v)]) == sort(collect(keys(N4_MMPIN)))
-        @test all(((k, v),) -> !isn4(v) || (v == "N4, N4b (RN26)") == (N4_MMPIN[k][1] == "Major Roads"), MMPIN_MOVED)
-        @test all(((k, v),) -> !isn4(v) || v in ("N4", "N4, N4b (RN26)"), MMPIN_MOVED)
+        @test all(((k, v),) -> !isn4(v) || (rn26(v) == (N4_MMPIN[k][1] == "Major Roads") && rn24(v)), MMPIN_MOVED)
         for (name, thunk) in mmpin_cases()
             @testset "map pin $name" begin
                 fig, ax = thunk()
@@ -391,7 +405,8 @@ const _T5_NATIONAL = ((-100.0, -90.0), (30.0, 41.0))    # 11 degrees: the nation
         @test sort([k for (k, v) in K11CPIN_MOVED if isn4(v)]) == sort(collect(keys(N4_K11C)))
         K11C_REGIONAL = ("nc_cities_default", "nc_cities_xe0.2", "carolinas_xe0.1", "nc_counties_xe0.05", "nc_counties_xe0.1",
                          "high_point_goldsboro", "synthetic_tall_151", "synthetic_wide_151")
-        @test sort([k for (k, v) in K11CPIN_MOVED if v == "N4, N4b (RN26)"]) == sort(collect(K11C_REGIONAL))
+        @test sort([k for (k, v) in K11CPIN_MOVED if rn26(v)]) == sort(collect(K11C_REGIONAL))
+        @test all(((k, v),) -> !isn4(v) || rn24(v), K11CPIN_MOVED)
         for (name, thunk) in vcat(k11cpin_cases(), k11cpin_synthetic())
             @testset "K11c pin $name" begin
                 fig, ax = thunk()
@@ -400,38 +415,43 @@ const _T5_NATIONAL = ((-100.0, -90.0), (30.0, 41.0))    # 11 degrees: the nation
                 if isn4(get(K11CPIN_MOVED, name, ""))
                     @test got != want
                     @test filter(!roadrow, got) == filter(!roadrow, want)
-                    old = only(filter(roadrow, want))
-                    label = name in K11C_REGIONAL ? "Major Roads" : "Interstate Roads"
-                    @test only(filter(roadrow, got)) == (label, N4_K11C[name], old[3], old[4], old[5])   # the points and the regional label move
+                    regional = name in K11C_REGIONAL
+                    # the points, the regional label, and the opacity and width (regional: close step; Popco's two: the mid step)
+                    @test only(filter(roadrow, got)) == (regional ? "Major Roads" : "Interstate Roads", N4_K11C[name],
+                                                         (regional ? _T5_STYLE.close : _T5_STYLE.mid)..., "solid")
                 end
             end
         end
-        # test_map_line_pins.jl: the far step's opacity, 0.35 before, 0.3 now (N4); the regional label, "Major Roads" (N4b,
-        # RN26); nothing else
-        @test sort([k for (k, v) in MLPIN_MOVED if v == "N4"]) == ["layers_CUS_map", "road_tier_20.5", "road_tier_29.99", "road_tier_30.0"]
-        @test sort([k for (k, v) in MLPIN_MOVED if v == "N4b (RN26)"]) ==
+        # test_map_line_pins.jl: the road row of each moved case, pinned anew: (label, RGBA, `alpha` attribute, width, style)
+        row(label, step) = (label, [0.275, 0.51, 0.706, step[1]], 1.0, step[2], "solid")
+        N4_LAYERS = Dict("CUS_map" => row("Interstate Roads", _T5_STYLE.far), "NC_frame" => row("Major Roads", _T5_STYLE.close),
+                         "Hawaii_frame" => row("Major Roads", _T5_STYLE.close), "Europe_frame" => row("Major Roads", _T5_STYLE.close))
+        @test sort([k for (k, v) in MLPIN_MOVED if startswith(k, "layers_") && isn4(v)]) == ["layers_CUS_map"]
+        @test sort([k for (k, v) in MLPIN_MOVED if startswith(k, "layers_")]) ==
+              sort(["layers_" * n for n in keys(N4_LAYERS)])
+        @test sort([k for (k, v) in MLPIN_MOVED if startswith(k, "road_tier_") && isn4(v)]) ==
+              ["road_tier_20.5", "road_tier_29.99", "road_tier_30.0"]
+        @test sort([k for (k, v) in MLPIN_MOVED if rn26(v)]) ==
               ["layers_Europe_frame", "layers_Hawaii_frame", "layers_NC_frame", "road_tier_10.0", "road_tier_9.0"]
+        @test sort([k for (k, v) in MLPIN_MOVED if !rn24(v)]) == []
         for (name, thunk, want) in MLPIN_LAYERS
             got = _mlpin_layers(thunk()[2])
             got == want || @test haskey(MLPIN_MOVED, "layers_" * name)
-            if get(MLPIN_MOVED, "layers_" * name, "") == "N4"
+            if haskey(MLPIN_MOVED, "layers_" * name)
                 @test filter(!roadrow, got) == filter(!roadrow, want)
-                old = only(filter(roadrow, want))
-                @test old[2][4] == 0.35 && only(filter(roadrow, got)) == (old[1], [old[2][1:3]; 0.3], old[3], old[4], old[5])
-            elseif get(MLPIN_MOVED, "layers_" * name, "") == "N4b (RN26)"
-                @test filter(!roadrow, got) == filter(!roadrow, want)
-                old = only(filter(roadrow, want))
-                @test old[1] == "Interstate Roads" && only(filter(roadrow, got)) == ("Major Roads", old[2], old[3], old[4], old[5])
+                @test only(filter(roadrow, got)) == N4_LAYERS[name]
             end
         end
+        # the road layer by latitude span: (alpha, width) of each step, and the label of the tier
         for (span, y0, want) in MLPIN_ROAD_TIERS
             fig, ax = makemap([-100.0, -90.0], [y0, y0 + span]; xexpand = 0, yexpand = 0)
             roads = [r for r in _mlpin_layers(ax) if roadrow(r)]
             got = isempty(roads) ? nothing : (roads[1][2][4], roads[1][4])
-            label = isempty(roads) ? "" : roads[1][1]
             got == want || @test haskey(MLPIN_MOVED, "road_tier_$span")
-            get(MLPIN_MOVED, "road_tier_$span", "") == "N4" && @test want == (0.35, 0.3) && got == (0.3, 0.3)
-            get(MLPIN_MOVED, "road_tier_$span", "") == "N4b (RN26)" && @test got == want && label == "Major Roads"
+            if haskey(MLPIN_MOVED, "road_tier_$span")
+                step = span <= 10 ? _T5_STYLE.close : span <= 20 ? _T5_STYLE.mid : _T5_STYLE.far
+                @test got == step && roads[1][1] == (span <= 10 ? "Major Roads" : "Interstate Roads")
+            end
         end
     end
 end

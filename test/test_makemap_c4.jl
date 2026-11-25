@@ -84,19 +84,19 @@ end
     end
 
     @testset "roads = (; color, alpha, linewidth) overrides attributes of that layer" begin
-        base = _c4_layers(makemap(nc.LON, nc.LAT).ax)[1][2]                    # the Interstate layer: 0.2, 0.6
-        @test base[1] ≈ [0.2745, 0.5098, 0.7059, 0.2] atol = 1e-4
-        @test base[3] == 0.6
+        base = _c4_layers(makemap(nc.LON, nc.LAT).ax)[1][2]                    # the Interstate layer: 0.32, 0.7 (N4b, RN24)
+        @test base[1] ≈ [0.2745, 0.5098, 0.7059, 0.32] atol = 1e-4
+        @test base[3] == 0.7
         r = makemap(nc.LON, nc.LAT; roads = (; color = :steelblue, alpha = 0.5))   # README Example 2
         l = _c4_layers(r.ax)[1][2]
         @test l[1] ≈ [0.2745, 0.5098, 0.7059, 0.5] atol = 1e-4
-        @test l[3] == 0.6 && l[5] == base[5]
+        @test l[3] == 0.7 && l[5] == base[5]
         l = _c4_layers(makemap(nc.LON, nc.LAT; roads = (; color = :red)).ax)[1][2]   # the zoom's alpha stays
-        @test l[1] == [1.0, 0.0, 0.0, 0.2] && l[3] == 0.6
+        @test l[1] == [1.0, 0.0, 0.0, 0.32] && l[3] == 0.7
         l = _c4_layers(makemap(nc.LON, nc.LAT; roads = (; linewidth = 2)).ax)[1][2]
         @test l[1] ≈ base[1] atol = 1e-4
         @test l[3] == 2.0
-        l = _c4_layers(makemap(region = :CUS; roads = (; alpha = 0.9, linewidth = 1.0)).ax)[1][2]   # far zoom: 0.35 and 0.3 otherwise
+        l = _c4_layers(makemap(region = :CUS; roads = (; alpha = 0.9, linewidth = 1.0)).ax)[1][2]   # far zoom: 0.3 and 0.8 otherwise
         @test l[1][4] == 0.9 && l[3] == 1.0
         @test _c4_layers(makemap(nc.LON, nc.LAT; roads = (;)).ax) == _c4_layers(makemap(nc.LON, nc.LAT).ax)   # no override: :auto's
         # the layer is still the Interstate skeleton, drawn up to 30 degrees of span, with every point

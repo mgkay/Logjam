@@ -220,14 +220,15 @@ Create a map of a predefined region or of the box around a set of longitude-lati
   three quarters of a mile of each other, that joins two routes at an interchange. (2) A larger map that spans **at
   most 10 degrees of latitude** draws Logjam's U.S. road network (`usrdlink`, derived from FAF5, with no ramps and one
   line for each divided road), its classes 1 to 3 (Interstates, other freeways and expressways, other principal
-  arterials), labeled "Major Roads", at opacity 0.2, the Interstate at width 0.6 and classes 2 and 3 in the ratios
-  of (1), the Interstate on top. (3) A map
-  that spans **at most 30 degrees** draws that network's Interstates (`INTERSTATE`), at opacity and width 0.25 and 0.5
-  up to 20 degrees, 0.3 and 0.3 up to 30. (4) A map of more than 30 degrees draws no roads. `region = :World` and `:US`
-  draw none and `:CUS` the Interstates. `false` draws no roads. A `NamedTuple` of `color`, `alpha` (the opacity, which
-  multiplies a color's own) and `linewidth` restyles whichever tier `:auto` would draw: `color` replaces the hue,
-  `alpha` the opacity, and `linewidth` the Interstate's width, the other classes of (1) and (2) keeping their ratios to
-  it.
+  arterials), labeled "Major Roads", the Interstate at opacity 0.32 and width 0.7, wider and more opaque than v0.3.0's
+  two overlapping carriageways each were so that one line reads as they did, and classes 2 and 3 thinner, and so
+  fainter, beneath it (widths 0.3 and 0.15 times the Interstate's), the Interstate on top. (3) A map
+  that spans **at most 30 degrees** draws that network's Interstates (`INTERSTATE`), labeled "Interstate Roads", at
+  opacity and width 0.32 and 0.85 up to 20 degrees, 0.3 and 0.8 up to 30. (4) A map of more than 30 degrees draws no
+  roads. `region = :World` and `:US` draw none and `:CUS` the Interstates. `false` draws no roads. A `NamedTuple` of
+  `color`, `alpha` (the opacity, which multiplies a color's own) and `linewidth` restyles whichever tier `:auto` would
+  draw: `color` replaces the hue, `alpha` the opacity, and `linewidth` the Interstate's width, the other classes of (1)
+  and (2) keeping their ratios to it.
 - `borders`: the border layers, in blue at width 0.75. `true` (default) draws the U.S. state borders and the country borders
   that the map's place calls for (below); `false` draws neither; a `NamedTuple` of `color` and `linewidth` draws the same
   layers with those attributes.
