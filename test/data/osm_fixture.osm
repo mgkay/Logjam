@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Hand-made OpenStreetMap extract for the offline osm_roads tests (K2a). Not real map data: twelve nodes
+     and nine ways near Raleigh, each way chosen to exercise one rule (maxspeed, access hierarchy, an
+     unknown highway class). Format: what Overpass returns, read by LightOSM.graph_from_file. -->
+<osm version="0.6" generator="logjam-test-fixture">
+  <node id="1" lat="35.780" lon="-78.640"/>
+  <node id="2" lat="35.780" lon="-78.639"/>
+  <node id="3" lat="35.780" lon="-78.638"/>
+  <node id="4" lat="35.781" lon="-78.640"/>
+  <node id="5" lat="35.781" lon="-78.639"/>
+  <node id="6" lat="35.781" lon="-78.638"/>
+  <node id="7" lat="35.782" lon="-78.640"/>
+  <node id="8" lat="35.782" lon="-78.639"/>
+  <node id="9" lat="35.782" lon="-78.638"/>
+  <node id="10" lat="35.783" lon="-78.638"/>
+  <node id="11" lat="35.783" lon="-78.637"/>
+  <node id="12" lat="35.7825" lon="-78.6385"/>
+  <way id="101">
+    <nd ref="1"/><nd ref="2"/><nd ref="3"/>
+    <tag k="highway" v="tertiary"/>
+    <tag k="name" v="Main St"/>
+    <tag k="maxspeed" v="35 mph"/>
+  </way>
+  <way id="102">
+    <nd ref="4"/><nd ref="5"/><nd ref="6"/>
+    <tag k="highway" v="residential"/>
+    <tag k="name" v="Second St"/>
+  </way>
+  <way id="103">
+    <nd ref="7"/><nd ref="8"/><nd ref="9"/>
+    <tag k="highway" v="residential"/>
+    <tag k="name" v="Third St"/>
+  </way>
+  <way id="104">
+    <nd ref="1"/><nd ref="4"/><nd ref="7"/>
+    <tag k="highway" v="residential"/>
+    <tag k="name" v="West Ave"/>
+  </way>
+  <way id="105">
+    <nd ref="2"/><nd ref="5"/><nd ref="8"/>
+    <tag k="highway" v="tertiary"/>
+    <tag k="name" v="Mid Ave"/>
+  </way>
+  <way id="106">
+    <nd ref="3"/><nd ref="6"/><nd ref="9"/>
+    <tag k="highway" v="residential"/>
+    <tag k="name" v="Gated Drive"/>
+    <tag k="vehicle" v="no"/>
+    <tag k="bus" v="yes"/>
+  </way>
+  <way id="107">
+    <nd ref="9"/><nd ref="10"/>
+    <tag k="highway" v="residential"/>
+    <tag k="name" v="North Link"/>
+  </way>
+  <way id="108">
+    <nd ref="10"/><nd ref="11"/>
+    <tag k="highway" v="crossing"/>
+    <tag k="name" v="Crossing Way"/>
+  </way>
+  <way id="109">
+    <nd ref="8"/><nd ref="12"/><nd ref="9"/>
+    <tag k="highway" v="residential"/>
+    <tag k="name" v="Closed Road"/>
+    <tag k="access" v="no"/>
+  </way>
+</osm>

@@ -12,9 +12,9 @@ Logjam is a Julia package for logistics engineering, providing tools for:
 * **Spatial Data**: A gazetteer of U.S. administrative boundaries and points, including Cities, Counties, ZIP codes (3- and 5-digit), Census tracts, and CBSA/CSA definitions.
 * **Geocoding**: Forward (`loc2lonlat`) and reverse (`lonlat2loc`) geocoding with tiered resolution — street addresses via Nominatim, city/place names, postal codes, and counties from built-in reference data.
 * **Distance Metrics**: Unified distance calculation utilities supporting Rectilinear (*L*₁), Euclidean (*L*₂), Minkowski (*L_p*), Chebyshev (*L*∞), Great Circle (Haversine), and area-adjusted great-circle (`dgca`) metrics.
-* **Plotting**: Display helper (`dcf`) via CairoMakie extension.
+* **Plotting**: Display helper (`dcf`) via the map extension (GeoMakie).
 * **Mapping**: Plotting recipes and helper functions for mapping spatial data using GeoMakie.
-* **Data Helpers**: Matrix-to-DataFrame conversion (`mat2df`), formatted printing (`prt`), and floating-point snapping (`snapvals`).
+* **Data Helpers**: Formatted printing (`prt`), thousands separators (`thousands`), floating-point snapping (`snapvals`), the 51-row state table (`usstate`), and a table's or a geocoded place's coordinates as the distance functions take them (`lonlat`).
 
 ## Installation
 
@@ -24,13 +24,13 @@ To install Logjam, use the following command in your Julia REPL:
 
 ```julia
 using Pkg
-Pkg.add(url="https://github.com/mgkay/Logjam")
+Pkg.add(url="https://github.com/mgkay/Logjam", rev="v0.3.0")
 ```
 
 To run all examples in the README and the example notebook, install the additional packages:
 
 ```julia
-Pkg.add(["CairoMakie", "GeoMakie", "HTTP", "JSON3", "LightOSM", "NearestNeighbors"])
+Pkg.add(["CairoMakie", "GeoMakie", "HTTP", "JSON3", "LightOSM"])
 ```
 
 ## Dependencies
@@ -40,10 +40,8 @@ Logjam uses Julia package extensions to keep its core lightweight. Features acti
 | `using` statement | Features enabled |
 |---|---|
 | `using Logjam` | Core: facility location, costing, distances, road networks, routing, spatial data, geocoding, data helpers. |
-| `using Logjam, CairoMakie` | + plotting: `dcf`. |
-| `using Logjam, CairoMakie, GeoMakie` | + mapping: `makemap`, `plotroads!`, `plotroute!`, `aligntext`. |
-| `using GLMakie; using Logjam` | + interactive map display via `backend=:GLMakie`. |
-| `using LightOSM, NearestNeighbors; using Logjam` | + OSM roads: `osm_roads`, `stitchnetworks`. |
+| `using Logjam, CairoMakie, GeoMakie` | + mapping and display: `makemap`, `plotroads!`, `plotroute!`, `aligntext`, `dcf`. GeoMakie loads the map extension; CairoMakie draws. |
+| `using LightOSM; using Logjam` | + OSM roads: `osm_roads` (downloading; a saved copy reads without it). |
 | `using HTTP, JSON3; using Logjam` | + address geocoding: `loc2lonlat` address tier via Nominatim. |
 
 ## Worked Examples
@@ -87,10 +85,10 @@ println("$(nrow(nc_large)) NC cities with pop > 100k")
 
 # Forward geocoding: city name to coordinates
 geo = loc2lonlat("Raleigh", state=:NC)
-println("Raleigh: ($(round(geo.LON; digits=2)), $(round(geo.LAT; digits=2))), source=$(geo.source)")
+println("Raleigh: ($(round(geo.LON; digits=2)), $(round(geo.LAT; digits=2))), source=$(geo.GC_SOURCE)")
 
 # Reverse geocoding: coordinates to nearest named place
-nearest = lonlat2loc(-78.85, 35.73, filter(r -> r.POP > 50_000 && r.ISCUS, places))
+nearest = lonlat2loc([-78.85, 35.73], filter(r -> r.POP > 50_000 && r.ISCUS, places))
 println("Nearest large city: $(nearest.desc)")
 
 # Load continental US 3-digit ZIP centroids
@@ -111,7 +109,7 @@ Continental US 3-digit ZIPs: 882
 
 ### Example 2 — Mapping
 
-Logjam's `makemap` function creates GeoMakie map figures with automatic projection, region detection, and a FAF5 interstate highway background. This example maps NC cities and introduces the full mapping toolkit: `makemap` for the figure and axis, `scatter!` and `text!` for data, `aligntext` for automatic label positioning, and the `roadcolor`/`roadalpha` keywords for customizing the built-in road overlay.
+Logjam's `makemap` function creates GeoMakie map figures with automatic projection, region detection, and a FAF5 interstate highway background. This example maps NC cities and introduces the full mapping toolkit: `makemap` for the figure and axis, `scatter!` and `text!` for data, `aligntext` for automatic label positioning, and the `roads` keyword for customizing the built-in road overlay.
 
 ```julia
 using Logjam
@@ -122,7 +120,7 @@ cities = filter(r -> r.STFIP == st2fips(:NC) && r.POP > 100_000, usplace())
 x, y, name = cities.LON, cities.LAT, cities.NAME
 
 # Create map — auto-fits region to data; draws FAF5 interstates by default
-fig, ax = makemap(x, y; roadcolor=:steelblue, roadalpha=0.5)
+fig, ax = makemap(x, y; roads = (; color = :steelblue, alpha = 0.5))
 ax.title = "North Carolina Cities with Population > 100,000"
 
 # Plot city locations and labels
@@ -134,7 +132,7 @@ dcf()
 
 ![NC Cities Plot](docs/assets/nc_cities_plot.png)
 
-**After-action.** `makemap` detects when coordinates fall within the continental U.S. and automatically overlays the FAF5 interstate network as a geographic reference. The `roadcolor` and `roadalpha` keywords restyle that road overlay directly, as shown above where the interstates are drawn in semi-transparent steel blue. `aligntext(x, y)` returns a named tuple of keyword arguments (`:align`, `:offset`) that are splatted into `text!` via `...`, automatically positioning each label to avoid overlap with its marker.
+**After-action.** `makemap` detects when coordinates fall within the continental U.S. and automatically overlays the FAF5 interstate network as a geographic reference. The `roads` keyword restyles that road overlay directly (`color`, `alpha` and `linewidth`), as shown above where the interstates are drawn in semi-transparent steel blue. `aligntext(x, y)` returns a named tuple of keyword arguments (`:align`, `:offset`) that are splatted into `text!` via `...`, automatically positioning each label to avoid overlap with its marker.
 
 ---
 
@@ -164,14 +162,14 @@ prt(XY[y, :]; rows=hubs.NAME, cols=["LON", "LAT"], row_title="Hubs")
 ```
 
 ```
-         Hubs      LON    LAT
-─────────────────────────────
-         Gary   -87.33  41.55
-Warner Robins   -83.48  32.64
-   Plainfield   -74.48  40.75
-     Pasadena  -118.11  34.18
-       Yakima  -120.45  46.62
-       Dallas   -96.79  32.81
+            Hubs      LON    LAT
+────────────────────────────────
+      Plainfield   -74.48  40.75
+   Warner Robins   -83.48  32.64
+Oak Lawn village   -87.73  41.77
+          Dallas   -96.79  32.81
+        Pasadena  -118.11  34.18
+          Yakima  -120.45  46.62
 ```
 
 ```julia
@@ -218,18 +216,18 @@ prt(DataFrame(Index = 1:nrow(cities), City = cities.NAME))
 ```
 
 ```
-  Index            City
+  Index           City
 ──────────────────────
-      1            Cary
-      2       Charlotte
-      3         Concord
-      4          Durham
-      5    Fayetteville
-      6      Greensboro
-      7      High Point
-      8         Raleigh
-      9      Wilmington
-     10   Winston-Salem
+      1           Cary
+      2      Charlotte
+      3        Concord
+      4         Durham
+      5   Fayetteville
+      6     Greensboro
+      7     High Point
+      8        Raleigh
+      9     Wilmington
+     10  Winston-Salem
 ```
 
 ```julia
@@ -247,13 +245,13 @@ prt(DataFrame(
 ```
 
 ```
-  Shipment          Origin    Destination
-──────────────────────────────────────────
-         1       Charlotte        Raleigh
-         2         Concord         Durham
-         3   Winston-Salem           Cary
-         4      High Point   Fayetteville
-         5      Greensboro     Wilmington
+  Shipment         Origin   Destination
+───────────────────────────────────────
+         1      Charlotte       Raleigh
+         2        Concord        Durham
+         3  Winston-Salem          Cary
+         4     High Point  Fayetteville
+         5     Greensboro    Wilmington
 ```
 
 ```julia
@@ -268,18 +266,18 @@ prt(round.(Int, D); rows=cnames, cols=cnames, row_title="City")
 ```
 
 ```
-     City  Cary  Char.  Concord  Durham  Faye.  Gree.  High.  Raleigh  Wilm.  Wins.
-──────────────────────────────────────────────────────────────────────────────────────
-     Cary     0    165      138      25     60     79     91        8    130    104
-    Char.   165      0       25     140    130     92     80      157    196     80
-  Concord   138     25        0     129    119     80     68      131    185     67
-   Durham    25    140      129       0     85     54     66       25    155     79
-    Faye.    60    130      119      85      0    119    131       68     92    144
-    Gree.    79     92       80      54    119      0     15       80    189     27
-    High.    91     80       68      66    131     15      0       92    201     31
-  Raleigh     8    157      131      25     68     80     92        0    137    104
-    Wilm.   130    196      185     155     92    189    201      137      0    221
-    Wins.   104     80       67      79    144     27     31      104    221      0
+   City  Cary  Char.  Concord  Durham  Faye.  Gree.  High.  Raleigh  Wilm.  Wins.
+─────────────────────────────────────────────────────────────────────────────────
+   Cary     0    132      115      18     59     73     80       14    138     97
+  Char.   131      0       20     135    130     93     80      143    198     82
+Concord   115     21        0     119    122     75     62      127    203     63
+ Durham    18    136      119       0     70     57     68       21    150     83
+  Faye.    61    132      124      73      0     96    103       65     99    120
+  Gree.    73     94       75      57     94      0     15       77    189     28
+  High.    80     81       62      68    101     14      0       87    196     21
+Raleigh    14    143      127      23     62     76     88        0    131    102
+  Wilm.   138    199      202     150    100    189    196      132      0    212
+  Wins.    97     82       63      83    117     28     21      102    212      0
 ```
 
 ```julia
@@ -292,7 +290,7 @@ rte, cost = twoopt(rte[1], rteTCh)
 fig, ax = makemap(x, y)
 plotroads!(ax, dfN, dfL)
 
-plotroute!(ax, rte, sh, P, dfN; color=:red, linewidth=2.5, show_markers=false)
+plotroute!(ax, rte, sh, [dfN.LON dfN.LAT]; P=P, color=:red, linewidth=2.5)
 
 scatter!(ax, x, y, color=:blue, markersize=10)
 text!(ax, x, y, text=cities.NAME; aligntext(x, y)...)
@@ -303,18 +301,18 @@ dcf()
 
 ![NC Routing Plot](docs/assets/nc_routing_plot.png)
 
-**After-action.** `cropnetwork` extracts the FAF5 subgraph covering the demand points, reducing graph size before solving. `addconnectors` appends connector edges from each demand point to its nearest network node. `shortestpaths` computes shortest-path distances `D` and parent pointers `P` from the connector nodes. `prt` displays the distance matrix with city-name rows/columns and the `row_title` keyword in the upper-left corner; it also generates the city index and shipment manifest from inline DataFrames. `plotroads!` renders the road network with FCLASS-based styling — roads are colored and sized by functional class (interstates in muted blue, arterials in warm yellow, local roads in white/gray). `savings` constructs an initial route by iteratively merging the most cost-saving shipment pair, then `twoopt` improves it by reversing sub-sequences. `plotroute!` reconstructs the road-following path for each leg from the parent pointers and renders the result.
+**After-action.** `cropnetwork` extracts the FAF5 subgraph covering the demand points, reducing graph size before solving. `addconnectors` appends connector edges from each demand point to its nearest network node. `shortestpaths` computes shortest-path distances `D` and parent pointers `P` from the connector nodes. `prt` displays the distance matrix with city-name rows/columns and the `row_title` keyword in the upper-left corner; it also generates the city index and shipment manifest from inline DataFrames. `plotroads!` renders the road network with FCLASS-based styling — roads are colored and sized by functional class (interstates in muted blue, arterials in warm yellow, local roads in white/gray). `savings` constructs an initial route by iteratively merging the most cost-saving shipment pair, then `twoopt` improves it by reversing sub-sequences. Given the parent pointers `P` and the network's node coordinates, `plotroute!` traces each leg of the route along the road network, draws the result, and puts an arrowhead partway along each leg to show the direction of travel.
 
 ---
 
 ### Example 5 — Vehicle Routing (OSM Network)
 
-> **Requires OSM extension** (`LightOSM`, `NearestNeighbors`) **and Nominatim extension** (`HTTP`, `JSON3`).
+> **Requires OSM extension** (`LightOSM`) **and Nominatim extension** (`HTTP`, `JSON3`).
 
 The `osm_roads` function downloads a local OpenStreetMap road network and integrates it with the same connector pipeline used for FAF5 routing. This example solves a capacitated multi-vehicle VRP in Gainesville, FL — three vehicles with a maximum of three deliveries each share nine stops from a central depot, with each vehicle returning after completing its route. Stop locations are specified as street addresses and geocoded to coordinates using `loc2lonlat`.
 
 ```julia
-using LightOSM, NearestNeighbors  # OSM extension
+using LightOSM                     # OSM extension
 using HTTP, JSON3                  # Nominatim geocoding extension
 using Logjam
 using CairoMakie, GeoMakie, DataFrames
@@ -330,12 +328,12 @@ stops = DataFrame(
 )
 
 # Geocode addresses to (lon, lat) — Nominatim with city/state fallback
-gc = loc2lonlat(stops)
+gc = loc2lonlat(stops; cache=joinpath(@__DIR__, "data", "geocode_cache.csv"))
 x, y = gc.LON, gc.LAT
 
 # Download OSM road network covering the stop region
 bb = mapbbox(x, y; xexpand=0.1, yexpand=0.1)
-dfN0, dfL0 = osm_roads((bb[1]..., bb[2]...); cache_dir=joinpath(@__DIR__, "data"))
+dfN0, dfL0 = osm_roads(bb; cache_dir=joinpath(@__DIR__, "data"))
 
 # Build network and shortest paths
 dfN, dfL = addconnectors(dfN0, dfL0, x, y; add_nf_nf=false)
@@ -353,7 +351,7 @@ rte = [twoopt(r, rteTCh)[1] for r in rte]
 fig, ax = makemap(x, y)
 plotroads!(ax, dfN, dfL)
 
-plotroute!(ax, rte, sh, P, dfN; tr=tr, linewidth=2.5, show_markers=false)
+plotroute!(ax, rte, sh, [dfN.LON dfN.LAT]; tr=tr, P=P, linewidth=2.5)
 
 scatter!(ax, x[2:end], y[2:end], color=:blue, markersize=12)
 scatter!(ax, [x[1]], [y[1]], color=:green, markersize=16, marker=:rect)
@@ -365,7 +363,7 @@ dcf()
 
 ![Gainesville VRP Plot](docs/assets/gnv_osm_vrp_plot.png)
 
-**After-action.** `loc2lonlat` geocodes the stop addresses via Nominatim's structured query API; results are cached to CSV so subsequent runs skip the API calls. If an address cannot be resolved, the function falls back to the city/state centroid and flags the result as `PARTIAL`. The geocoded coordinates then feed into the standard OSM routing pipeline. `mapbbox` derives a bounding box with 10% expansion to ensure the downloaded OSM region covers all stops. `osm_roads` downloads drivable roads from the Overpass API and caches results as CSV; subsequent calls with the same bbox load from cache. `add_nf_nf=false` disables direct demand-to-demand connectors that would bypass the road network. The capacity constraint is enforced through the cost function: `length(r) > 6 ? Inf` limits each route to three deliveries (each shipment appears as a pickup–delivery pair), causing `savings` to produce multiple routes. `tr=(b=[1], e=[1])` specifies that each route begins and ends at the depot. The multi-route `plotroute!` method automatically assigns a distinct color per vehicle from the Wong palette. For scenarios requiring local OSM detail integrated with the national FAF5 network, `stitchnetworks` creates connector edges between the two networks, returning a unified graph compatible with the standard routing pipeline.
+**After-action.** `loc2lonlat` geocodes the stop addresses via Nominatim's structured query API; results are cached to CSV so subsequent runs skip the API calls. An address whose house number OpenStreetMap does not carry is placed on its street and flagged `GC_SOURCE = "STREET"`, `GC_STATUS = "PARTIAL"` (six of the ten stops here); one that cannot be resolved at all falls back to the city/state centroid, also flagged `PARTIAL`. The geocoded coordinates then feed into the standard OSM routing pipeline. `mapbbox` derives a bounding box with 10% expansion to ensure the downloaded OSM region covers all stops. `osm_roads` downloads drivable roads from the Overpass API and caches results as CSV; subsequent calls with the same bbox load from cache. `add_nf_nf=false` disables direct demand-to-demand connectors that would bypass the road network. The capacity constraint is enforced through the cost function: `length(r) > 6 ? Inf` limits each route to three deliveries (each shipment appears as a pickup–delivery pair), causing `savings` to produce multiple routes. `tr=(b=[1], e=[1])` specifies that each route begins and ends at the depot. The multi-route `plotroute!` method automatically assigns a distinct color per vehicle from the Wong palette.
 
 ---
 
@@ -399,13 +397,13 @@ prt(sh_df)
 ```
 
 ```
-    f     s  a       v       h    d    qᵒ       TLCᵒ  isLTL
-───────────────────────────────────────────────────────────
-1  20  4.44  1  85,000  0.3000  532  0.27  47,801.01      1
-2  20  4.44  1  25,000  0.3000  532  1.90  28,536.25      0
+    f     s  a       v    h    d    qᵒ       TLCᵒ  isLTL
+────────────────────────────────────────────────────────
+1  20  4.44  1  85,000  0.3  532  0.27  47,801.01   true
+2  20  4.44  1  25,000  0.3  532  1.90  28,536.25  false
 ```
 
-**After-action.** Both rows share the same carrier and lane (`d=532` mi), but row 1's high unit value (`v=85,000 $/ton`) makes inventory cost dominant, so `minTLC` selects a small LTL shipment (`qᵒ=0.27` ton, `isLTL=1`). Row 2's lower unit value allows a full truckload (`qᵒ=1.90` ton, `isLTL=0`) to win on freight cost. The comprehension `[minTLC(sh_df[i, :], tr, ppi_ltl) for i in 1:nrow(sh_df)]` passes each `DataFrameRow` directly to `minTLC`'s struct-form overload, which internally dispatches through `charge_tl`, `charge_ltl`, `maxpayld`, and `totlogcost`. The three result fields (`qᵒ`, `TLCᵒ`, `isLTL`) are then broadcast back as DataFrame columns via `[!, :col] = [...]` assignment. `prt` auto-formats mixed numeric and boolean columns: it applies comma separators to large integers and four-decimal display to floats, choosing column widths automatically.
+**After-action.** Both rows share the same carrier and lane (`d=532` mi), but row 1's high unit value (`v=85,000 $/ton`) makes inventory cost dominant, so `minTLC` selects a small LTL shipment (`qᵒ=0.27` ton, `isLTL=true`). Row 2's lower unit value allows a full truckload (`qᵒ=1.90` ton, `isLTL=false`) to be selected on freight cost. The comprehension `[minTLC(sh_df[i, :], tr, ppi_ltl) for i in 1:nrow(sh_df)]` passes each `DataFrameRow` directly to `minTLC`'s struct-form overload, which internally dispatches through `charge_tl`, `charge_ltl`, `maxpayld`, and `totlogcost`. The three result fields (`qᵒ`, `TLCᵒ`, `isLTL`) are then broadcast back as DataFrame columns via `[!, :col] = [...]` assignment. `prt` auto-formats mixed numeric and boolean columns: it applies comma separators to large integers, shows a column of fractions with only the places its values have (`h` as `0.3`), prints a `Bool` as `true` or `false`, and chooses column widths automatically.
 
 ---
 
@@ -445,6 +443,246 @@ end
 
 ```
 Center of gravity: (-79.72, 35.58)
+```
+
+<details>
+<summary>Trace (229 lines)</summary>
+
+```
+ Alloc: 1.425482351047e8
+Locate: 7.79978534438e7
+ Alloc: 7.79978534438e7
+Locate: 7.79978534437e7
+ Alloc: 7.79978534437e7
+Locate: 7.79978534437e7
+ Alloc: 7.79978534437e7
+  1: TC = 7.79978534e7
+ Alloc: 1.239261070349e8
+Locate: 8.43652729975e7
+ Alloc: 8.00384912816e7
+Locate: 7.85024448611e7
+ Alloc: 7.80416468924e7
+Locate: 7.79978534437e7
+ Alloc: 7.79978534437e7
+Locate: 7.79978534437e7
+ Alloc: 7.79978534437e7
+  2: TC = 7.79978534e7
+ Alloc: 1.290619560324e8
+Locate: 8.43652729975e7
+ Alloc: 8.00384913847e7
+Locate: 7.85024448611e7
+ Alloc: 7.80416468773e7
+Locate: 7.79978534437e7
+ Alloc: 7.79978534437e7
+Locate: 7.79978534437e7
+ Alloc: 7.79978534437e7
+Locate: 7.79978534437e7
+ Alloc: 7.79978534437e7
+  3: TC = 7.79978534e7
+ Alloc: 1.486883342961e8
+Locate: 8.08591411994e7
+ Alloc: 7.87633084737e7
+Locate: 7.79978534437e7
+ Alloc: 7.79978534437e7
+Locate: 7.79978534437e7
+ Alloc: 7.79978534437e7
+  4: TC = 7.79978534e7
+ Alloc: 1.632614574412e8
+Locate: 9.6958551866e7
+ Alloc: 8.04769131554e7
+Locate: 7.79978534437e7
+ Alloc: 7.79978534437e7
+Locate: 7.79978534437e7
+ Alloc: 7.79978534437e7
+  5: TC = 7.79978534e7
+ Alloc: 1.726294565514e8
+Locate: 9.47805703313e7
+ Alloc: 8.39490802807e7
+Locate: 7.85024448611e7
+ Alloc: 7.80416468362e7
+Locate: 7.79978534437e7
+ Alloc: 7.79978534437e7
+Locate: 7.79978534437e7
+ Alloc: 7.79978534437e7
+  6: TC = 7.79978534e7
+ Alloc: 2.455425366495e8
+Locate: 1.175675281601e8
+ Alloc: 8.83136782914e7
+Locate: 8.43652833883e7
+ Alloc: 8.00469764974e7
+Locate: 7.85024448611e7
+ Alloc: 7.80416468361e7
+Locate: 7.79978534437e7
+ Alloc: 7.79978534437e7
+Locate: 7.79978534437e7
+ Alloc: 7.79978534437e7
+  7: TC = 7.79978534e7
+ Alloc: 1.192535434557e8
+Locate: 8.08591411994e7
+ Alloc: 7.87633085043e7
+Locate: 7.79978534437e7
+ Alloc: 7.79978534437e7
+Locate: 7.79978534437e7
+ Alloc: 7.79978534437e7
+  8: TC = 7.79978534e7
+ Alloc: 1.562284223986e8
+Locate: 1.059217651841e8
+ Alloc: 8.08142092699e7
+Locate: 7.79978534437e7
+ Alloc: 7.79978534437e7
+Locate: 7.79978534437e7
+ Alloc: 7.79978534437e7
+  9: TC = 7.79978534e7
+ Alloc: 2.719108627119e8
+Locate: 1.528713150366e8
+ Alloc: 1.528713150366e8
+Locate: 1.528713150366e8
+ Alloc: 1.528713150366e8
+  10: TC = 1.52871315e8
+ Alloc: 2.326256863362e8
+Locate: 1.059217651841e8
+ Alloc: 8.08142095524e7
+Locate: 7.79978534437e7
+ Alloc: 7.79978534437e7
+Locate: 7.79978534437e7
+ Alloc: 7.79978534437e7
+  11: TC = 7.79978534e7
+ Alloc: 2.628325536461e8
+Locate: 1.528713150366e8
+ Alloc: 1.528713150366e8
+Locate: 1.528713150366e8
+ Alloc: 1.528713150366e8
+Locate: 1.528713150366e8
+ Alloc: 1.528713150366e8
+  12: TC = 1.52871315e8
+ Alloc: 1.680869111924e8
+Locate: 1.528713150366e8
+ Alloc: 1.528713150366e8
+Locate: 1.528713150366e8
+ Alloc: 1.528713150366e8
+Locate: 1.528713150366e8
+ Alloc: 1.528713150366e8
+Locate: 1.528713150366e8
+ Alloc: 1.528713150366e8
+  13: TC = 1.52871315e8
+ Alloc: 2.0715525373e8
+Locate: 8.43652729975e7
+ Alloc: 8.00384908889e7
+Locate: 7.85024448611e7
+ Alloc: 7.80416469067e7
+Locate: 7.79978534437e7
+ Alloc: 7.79978534437e7
+Locate: 7.79978534437e7
+ Alloc: 7.79978534437e7
+  14: TC = 7.79978534e7
+ Alloc: 1.439965021513e8
+Locate: 9.52109134096e7
+ Alloc: 7.94349913273e7
+Locate: 7.79978534437e7
+ Alloc: 7.79978534437e7
+Locate: 7.79978534437e7
+ Alloc: 7.79978534437e7
+  15: TC = 7.79978534e7
+ Alloc: 2.595985046496e8
+Locate: 9.6958551866e7
+ Alloc: 8.04769132085e7
+Locate: 7.79978534437e7
+ Alloc: 7.79978534437e7
+Locate: 7.79978534437e7
+ Alloc: 7.79978534437e7
+  16: TC = 7.79978534e7
+ Alloc: 2.853321540808e8
+Locate: 9.6958551866e7
+ Alloc: 8.04769132035e7
+Locate: 7.79978534437e7
+ Alloc: 7.79978534437e7
+Locate: 7.79978534437e7
+ Alloc: 7.79978534437e7
+Locate: 7.79978534437e7
+ Alloc: 7.79978534437e7
+  17: TC = 7.79978534e7
+ Alloc: 1.762933854376e8
+Locate: 8.43652729975e7
+ Alloc: 8.00384910148e7
+Locate: 7.85024448611e7
+ Alloc: 7.80416468436e7
+Locate: 7.79978534437e7
+ Alloc: 7.79978534437e7
+Locate: 7.79978534437e7
+ Alloc: 7.79978534437e7
+  18: TC = 7.79978534e7
+ Alloc: 2.519313495031e8
+Locate: 1.528713150366e8
+ Alloc: 1.528713150366e8
+Locate: 1.528713150366e8
+ Alloc: 1.528713150366e8
+  19: TC = 1.52871315e8
+ Alloc: 1.195379748001e8
+Locate: 8.43652729975e7
+ Alloc: 8.00384910469e7
+Locate: 7.85024448611e7
+ Alloc: 7.80416468392e7
+Locate: 7.79978534437e7
+ Alloc: 7.79978534437e7
+Locate: 7.79978534437e7
+ Alloc: 7.79978534437e7
+  20: TC = 7.79978534e7
+ Alloc: 1.922657171592e8
+Locate: 8.43652729975e7
+ Alloc: 8.00384910971e7
+Locate: 7.85024448611e7
+ Alloc: 7.80416468692e7
+Locate: 7.79978534437e7
+ Alloc: 7.79978534437e7
+Locate: 7.79978534437e7
+ Alloc: 7.79978534437e7
+  21: TC = 7.79978534e7
+ Alloc: 1.671341785274e8
+Locate: 1.507305652882e8
+ Alloc: 1.409865926083e8
+Locate: 8.43652729975e7
+ Alloc: 8.0038490827e7
+Locate: 7.85024448611e7
+ Alloc: 7.80416468544e7
+Locate: 7.79978534437e7
+ Alloc: 7.79978534437e7
+Locate: 7.79978534437e7
+ Alloc: 7.79978534437e7
+  22: TC = 7.79978534e7
+ Alloc: 1.171103744198e8
+Locate: 8.43652729975e7
+ Alloc: 8.00384911527e7
+Locate: 7.85024448611e7
+ Alloc: 7.80416469022e7
+Locate: 7.79978534437e7
+ Alloc: 7.79978534437e7
+Locate: 7.79978534437e7
+ Alloc: 7.79978534437e7
+  23: TC = 7.79978534e7
+ Alloc: 1.760035774757e8
+Locate: 9.6958551866e7
+ Alloc: 8.04769131724e7
+Locate: 7.79978534437e7
+ Alloc: 7.79978534437e7
+Locate: 7.79978534437e7
+ Alloc: 7.79978534437e7
+  24: TC = 7.79978534e7
+ Alloc: 1.005974750291e8
+Locate: 8.43652729975e7
+ Alloc: 8.00384909992e7
+Locate: 7.85024448611e7
+ Alloc: 7.80416469048e7
+Locate: 7.79978534437e7
+ Alloc: 7.79978534437e7
+Locate: 7.79978534437e7
+ Alloc: 7.79978534437e7
+  25: TC = 7.79978534e7
+  Final: TC = 7.79978534e7
+```
+
+</details>
+
+```
  Facility     LON    LAT
 ────────────────────────
      Cary  -78.82  35.80
@@ -471,4 +709,4 @@ Charlotte (land area 308 mi²):
   dgca self-distance = 6.6 mi
 ```
 
-**After-action.** `wcentroid` returns the population-weighted center of gravity as a `(LON, LAT)` named tuple, applying a `cos(lat)` correction so that meridian convergence does not bias the longitude average; it is the exact single-facility (1-median in the Euclidean sense) anchor and composes directly with `combine(groupby(df, :k), [:LON, :LAT, :POP] => wcentroid => [:LON, :LAT])` for per-group centroids. `ala` generalizes this to `n` facilities: `randX(P, 2)` seeds two random starts inside the demand bounding box, and `nruns=25` runs the alternating heuristic from 25 independent random restarts (seeded via `Random.seed!(1)` for reproducibility), returning the minimum-cost solution to mitigate the local optima inherent to location–allocation. The returned allocation matrix `W` records how much demand each facility serves; here Charlotte anchors the Piedmont cluster while Cary serves the eastern and Triad cities. `dgca` computes area-adjusted great-circle distances: even a facility sited exactly at a city centroid (`dgc = 0`) still incurs `(2/3)√(area/π)` miles of intra-zone access travel — 6.6 mi for Charlotte's 308 mi² footprint — which `dgca` floors in without applying circuity (the caller multiplies by a circuity factor if desired). For a fixed candidate set instead of the continuous plane, use the `pmedian` workflow of Example 3; `dists(X1, X2, p)` additionally supports Minkowski `L_p` and Chebyshev (`p=Inf`) metrics for non-geographic location problems.
+**After-action.** `wcentroid` returns the population-weighted center of gravity as a `(LON, LAT)` named tuple, applying a `cos(lat)` correction so that meridian convergence does not bias the longitude average; it is the exact single-facility (1-median in the Euclidean sense) anchor and composes directly with `combine(groupby(df, :k), [:LON, :LAT, :POP] => wcentroid => [:LON, :LAT])` for per-group centroids. `ala` generalizes this to `n` facilities: `randX(P, 2)` seeds two random starts inside the demand bounding box, and `nruns=25` runs the alternating heuristic from 25 independent random restarts (seeded via `Random.seed!(1)` for reproducibility), printing the cost after every allocate and locate step (`verbose = false` turns the trace off) and returning the minimum-cost solution to mitigate the local optima inherent to location–allocation. The returned allocation matrix `W` records how much demand each facility serves; here Charlotte anchors the Piedmont cluster while Cary serves the eastern and Triad cities. `dgca` computes area-adjusted great-circle distances: even a facility sited exactly at a city centroid (`dgc = 0`) still incurs `(2/3)√(area/π)` miles of intra-zone access travel — 6.6 mi for Charlotte's 308 mi² footprint — which `dgca` floors in without applying circuity (the caller multiplies by a circuity factor if desired). For a fixed candidate set instead of the continuous plane, use the `pmedian` workflow of Example 3; `dists(X1, X2, p)` additionally supports Minkowski `L_p` and Chebyshev (`p=Inf`) metrics for non-geographic location problems.

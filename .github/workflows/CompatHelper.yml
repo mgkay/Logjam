@@ -7,6 +7,10 @@ jobs:
   CompatHelper:
     runs-on: ubuntu-latest
     steps:
+      # ubuntu-latest no longer ships Julia (the run of 2026-11-19 failed with `julia: command not found`)
+      - uses: julia-actions/setup-julia@v3
+        with:
+          version: '1'
       - name: Pkg.add("CompatHelper")
         run: julia -e 'using Pkg; Pkg.add("CompatHelper")'
       - name: CompatHelper.main()

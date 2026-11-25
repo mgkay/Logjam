@@ -3,6 +3,17 @@
 using Test
 using Logjam
 using DataFrames
+# the NaN-separated line coordinates of a location sequence along shortest paths: what `Logjam.rte2lines`
+# computed until v0.3.0, kept here as a test-side helper (plotroute! traces its legs with `tracepath` itself)
+function _test_rte2lines(route, P, dfN)
+    x_out, y_out = Float64[], Float64[]
+    for k in 1:length(route)-1
+        path = tracepath(P[route[k]], route[k], route[k+1])
+        append!(x_out, dfN.LON[path]); push!(x_out, NaN)
+        append!(y_out, dfN.LAT[path]); push!(y_out, NaN)
+    end
+    return x_out, y_out
+end
 using Graphs
 
 @testset "NC Cities Routing Integration" begin
@@ -36,7 +47,10 @@ using Graphs
         @test nodes_conn.IDX[1:10] == collect(1:10)
 
         # Step 5: Build graph and compute shortest paths (undirected for this workflow)
-        g = links2graph(links_conn; dir_col=:__NO_DIR__)
+        # (links2graph honors DIR, as the lectures' graph does; a symmetric matrix needs every link two-way)
+        links_two = copy(links_conn)
+        links_two.DIR .= 0
+        g = links2graph(links_two)
         dist_mat, parents = shortestpaths(g, nrow(cities))
 
         @test size(dist_mat) == (10, 10)
@@ -85,7 +99,7 @@ using Graphs
         @test Set(loc_seq) == Set(1:10)
 
         # Step 9: Convert to plottable lines
-        lx, ly = Logjam.rte2lines(loc_seq, parents, nodes_conn)
+        lx, ly = _test_rte2lines(loc_seq, parents, nodes_conn)
 
         @test length(lx) == length(ly)
         @test length(lx) > 10  # Should have many points (full paths)
@@ -151,16 +165,21 @@ end  # @testset "NC Cities Routing Integration"
     @testset "plotroute! renders route" begin
         fig, ax = makemap(cities.LON, cities.LAT)
         plotroads!(ax, nodes, links)
-        route_handles = plotroute!(ax, final_route, shipments, parents, nodes;
-                                   color=:red, linewidth=2.5, show_markers=false)
-        @test length(route_handles) == 1  # line only, no markers
+        route_handles = plotroute!(ax, final_route, shipments, [nodes.LON nodes.LAT];
+                                   P=parents, color=:red, linewidth=2.5)
+        @test keys(route_handles) == (:lines, :arrows)
+        # the line is the route's legs traced along the FAF5 network, node after node (D2)
+        loc = rte2loc(final_route, shipments)
+        want = tracepath(parents, loc)     # C8 (PCV K11b): a junction between legs is one node of the line, not two
+        @test [(p[1], p[2]) for p in route_handles.lines[1][]] == [(nodes.LON[i], nodes.LAT[i]) for i in want]
+        @test length(route_handles.arrows[1][]) == length(loc) - 1     # an arrowhead on each of the nine legs
     end
 
     @testset "full README Example 4 pipeline" begin
         fig, ax = makemap(cities.LON, cities.LAT)
         handles = plotroads!(ax, nodes, links)
-        plotroute!(ax, final_route, shipments, parents, nodes;
-                   color=:red, linewidth=2.5, show_markers=false)
+        plotroute!(ax, final_route, shipments, [nodes.LON nodes.LAT];
+                   P=parents, color=:red, linewidth=2.5)
         scatter!(ax, cities.LON, cities.LAT, color=:blue, markersize=10)
         text!(ax, cities.LON, cities.LAT, text=cities.NAME;
               aligntext(cities.LON, cities.LAT)...)

@@ -77,13 +77,30 @@ end
     usstates() -> Tuple{Vector, Vector}
 
 Load and cache U.S. state border coordinates from serialized data.
+
+Returns the polylines of the state borders as two vectors `(x, y)` of longitude and latitude, the borders
+separated by `NaN`, to be drawn with `lines!(ax, usstates()...)`: the call Lecture 5.1 makes to draw the borders on a
+plain axis (`Logjam.usstates()`) and four of the Lecture 2.2 figure generators make. The file is read once per
+session and each call returns a copy, so the vectors may be changed freely. Not exported, so the name does not
+collide with a script's own; `public`, reached as `Logjam.usstates()`. (The state table of the census ladder is
+[`usstate`](@ref), a different function.)
+
+# Example
+```jldoctest
+x, y = Logjam.usstates()
+(length(x) == length(y), count(isnan, x) == count(isnan, y))
+
+# output
+
+(true, true)
+```
 """
 function usstates()
     if isnothing(_usstates_cache[])
         data_dir = joinpath(dirname(@__FILE__), "..", "data")
         _usstates_cache[] = open(deserialize, joinpath(data_dir, "usstates.jls"))
     end
-    return _usstates_cache[]
+    return map(copy, _usstates_cache[])
 end
 
 """
@@ -102,73 +119,244 @@ function faf5interstateroads()
     return _faf5interstate_cache[]
 end
 
-"""
-    makemap(x::Union{Nothing, AbstractVector{<:Real}, NTuple{2, <:Real}} = nothing,
-            y::Union{Nothing, AbstractVector{<:Real}, NTuple{2, <:Real}} = nothing;
-            region::Symbol = :World, backend::Symbol = :CairoMakie,
-            xexpand::Real = 0.3, yexpand::Real = 0.1, doRoadbkgd::Bool = true, maxroadlatspan::Real = 30.0,
-            roadcolor = nothing, roadalpha = nothing) -> Figure, GeoAxis
+# makemap's argument types: points (or none) and the box `mapbbox` returns
+const _MapPoints = Union{Nothing, AbstractVector{<:Real}, NTuple{2, <:Real}}
+const _MapBox = Tuple{Tuple{<:Real, <:Real}, Tuple{<:Real, <:Real}}
 
-Creates map visualization for predefined or user-defined region of interest. 
-    
-The map can focus on different predefined regions (the world, U.S., or continental U.S.) or a user-defined region of interest that contains a set of longitude-latitude points. Provides Mercator projection of geographical features such as country borders, U.S. state borders, and roads using `GeoMakie`.
+# What a layer keyword may be, checked here (core) so that every method reports the same error; the drawing is the
+# extension's.
+const _MAP_ROAD_KEYS = (:color, :alpha, :linewidth)
+const _MAP_BORDER_KEYS = (:color, :linewidth)
 
-# Arguments
-- `x`: Optional set of at least two longitudes to define the region of interest; if `nothing`, defaults to a pre-defined region based on the `region` parameter.
-- `y`: Optional set of at least two latitudes to define the region of interest; if `nothing`, defaults to a pre-defined region based on the `region` parameter.
-- `region::Symbol`: Specifies the region to focus on. Options include:
-    - `:World`: Default. Focuses on the entire world.
-    - `:US`: Focuses on the United States.
-    - `:CUS`: Focuses on the continental U.S. without showing country borders.
-- `backend::Symbol`: Specifies the rendering backend. Options are:
-    - `:CairoMakie`: Default. Uses CairoMakie for rendering.
-    - `:GLMakie`: Uses GLMakie for interactive rendering. Requires `using GLMakie` before calling.
-- `xexpand::Float64`: Expansion factor for the x-axis limits. Default is `0.3`.
-- `yexpand::Float64`: Expansion factor for the y-axis limits. Default is `0.1`.
-- `doRoadbkgd::Bool`: Whether to include roads as background features if maximum latitude span is less than `maxroadlatspan`. Default is `true`.
-- `maxroadlatspan::Float64`: Maximum latitude span for displaying roads. Default is `30.0`° (allows continental US coverage with FAF5 interstate network).
-- `showgrid::Bool`: Whether to display grid lines and coordinate labels. Default is `false`.
-- `roadcolor`: Optional color for the interstate road overlay. If `nothing` (default), uses the adaptive `:steelblue`. Any Makie-compatible color overrides it.
-- `roadalpha`: Optional alpha (opacity) for the interstate road overlay. If `nothing` (default), uses the adaptive value computed from the latitude span. An explicit value overrides it.
+function _maplayer(name, value, keys)
+    value isa NamedTuple || return value
+    bad = [k for k in Base.keys(value) if k ∉ keys]
+    isempty(bad) || throw(ArgumentError("makemap's `$name` takes $(join(("`$k`" for k in keys), ", ", " and ")) " *
+                                        "but not $(join(("`$k`" for k in bad), ", ", " or "))"))
+    return value
+end
 
-# Returns
-- `fig::Figure`: The figure object containing the map.
-- `ax::GeoAxis`: The axis object where the map is drawn.
+function _maproads(roads, doRoadbkgd)
+    if doRoadbkgd !== nothing
+        roads === nothing || throw(ArgumentError("makemap takes `roads` or its deprecated alias `doRoadbkgd`, not both"))
+        doRoadbkgd isa Bool || throw(ArgumentError("`doRoadbkgd` is true or false; got $(repr(doRoadbkgd))"))
+        Base.depwarn("makemap's `doRoadbkgd` is deprecated: `doRoadbkgd = false` is `roads = false`, and " *
+                     "`doRoadbkgd = true` is `roads = :auto`, the default.", :makemap)
+        return doRoadbkgd ? :auto : false
+    end
+    (roads === nothing || roads === :auto) && return :auto
+    roads === false && return false
+    roads isa NamedTuple && return _maplayer("roads", roads, _MAP_ROAD_KEYS)
+    throw(ArgumentError("makemap's `roads` is :auto, false or a NamedTuple of `color`, `alpha` and `linewidth`; got $(repr(roads))"))
+end
 
-Interstate roads (if used) are derived from FAF5: https://geodata.bts.gov/datasets/usdot::freight-analysis-framework-faf5-network-links/about. U.S. state borders (if used) are derived from https://raw.githubusercontent.com/PublicaMundi/MappingAPI/master/data/geojson/us-states.json. Country borders (if used) are derived from https://github.com/PublicaMundi/MappingAPI/blob/master/data/geojson/countries.geojson.
+function _mapborders(borders)
+    (borders === true || borders === false) && return borders
+    borders isa NamedTuple && return _maplayer("borders", borders, _MAP_BORDER_KEYS)
+    throw(ArgumentError("makemap's `borders` is true, false or a NamedTuple of `color` and `linewidth`; got $(repr(borders))"))
+end
 
-# Behavior
-- Automatically selects the appropriate region and borders based on the provided `x`, `y`, and `region` parameters.
-- Chooses the rendering backend and activates it accordingly.
-- Draws country borders, U.S. state borders, and FAF5 Interstate Highways depending on the specified options and region.
-- If `x` and `y` are provided, calculates the bounding box with optional expansion and adjusts the map view accordingly. Expansion allows for better visualization around `x` and `y` points.
+# `size` is the figure's, so only a method that creates the figure takes it: (width, height) or (width, :auto)
+function _mapsize(size, target)
+    if target !== nothing
+        size === nothing || throw(ArgumentError("`size` is the figure's, and makemap(cell, ...) draws into a figure that already " *
+                                                "exists: give `Figure(size = ...)` the size, or `resize!` it"))
+        return nothing
+    end
+    size === nothing && return (600, 450)
+    (size isa Tuple{Real, Real} && all(>(0), size) && all(isfinite, size)) && return (round(Int, size[1]), round(Int, size[2]))
+    (size isa Tuple{Real, Symbol} && size[1] > 0 && isfinite(size[1]) && size[2] === :auto) && return (round(Int, size[1]), :auto)
+    throw(ArgumentError("makemap's `size` is (width, height) or (width, :auto), in pixels; got $(repr(size))"))
+end
 
-# Examples
-```julia-repl
-# Create a world map using CairoMakie
-fig, ax = makemap()          # => (Figure, GeoAxis)
-
-# Create a U.S. map
-fig, ax = makemap(region=:US)
-
-# Create a map focused on a specific region with expanded limits
-using GeoMakie   # Required for scatter! function
-x = [-84.0, -83.0, -82.0]
-y = [41.0, 42.0, 43.0]
-fig, ax = makemap(x, y)
-scatter!(ax, x, y, markersize=12, color=:red)
-fig
-```
-"""
-function makemap(x::Union{Nothing, AbstractVector{<:Real}, NTuple{2, <:Real}} = nothing,
-                 y::Union{Nothing, AbstractVector{<:Real}, NTuple{2, <:Real}} = nothing;
-                 roadcolor = nothing, roadalpha = nothing, kwargs...)
-    if _geomakie_available[]
-        return _makemap_impl[](x, y; roadcolor=roadcolor, roadalpha=roadalpha, kwargs...)
-    else
-        error("makemap() requires CairoMakie and GeoMakie. Run: using CairoMakie, GeoMakie")
+# `xexpand` and `yexpand` are keywords of the box methods only to be refused: the box is drawn as given
+function _nobboxexpand(who, xexpand, yexpand)
+    for (k, v) in ((:xexpand, xexpand), (:yexpand, yexpand))
+        v === nothing || throw(ArgumentError("$who draws the box as given and takes no `$k`; expand the box first, with " *
+                                             "`mapbbox(bb; $k = ...)`, or pass the box's x and y to makemap with `$k`"))
     end
 end
+
+# S22: how far across a map is decides what `roads = :auto` draws. The measure is Lecture 2.5's `extent`
+# (2-loc-5.qmd:160-164) on the box as drawn, the one `makemap` hands the axis after `xexpand` and `yexpand`: the larger
+# of the box's north-south and east-west great-circle extents through its center, in miles (`dgc`'s default unit). A map is
+# close when that is at most `_MAP_CLOSE_MILES`, 2.5's `CLOSE` and `<=`; the regions `:World`, `:US` and `:CUS` are
+# never close, by their size.
+const _MAP_CLOSE_MILES = 150.0
+
+function _mapextent(box)
+    (x0, x1), (y0, y1) = box
+    xm, ym = (x0 + x1) / 2, (y0 + y1) / 2
+    return max(dgc([xm, y0], [xm, y1]), dgc([x0, ym], [x1, ym]))
+end
+
+_mapisclose(box) = _mapextent(box) <= _MAP_CLOSE_MILES
+
+# makemap, plotroads!, plotroute! and dcf are declared here, with their docstrings, and given their methods by the map
+# extension (ext/LogjamMapExt.jl, which GeoMakie triggers), so that the manual builds and `?makemap` answers without
+# Makie. Called without the extension, each is a MethodError with a hint (`__init__` in Logjam.jl). The argument
+# checks above are core's, so that every method reports the same error; the drawing is the extension's.
+
+"""
+    makemap(x = nothing, y = nothing; region = :World, xexpand = 0.3, yexpand = 0.1, roads = :auto, borders = true,
+            size = (600, 450), showgrid = false) -> (; fig, ax, layers)
+
+Create a map of a predefined region or of the box around a set of longitude-latitude points, in Mercator projection with
+`GeoMakie`, with the Interstate Highways, U.S. state borders and country borders behind it. Requires
+`using CairoMakie, GeoMakie`. The box alone is `makemap(bb)`; a map in a cell of a figure that exists is
+`makemap(cell, x, y)` (see their docstrings).
+
+# Arguments
+- `x`, `y`: at least two longitudes and two latitudes, or `nothing` for a predefined `region`. The map shows their box
+  (`mapbbox`), made `xexpand` and `yexpand` times larger on each side.
+- `region`: with no `x` and `y`, `:World` (default), `:US` or `:CUS`, the continental U.S.
+- `xexpand`, `yexpand`: the fraction of the box's width and height added on each side. Defaults `0.3` and `0.1`.
+- `roads`: the road layer. `:auto` (default) draws one of three layers by how far across the map is, the larger of its
+  north-south and east-west great-circle extents through the center of the box as drawn (after `xexpand` and
+  `yexpand`), in miles. (1) A map **150 miles across or less** draws the FAF5 network, cropped to the map (every link
+  whose segment meets the box, so the roads run to the frame; no connectors; and no ramps, since an interchange's
+  ramps pile up into a blotch at this scale: a link FAF5 names a ramp, a collector-distributor lane or a turn lane
+  is left out), in `:steelblue` at opacity 0.3, the
+  classes (`FCLASS` 1 to 5, as `plotroads!` groups them) at widths 1.4, 1.0, 0.7, 0.5 and 0.3, the Interstate on top.
+  (2) A larger map that spans at most 30 degrees of latitude draws the FAF5 Interstate Highways in `:steelblue`,
+  fainter and thinner as the span grows (opacity and width 0.2 and 0.6 up to 10 degrees, 0.25 and 0.5 up to 20, 0.35
+  and 0.3 up to 30). (3) A map of more than 30 degrees draws no roads. `:World`, `:US` and `:CUS` are never 150 miles
+  across. `false` draws no roads. A `NamedTuple` of `color`, `alpha` (the opacity, which multiplies a color's own) and
+  `linewidth` restyles whichever layer `:auto` would draw: the Interstate layer takes those attributes as given and
+  the others as `:auto`'s, and is still drawn only up to 30 degrees of span; on the network `color` replaces the hue,
+  `alpha` the opacity of every class, and `linewidth` the Interstate's width, the other four classes keeping their
+  ratios to it.
+- `borders`: the border layers, in blue at width 0.75. `true` (default) draws the U.S. state borders and the country borders
+  that the map's place calls for (below); `false` draws neither; a `NamedTuple` of `color` and `linewidth` draws the same
+  layers with those attributes.
+- `size`: the figure's size in pixels, `(width, height)`. `(width, :auto)` takes the height that fits the map: `width`
+  times the height-to-width ratio of the map's projected limits, plus 10, as Lecture 5.3's `fitmap!` fits it. The default,
+  `(600, 450)`, is Makie's own.
+- `showgrid`: draw grid lines and coordinate labels. Default `false`.
+
+# Returns
+A `NamedTuple` `(; fig, ax, layers)`: the `Figure`, the `GeoAxis`, and `layers`, a `NamedTuple` of the base-layer plots
+drawn, each a `Lines`: `roads`, `states` and `countries`, `nothing` for a layer not drawn; except that `roads` of a map
+150 miles across or less is itself a `NamedTuple` of the network's five `Lines`, `class1` (the Interstate) to `class5`,
+`nothing` for a class with no link in the map. `fig, ax = makemap(...)` takes the first two, as it takes the first two of
+any tuple.
+
+# Behavior
+- A map that lies within the continental U.S. limits (`CUS_LIMITS`) is drawn with U.S. state borders only, one within the U.S.
+  limits (`US_LIMITS`) with state borders, dashed and half as opaque, and country borders, and any other with country
+  borders only. `region = :CUS` is drawn like the first, `:US` like the second and `:World` like the third.
+- Draws with the active Makie backend and leaves its settings (`px_per_unit`, `visible`, the image type) as the caller set
+  them, so `CairoMakie.activate!(px_per_unit = 2)` before the call is all a map needs.
+- `doRoadbkgd` is a deprecated alias: `doRoadbkgd = false` is `roads = false` and `doRoadbkgd = true` is `roads = :auto`. It
+  warns only under `--depwarn=yes`, and giving it together with `roads` throws an `ArgumentError`. `roadcolor`, `roadalpha`
+  and `maxroadlatspan` are gone: `roadcolor = :steelblue, roadalpha = 0.5` is `roads = (; color = :steelblue, alpha = 0.5)`.
+
+Interstate roads are derived from FAF5: https://geodata.bts.gov/datasets/usdot::freight-analysis-framework-faf5-network-links/about. U.S. state borders are derived from https://raw.githubusercontent.com/PublicaMundi/MappingAPI/master/data/geojson/us-states.json. Country borders are derived from https://github.com/PublicaMundi/MappingAPI/blob/master/data/geojson/countries.geojson.
+
+# Examples
+Lecture 2.3 draws the world, the continental U.S. and the box around a set of points (`df.LON`, `df.LAT`; here three
+points set by hand), each its own call:
+
+```julia-repl
+using CairoMakie, GeoMakie
+fig, ax = makemap()                          # the world
+fig, ax = makemap(region = :CUS)             # the continental U.S.
+x = [-84.0, -83.0, -82.0]; y = [41.0, 42.0, 43.0]
+fig, ax = makemap(x, y; xexpand = 0.1)       # the points' box, enlarged a tenth on each side
+scatter!(ax, x, y, markersize = 12, color = :red)
+```
+
+Lecture 4.1's Code block 34 draws the Interstates around Raleigh with no road layer behind them and resizes the figure
+afterward; the call is now one line:
+
+```julia
+# was: fig, ax = makemap(rN.LON, rN.LAT; doRoadbkgd = false, xexpand = 0.05, yexpand = 0.05); resize!(fig, 400, 420)
+fig, ax = makemap(rN.LON, rN.LAT; roads = false, xexpand = 0.05, yexpand = 0.05, size = (400, 420))
+```
+
+Lecture 5.3's Code block 7 draws the map around the points with `basemap`, restyles its borders gray, and fits the
+figure's height to the map with `fitmap!`; with `borders` and `size` that is one call:
+
+```julia
+fig, ax = makemap(x, y; xexpand = 0.02, yexpand = 0.12, roads = false,
+                  borders = (; color = (ink, 0.45), linewidth = 1.5), size = (600, :auto))
+```
+
+README Example 2 restyles the Interstate layer:
+
+```julia
+fig, ax = makemap(x, y; roads = (; color = :steelblue, alpha = 0.5))
+```
+
+Lecture 2.5's `dotmap` (`2-loc-5.qmd:166-185`) draws the FAF5 network behind a metropolitan map by hand: it switches the
+road layer off with `doRoadbkgd = !close` where `close` is 150 miles across or less, then draws `plotroads!` over the map
+in `:steelblue` with each stroke's opacity reset. A map that close now draws the network itself, in that hue and below
+opacity 0.35:
+
+```julia
+# was: fig, ax = makemap(lon, lat; xexpand = 0.02, yexpand = 0.02, doRoadbkgd = !close); plotroads!(ax, faf5nodes(), faf5links())
+fig, ax, layers = makemap(lon, lat; xexpand = 0.02, yexpand = 0.02)   # layers.roads.class1 is the Interstate's Lines
+```
+"""
+function makemap end
+
+"""
+    makemap(bb; region = :World, roads = :auto, borders = true, size = (600, 450), showgrid = false) -> (; fig, ax, layers)
+    makemap(cell, bb; region = :World, roads = :auto, borders = true, showgrid = false) -> (; fig, ax, layers)
+
+Create a map of exactly the box `bb = ((xmin, xmax), (ymin, ymax))`, the shape `mapbbox` returns, with no expansion.
+`makemap(bb; ...)` is `makemap(bb[1], bb[2]; xexpand = 0, yexpand = 0, ...)` and takes the keywords `makemap(x, y)` takes
+(`roads`, `borders`, `size`, `showgrid`, `region`, and the deprecated `doRoadbkgd`), with the same return; `makemap(cell, bb)`
+draws it in a cell. `xexpand` and `yexpand` are not keywords of these methods (`mapbbox` expands a box:
+`makemap(mapbbox(x, y; xexpand = 0.3))`) and throw an `ArgumentError`. `roads = :auto` draws one of three layers by how
+far across the box is, as `makemap(x, y)` says: the FAF5 network cropped to the box when it is 150 miles across or less,
+the Interstate Highways when it is larger and spans at most 30 degrees of latitude, no roads beyond that; `layers.roads`
+is then a `NamedTuple` of the network's five `Lines` (`class1` to `class5`) or one `Lines`.
+
+# Example
+Lecture 4.2 draws the whole of a box it has just downloaded, with no roads behind it and no margin:
+
+```julia
+using CairoMakie, GeoMakie
+bb = ((-78.688, -78.657), (35.762, 35.796))    # Lecture 4.2's first box, as `mapbbox` returns it
+fig, ax = makemap(bb; roads = false)           # was makemap(bb[1], bb[2]; doRoadbkgd = false, xexpand = 0, yexpand = 0)
+```
+
+Lecture 2.5's `dotmap` (`2-loc-5.qmd:170`) draws the map around its points with a fiftieth of margin on each side, and
+the FAF5 network behind it where the points are 150 miles across or less; as a box, with the default road layer:
+
+```julia
+fig, ax, layers = makemap(mapbbox(lon, lat; xexpand = 0.02, yexpand = 0.02))   # the network, if the box is that close
+```
+"""
+makemap(bb::_MapBox)
+
+"""
+    makemap(cell, x, y; region = :World, xexpand = 0.3, yexpand = 0.1, roads = :auto, borders = true, showgrid = false) -> (; fig, ax, layers)
+    makemap(cell; region = :World, roads = :auto, borders = true, showgrid = false) -> (; fig, ax, layers)
+
+Draw a map in `cell`, a position in the layout of a figure that exists, such as `fig[1, 2]` or `fig[2, 1:2]`, so that
+one figure holds several maps. The keywords are those of `makemap(x, y)` except `size`, which the figure has already
+(`Figure(size = ...)` or `resize!`) and which throws an `ArgumentError` here. `makemap(cell; region = ...)` draws a
+predefined region.
+
+The return is `(; fig, ax, layers)` as for `makemap(x, y)`, where `fig` is the figure that holds `cell`
+(`Makie.get_figure(cell)`), the same for every map drawn into it, and `ax` and `layers` are those of the map in `cell`.
+
+# Example
+Lecture 5.1's Code block 7 draws three frames of one figure, each on plain axes with the state borders added by hand; each
+frame is a map in its cell:
+
+```julia
+(xl, yl) = mapbbox(df.LON, df.LAT; xexpand = 0.14, yexpand = 0.16)
+fig = Figure(size = (687, 640))
+cells = [fig[1, 1], fig[1, 2], fig[2, 1:2]]
+for k in 1:3
+    makemap(cells[k], ((xl[1] - 0.3, xl[2] + 0.3), yl); roads = false, borders = (; color = (bluec, 0.6)))
+end
+```
+"""
+makemap(cell, x::_MapPoints, y::_MapPoints)
 
 """
     aligntext(x::Union{Real, AbstractVector{<:Real}, Tuple{Vararg{Real}}},
@@ -273,7 +461,7 @@ function aligntext(x::Union{Real, AbstractVector{<:Real}, Tuple{Vararg{Real}}},
             base_angles[2] = ang - 180
         else
             # Three or more unique points - use triangulation
-            tri = triangulate(unique_pts)
+            tri = triangulate(unique_pts; rng = _tri_rng())
             for ui in 1:n_unique
                 IJ = get_adjacent2vertex(tri, ui)
                 nbrs = collect(reduce(union, [Set(t) for t in IJ]))
@@ -423,6 +611,81 @@ function mapbbox(x::Union{AbstractVector{<:Real}, Tuple{Vararg{Real}}},
 end
 
 """
+    mapbbox(bb::Tuple{Tuple{Real,Real},Tuple{Real,Real}}; xexpand::Real=0.0, yexpand::Real=0.0) -> Tuple
+
+Expands a box `bb = ((xmin, xmax), (ymin, ymax))`, as `mapbbox(x, y)` returns it, by `xexpand` times its width
+and `yexpand` times its height on each side, with the same limits on longitude and latitude. With the default
+expansion of zero it returns `bb` itself. `osm_roads` and `cropnetwork` take this box.
+
+# Example
+Widening a box as Lecture 4.2's Code block 2 widens the box around its two buildings (`xexpand = 2`,
+`yexpand = 0.5`), here by a half and a quarter:
+
+```jldoctest
+bb = ((-80.0, -78.0), (35.0, 36.0))
+mapbbox(bb; xexpand = 0.5, yexpand = 0.25)
+
+# output
+
+((-81.0, -77.0), (34.75, 36.25))
+```
+"""
+mapbbox(bb::Tuple{Tuple{Real,Real},Tuple{Real,Real}}; xexpand::Real=0.0, yexpand::Real=0.0) =
+    mapbbox(bb[1], bb[2]; xexpand=xexpand, yexpand=yexpand)
+
+"""
+    mapbbox(county::AbstractString; state, xexpand::Real=0.0, yexpand::Real=0.0) -> Tuple
+
+The box of a named county, in the form `mapbbox(x, y)` returns, `((xmin, xmax), (ymin, ymax))`, offline: the
+extent of the county's Census block groups, each widened by the radius of a disk of its land area
+(`sqrt(ALAND / π)`, converted to degrees of longitude and latitude at the block group's latitude), which reaches
+the county's edge where the block groups' points alone fall short of it. It is computed exactly as Lecture 4.2's
+Code block 3 computes Wake County's box, and is equal to its `bbW` (reordered), so `osm_roads` snaps it to the same
+tile. `state` is required, since county names repeat across states: a two-letter code, a `Symbol` or a full name. The
+county is matched by its name in [`uscounty`](@ref), ignoring case, with or without a trailing "County";
+an unknown county or state, or a name that matches two counties, is an `ArgumentError` naming it. `xexpand` and
+`yexpand` widen the box as they do a box given to `mapbbox`.
+
+Only counties are boxed: a city has no boundary in Logjam's tables (its box is `loc2lonlat`'s Nominatim
+`boundingbox`, not here).
+
+# Example
+Lecture 4.2's Code block 3, Wake County, North Carolina, whose box is about 39 miles wide:
+
+```jldoctest
+bb = mapbbox("Wake"; state = :NC)
+(round.(bb[1], digits = 3), round.(bb[2], digits = 3))
+
+# output
+
+((-78.975, -78.274), (35.523, 36.08))
+```
+"""
+function mapbbox(county::AbstractString; state = nothing, xexpand::Real = 0.0, yexpand::Real = 0.0)
+    isnothing(state) && throw(ArgumentError(
+        "mapbbox: a county name needs its `state`, as in mapbbox(\"Wake\"; state = :NC)."))
+    st = _normalize_state(state)                       # an ArgumentError naming the state if it is not one
+    q = lowercase(strip(String(county)))
+    q = replace(q, r"\s+county$" => "")
+    isempty(q) && throw(ArgumentError("mapbbox: the county name is empty."))
+    cty = uscounty()
+    hit = findall(i -> cty.ST[i] == st && lowercase(cty.NAME[i]) == q, 1:nrow(cty))
+    isempty(hit) && throw(ArgumentError("mapbbox: no county named \"$(strip(String(county)))\" in $st."))
+    length(hit) > 1 && throw(ArgumentError("mapbbox: \"$(strip(String(county)))\" names $(length(hit)) counties in $st."))
+    co = cty[hit[1], :]
+    b = uscenblkgrp()
+    keep = (b.STFIP .== co.STFIP) .& (b.COFIP .== co.COFIP)
+    any(keep) || throw(ArgumentError("mapbbox: no block groups for \"$(strip(String(county)))\" in $st."))
+    lon, lat, aland = b.LON[keep], b.LAT[keep], b.ALAND[keep]
+    mpd = dgc((0, 0), (0, 1))                          # miles in a degree of latitude
+    rad = sqrt.(aland ./ π)                            # radius as a disk, mi
+    dlon = rad ./ (mpd .* cosd.(lat))                  # that radius in degrees of lon
+    dlat = rad ./ mpd                                  # and of lat
+    bb = ((minimum(lon .- dlon), maximum(lon .+ dlon)), (minimum(lat .- dlat), maximum(lat .+ dlat)))
+    return mapbbox(bb; xexpand, yexpand)
+end
+
+"""
     bestfit(ang, Δ) -> 2-Tuple, 2-Tuple
 
 Determine the text alignment and offset for a given angle.
@@ -503,7 +766,7 @@ end
 
 """
     plotroads!(ax::GeoAxis, dfN::DataFrame, dfL::DataFrame;
-               show_connectors::Bool = false) -> Vector{Lines}
+               show_connectors::Bool = false) -> Dict{Symbol, Any}
 
 Overlay road networks on GeoAxis with FCLASS-based styling inspired by OSM Carto.
 
@@ -562,62 +825,74 @@ keys(handles)  # e.g., [:fill_1, :fill_2, :casing_1, :casing_2, ...]
 - Casing keys only present at close zoom (latspan ≤ 10°)
 - Connectors are hidden by default to avoid visual clutter from synthetic edges
 - Node lookup uses Dict to handle non-sequential OSM node IDs efficiently
-- Compatible with both CairoMakie and GLMakie backends
 """
-function plotroads!(ax, dfN::DataFrame, dfL::DataFrame; kwargs...)
-    if _geomakie_available[]
-        return _plotroads_impl[](ax, dfN, dfL; kwargs...)
-    else
-        error("plotroads!() requires CairoMakie and GeoMakie. Run: using CairoMakie, GeoMakie")
-    end
-end
+function plotroads! end
 
-# plotroute! stubs — all methods dispatch through _plotroute_impl in LogjamMapExt
+# plotroute!: three methods, in LogjamMapExt (D2). Unlike v0.2.8's five, they take no markers (`show_markers`,
+# `origin_color`, `dest_color`, `markersize`) and no `(ax, path, dfN)` forms: a removed call or keyword fails with a
+# MethodError.
 
 """
-    plotroute!(ax, lx, ly; kwargs...) → Vector
+    plotroute!(ax, x, y; color = :red, linewidth = 2, linestyle = :solid,
+               arrows = true, arrow_at = 0.55, arrow_size = 12, arrow_every = 1) -> (; lines, arrows)
+    plotroute!(ax, rte, sh, XY; tr = nothing, P = nothing, color = :red, ...) -> (; lines, arrows)
+    plotroute!(ax, R, sh, XY; tr = nothing, P = nothing, colors = Makie.wong_colors(), ...) -> (; lines, arrows)
 
-Base rendering method. Plots a route from coordinate vectors.
+Draw a route on a map or any Makie axis, with an arrowhead partway along each leg to show the direction of travel.
 Requires `using CairoMakie, GeoMakie`.
+
+- `plotroute!(ax, x, y)` draws any sequence of locations, such as a tour, a path or a route's location sequence, as the
+  line through the points `(x[i], y[i])`. A `NaN` separates one piece from the next.
+- `plotroute!(ax, rte, sh, XY)` draws one route `rte`, a vector of shipment indices (each shipment's index twice, its
+  pickup first, as `savings` and `twoopt` return it), through the location sequence `rte2loc(rte, sh, tr)`.
+  `XY` is the `n×2` matrix of the locations' (`LON`, `LAT`), one row for each location. `tr` is the truck's `(b = ..., e = ...)`;
+  where it is given the route begins and ends at its locations, as in `rteTC`. With `P`, the parent vectors `shortestpaths`
+  returns, each leg is traced along the network (`tracepath`) and `XY`'s rows are the network's nodes, as in
+  `[dfN.LON dfN.LAT]`; without it each leg is a straight line between its two locations.
+- `plotroute!(ax, R, sh, XY)` draws several routes `R`, a vector of routes, one color from `colors` for each (cycled),
+  each as the one-route method draws it.
+
+An arrowhead sits `arrow_at` of the way along a leg, by its length as drawn (`0.55` is a little past the middle), on
+every `arrow_every`-th leg from the first, `arrow_size` pixels long. A leg of no length (a location visited twice) has
+none, and `arrows = false` draws none. A leg is each pair of consecutive locations, or with `P` the whole traced path
+from one location to the next. The arrowheads point along the leg as it is drawn: their angle is computed from the axis's
+own transform and limits, so it is right on a map (`makemap`'s Mercator `GeoAxis`) and on a plain `Axis`, and a
+`resize!` turns them again. `plotroute!` makes no call to GeoMakie.
+
+Returns the plots drawn as a `NamedTuple`: `lines` (the `Lines`) and `arrows` (the `Scatter` of the arrowheads, `nothing`
+when `arrows = false`); for several routes each is a vector with one element for each route.
+
+The origin and destination markers of v0.2.8 are gone: mark the stops with `scatter!`.
+
+# Examples
+README Example 4's route, drawn along the FAF5 network it was solved on:
+
+```julia
+using Logjam, CairoMakie, GeoMakie, DataFrames
+cities = filter(r -> (r.STFIP == st2fips(:NC)) && (r.POP > 100_000), usplace())
+x, y = cities.LON, cities.LAT
+sh = DataFrame(b = [2, 3, 10, 7, 6], e = [8, 4, 1, 5, 9])
+dfN, dfL = addconnectors(cropnetwork(faf5nodes(), faf5links(), x, y)..., x, y)
+D, P = shortestpaths(links2graph(dfL), nrow(cities))
+rte, cost = twoopt(savings(r -> rteTC(r, sh, D), sh)[1], r -> rteTC(r, sh, D))
+fig, ax = makemap(x, y)
+plotroute!(ax, rte, sh, [dfN.LON dfN.LAT]; P = P, color = :red, linewidth = 2.5)
+```
+
+A tour, as Lecture 5.1 draws one, and a tour with an arrowhead on every second leg:
+
+```julia
+fig, ax = makemap(df.LON, df.LAT; xexpand = 0.05)
+plotroute!(ax, df.LON[tour], df.LAT[tour]; color = :blue)
+plotroute!(ax, df.LON[tour], df.LAT[tour]; arrow_every = 2)
+```
+
+Several routes, one color each, as README Example 5 draws its vehicles (`tr` is the depot):
+
+```julia
+plotroute!(ax, rte, sh, [dfN.LON dfN.LAT]; tr = (b = [1], e = [1]), P = P, linewidth = 2.5)
+```
+
+The migration from v0.2.8 is in the v0.3.0 release notes.
 """
-function plotroute!(ax, lx::AbstractVector{<:Real}, ly::AbstractVector{<:Real}; kwargs...)
-    if _geomakie_available[]
-        return _plotroute_impl[](ax, lx, ly; kwargs...)
-    else
-        error("plotroute!() requires CairoMakie and GeoMakie. Run: using CairoMakie, GeoMakie")
-    end
-end
-
-function plotroute!(ax, path::Vector{Int}, dfN::DataFrame; kwargs...)
-    if _geomakie_available[]
-        return _plotroute_impl[](ax, path, dfN; kwargs...)
-    else
-        error("plotroute!() requires CairoMakie and GeoMakie. Run: using CairoMakie, GeoMakie")
-    end
-end
-
-function plotroute!(ax, paths::Vector{Vector{Int}}, dfN::DataFrame; kwargs...)
-    if _geomakie_available[]
-        return _plotroute_impl[](ax, paths, dfN; kwargs...)
-    else
-        error("plotroute!() requires CairoMakie and GeoMakie. Run: using CairoMakie, GeoMakie")
-    end
-end
-
-function plotroute!(ax, route::AbstractVector{Int}, shipments::DataFrame,
-                    parents::Vector{Vector{Int}}, dfN::DataFrame; kwargs...)
-    if _geomakie_available[]
-        return _plotroute_impl[](ax, route, shipments, parents, dfN; kwargs...)
-    else
-        error("plotroute!() requires CairoMakie and GeoMakie. Run: using CairoMakie, GeoMakie")
-    end
-end
-
-function plotroute!(ax, routes::Vector{<:AbstractVector{Int}}, shipments::DataFrame,
-                    parents::Vector{Vector{Int}}, dfN::DataFrame; kwargs...)
-    if _geomakie_available[]
-        return _plotroute_impl[](ax, routes, shipments, parents, dfN; kwargs...)
-    else
-        error("plotroute!() requires CairoMakie and GeoMakie. Run: using CairoMakie, GeoMakie")
-    end
-end
+function plotroute! end

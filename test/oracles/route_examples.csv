@@ -1,0 +1,73 @@
+# case: route_examples
+# Matlog help examples: rte2idx (rte = [23 15 6 23 27 17 24 27 15 17 6 24]), rte2ldmx (rte = [1 2 1 3 3 2]),
+# rtenorm (examples 1 and 2), rteTC Example 1 (rte = [1 2 2 1], C = triu(magic(4),1)+C', TC = 22), plus
+# rtesegsum, rtesegid, sh2rte, isorigin and rte2loc on a normalized interleaved route [1 2 1 3 3 2].
+# MATLAB R2025a (25.1.0.2973910 (R2025a) Update 1), Matlog V18; tools/v0_3_0/make_oracles.m; %.17g
+# blocks: @name,nrows,ncols then nrows rows
+@rte2idx_in,1,12
+23,15,6,23,27,17,24,27,15,17,6,24
+@rte2idx_out,1,6
+23,15,6,27,17,24
+@isorigin_out,1,12
+1,1,1,0,1,1,1,0,0,0,0,0
+@ld_in,1,6
+1,2,1,3,3,2
+@ld_n,1,1
+2
+@ld_1,1,2
+1,2
+@ld_2,1,2
+2,3
+@seg_in,1,6
+1,2,1,3,3,2
+@seg_xsh,1,3
+3,4,5
+@rtesegsum_out,1,5
+3,7,4,9,4
+@rtesegid_out,3,5
+1,1,0,0,0
+0,1,1,1,1
+0,0,0,1,0
+@norm1_in,1,12
+100,22,33,22,45,500,33,66,500,100,45,66
+@norm1_out,1,12
+1,2,3,2,4,5,3,6,5,1,4,6
+@norm2_idx,1,6
+33,45,500,66,22,100
+@norm2_out,1,12
+6,5,1,5,2,3,1,4,3,6,2,4
+@sh2rte_in_n,1,1
+2
+@sh2rte_in_1,1,4
+1,2,1,2
+@sh2rte_in_2,1,2
+4,4
+@sh2rte_idx,1,5
+1,2,3,4,5
+@sh2rte_out_n,1,1
+4
+@sh2rte_out_1,1,4
+1,2,1,2
+@sh2rte_out_2,1,2
+4,4
+@sh2rte_out_3,1,2
+3,3
+@sh2rte_out_4,1,2
+5,5
+@sh2rte_idx1,1,2
+3,5
+@ex1_C,4,4
+0,2,3,13
+2,0,10,8
+3,10,0,12
+13,8,12,0
+@ex1_b,1,2
+1,2
+@ex1_e,1,2
+3,4
+@ex1_rte,1,4
+1,2,2,1
+@ex1_loc,1,4
+1,2,4,3
+@ex1_TC,1,1
+22

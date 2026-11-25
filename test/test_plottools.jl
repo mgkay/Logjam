@@ -99,40 +99,7 @@ end
     end
 end
 
-# ---------------------------------------------------------------------------
-# plotroute! — coordinate-vector form and show_markers toggle
-# ---------------------------------------------------------------------------
-@testset "plotroute! coordinate-vector form" begin
-
-    x_test = [-79.2, -78.4]
-    y_test = [35.5, 36.1]
-
-    @testset "basic coordinate vector" begin
-        fig, ax = makemap(x_test, y_test)
-        lx = [-79.0, -78.7, -78.5]
-        ly = [35.8, 36.0, 35.8]
-        handles = plotroute!(ax, lx, ly)
-        @test handles isa Vector
-        @test length(handles) == 3  # line + origin + dest
-    end
-
-    @testset "coordinate vector show_markers=false" begin
-        fig, ax = makemap(x_test, y_test)
-        lx = [-79.0, -78.7, -78.5]
-        ly = [35.8, 36.0, 35.8]
-        handles = plotroute!(ax, lx, ly; show_markers=false)
-        @test length(handles) == 1  # line only
-    end
-
-    @testset "coordinate vector with NaN separators" begin
-        fig, ax = makemap(x_test, y_test)
-        lx = [-79.0, -78.7, NaN, -78.6, -78.5]
-        ly = [35.8, 36.0, NaN, 35.9, 35.8]
-        handles = plotroute!(ax, lx, ly)
-        @test handles isa Vector
-        @test length(handles) == 3  # line + origin + dest (skips NaN)
-    end
-end
+# plotroute! is tested in test_plotroute.jl (PCV K11a, D2)
 
 # ---------------------------------------------------------------------------
 # alloclines — NaN positions with known allocation (complement test_maptools)

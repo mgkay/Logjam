@@ -1,6 +1,6 @@
 name = "Logjam"
 uuid = "1d8a39d3-b73b-4a5b-b39c-beddb3604916"
-version = "0.2.9"
+version = "0.3.0"
 authors = ["Michael G. Kay <kay@ncsu.edu>"]
 description = "Logistics toolkit for facility location, transportation costing, freight road networks (FAF5), route optimization, U.S. geographic data, and GeoMakie visualizations"
 
@@ -12,40 +12,39 @@ DelaunayTriangulation = "927a84f5-c5f4-47a5-9785-b46e178433df"
 Graphs = "86223c79-3864-5bf0-83f7-82e725a168b6"
 LazyArtifacts = "4af54fe1-eca0-43a8-85a7-787d91b784e3"
 Optim = "429524aa-4258-5aef-a3af-852621145aeb"
+Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
 Serialization = "9e88b42a-f829-5b0c-bbe9-9e923198166b"
 SimpleWeightedGraphs = "47aef6b3-ad0c-573a-a1e2-d07658019622"
 SparseArrays = "2f01184e-e22b-5df5-ae63-d93ebab69eaf"
 
 [weakdeps]
 CairoMakie = "13f3f980-e62b-5c42-98c6-ff1f3baf88f0"
-GLMakie = "e9467ef8-e4e7-5192-8a1a-b1aee30e663a"
 GeoMakie = "db073c08-6b98-4ee5-b6a4-5efafb3259c6"
 HTTP = "cd3eb016-35fb-5094-929b-558a96fad6f3"
 JSON3 = "0f8b85d8-7281-11e9-16c2-39a750bddbf1"
 LightOSM = "d1922b25-af4e-4ba3-84af-fe9bea896051"
-NearestNeighbors = "b8a86587-4115-5ab1-83bc-aa920d37bbce"
 
 [extensions]
-LogjamCairoMakieExt = "CairoMakie"
-LogjamGLMakieExt = "GLMakie"
-LogjamMapExt = ["CairoMakie", "GeoMakie"]
+LogjamMapExt = "GeoMakie"
 LogjamNominatimExt = ["HTTP", "JSON3"]
-LogjamOSMExt = ["LightOSM", "NearestNeighbors"]
+LogjamOSMExt = "LightOSM"
 
 [compat]
+Artifacts = "1"
 CSV = "0.10"
 CairoMakie = "0.12 - 0.15.15"
 DataFrames = "1.6 - 1"
 DelaunayTriangulation = "1.1 - 1"
 Documenter = "1"
-GLMakie = "0.10 - 0.13"
 GeoMakie = "0.7 - 0"
 Graphs = "1.9 - 1"
 HTTP = "1 - 2"
 JSON3 = "1"
-LightOSM = "0.3 - 0"
+LazyArtifacts = "1"
+LightOSM = "0.3"
 NearestNeighbors = "0.4 - 0"
 Optim = "1 - 2"
+Random = "1"
 SimpleWeightedGraphs = "1.4 - 1"
 SparseArrays = "1.11 - 1"
 julia = "1.12"
@@ -58,10 +57,9 @@ HTTP = "cd3eb016-35fb-5094-929b-558a96fad6f3"
 JSON3 = "0f8b85d8-7281-11e9-16c2-39a750bddbf1"
 LightOSM = "d1922b25-af4e-4ba3-84af-fe9bea896051"
 NearestNeighbors = "b8a86587-4115-5ab1-83bc-aa920d37bbce"
-Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
 SimpleWeightedGraphs = "47aef6b3-ad0c-573a-a1e2-d07658019622"
 SparseArrays = "2f01184e-e22b-5df5-ae63-d93ebab69eaf"
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 
 [targets]
-test = ["CairoMakie", "Documenter", "GeoMakie", "LightOSM", "NearestNeighbors", "Random", "SimpleWeightedGraphs", "SparseArrays", "Test"]
+test = ["CairoMakie", "Documenter", "GeoMakie", "HTTP", "JSON3", "LightOSM", "NearestNeighbors", "SimpleWeightedGraphs", "SparseArrays", "Test"]

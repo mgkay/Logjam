@@ -12,8 +12,11 @@ makedocs(;
         edit_link="main",   # Updated to "main" from "master"
 # edit_link="https://github.com/mgkay/Logjam/blob/main/", # to fix source button in docs
         assets=String[],
+        # the one page holds every docstring (about 290 KiB generated); Documenter's defaults (100 warn, 200 error) stop the build
+        size_threshold_warn=400 * 2^10,
+        size_threshold=600 * 2^10,
     ),
-    checkdocs = :none, # Disable the missing docstrings check
+    checkdocs = :public, # every exported or `public` name needs an @docs entry (D10 makes lecture functions `public`)
     doctest = true,    # Enable doctest for jldoctest blocks
     pages=[
         "Home" => "index.md",

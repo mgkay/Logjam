@@ -73,8 +73,19 @@ function _nominatim_geocode_impl(street::AbstractString, city::AbstractString,
         rethrow(e)
     end
 
-    # Parse response
-    results = JSON3.read(response.body)
+    return _parse_response(response.body)
+end
+
+"""
+    _parse_response(body) -> NamedTuple or missing
+
+The first match of a Nominatim `jsonv2` response with `addressdetails=1`:
+`(lon, lat, display_name, importance, house_number)`, or `missing` for no match.
+`house_number` is the match's `address.house_number`, `""` when the match is a street or a
+place and carries none, which is how `loc2lonlat` tells a house from a street (CR 26).
+"""
+function _parse_response(body)
+    results = JSON3.read(body)
 
     isempty(results) && return missing
 
@@ -83,8 +94,11 @@ function _nominatim_geocode_impl(street::AbstractString, city::AbstractString,
     lat = parse(Float64, string(r.lat))
     display_name = string(get(r, :display_name, ""))
     importance = Float64(get(r, :importance, 0.0))
+    address = get(r, :address, nothing)
+    house_number = address === nothing ? "" : string(get(address, :house_number, ""))
 
-    return (lon=lon, lat=lat, display_name=display_name, importance=importance)
+    return (lon=lon, lat=lat, display_name=display_name, importance=importance,
+            house_number=house_number)
 end
 
 end # module LogjamNominatimExt

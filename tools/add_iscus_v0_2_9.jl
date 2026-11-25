@@ -25,7 +25,11 @@
 # Rollback safety net: the data files are git-tracked.
 
 import Pkg
-Pkg.activate(raw"C:/Users/kay/Documents/cdev/teach/ISE754-dev")
+# The project to run under: one with DataFrames and CSV (Logjam's own project has both). Required:
+#   LOGJAM_TOOLS_ENV=<path to a project with DataFrames and CSV> julia tools/add_iscus_v0_2_9.jl
+const _TOOLS_ENV = get(ENV, "LOGJAM_TOOLS_ENV", "")
+isempty(_TOOLS_ENV) && error("set the environment variable LOGJAM_TOOLS_ENV to a project directory that has DataFrames and CSV (Logjam's own project directory will do)")
+Pkg.activate(_TOOLS_ENV)
 using DataFrames, Serialization, CSV   # InlineStrings loaded transitively on deserialize
 
 const DATA_DIR = abspath(joinpath(@__DIR__, "..", "data"))

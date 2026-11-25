@@ -4,113 +4,34 @@
 Logistics toolkit for facility location, transportation costing, freight road networks,
 route optimization, U.S. geographic data, and GeoMakie visualizations.
 
-## Overview
-The `Logjam` package provides comprehensive tools for logistics engineering and operations
-research, including facility location optimization, transportation economics, freight road
-networks, route optimization, U.S. geographic data, and map visualization.
+The manual lists every function by topic with its docstring, and `?name` shows one. The topics
+and their names:
 
-## Facility Location Functions
-- `ufladd`: Greedy ADD construction heuristic for UFL.
-- `ufldrop`: Greedy DROP construction heuristic for UFL.
-- `uflxchg`: Pairwise EXCHANGE improvement heuristic.
-- `ufl`: Hybrid UFL heuristic (ADD + DROP + EXCHANGE).
-- `pmedian`: p-median facility location (fixed number of facilities).
-- `randX`: Generate random points within bounding box.
-- `ala`: Alternating location–allocation heuristic (multifacility minisum).
-- `wcentroid`: Weighted geographic centroid (cos-lat corrected).
-
-## Transportation Economics Functions
-- `rate_ltl`: Estimate LTL transportation rate (\$/ton-mi).
-- `charge_tl`: Calculate TL transport charge.
-- `charge_ltl`: Calculate LTL transport charge.
-- `mincharge_tl`: TL minimum charge.
-- `mincharge_ltl`: LTL minimum charge.
-- `maxpayld`: Maximum truck payload (weight or cube limited).
-- `totlogcost`: Total logistics cost (transport + inventory).
-- `aggshmt`: Aggregate shipments into equivalent single shipment.
-- `transport_costs`: Batch calculate transport costs with mode selection.
-- `minTLC`: Independent shipment size minimising total logistics cost.
-
-## Data Functions
-- `usplace`: Returns DataFrame of U.S. place data (cities, towns, CDPs).
-- `uscounty`: Returns DataFrame of U.S. county data.
-- `uscentract`: Returns DataFrame of U.S. Census Tract data.
-- `uscenblkgrp`: Returns DataFrame of U.S. Census Block Group data.
-- `uszcta5`: Returns DataFrame of U.S. ZIP Code Tabulation Area (5-digit) data.
-- `uszcta3`: Returns DataFrame of U.S. ZIP Code Tabulation Area (3-digit) data.
-- `uscbsa`: Returns DataFrame of U.S. Core-Based Statistical Area (CBSA) data.
-- `uscsa`: Returns DataFrame of U.S. Combined Statistical Area (CSA) data.
-- `st2fips`: Converts state abbreviations to FIPS codes.
-- `fips2st`: Converts FIPS codes to state abbreviations.
-- `faf5nodes`: Returns DataFrame of FAF5 road network nodes.
-- `faf5links`: Returns DataFrame of FAF5 road network links.
-- `faf5interstate`: Returns interstate polyline vectors for map backgrounds.
-- `loc2lonlat`: Forward geocoding — addresses, cities, postal codes, counties to coordinates.
-- `lonlat2loc`: Reverse geocoding — coordinates to nearest place with area-based "in" radius.
-
-## Map Functions
-- `makemap`: Creates a map visualization for predefined or user-defined regions.
-- `mapbbox`: Calculates bounding box for geographic coordinates with optional expansion.
-- `aligntext`: Determines text alignment and offset positions for map labels.
-- `isptinbbox`: Checks if a point lies within a bounding box.
-- `alloclines`: Convert allocation matrix to NaN-separated line segments for visualization.
-- `plotroads!`: Overlay road networks on GeoAxis with adaptive zoom-based styling.
-- `plotroute!`: Overlay routes/paths on a GeoAxis (requires CairoMakie + GeoMakie).
-
-## Display and Formatting Functions
-- `prt`: Print a matrix as an aligned fixed-decimal table.
-- `mat2df`: Convert a matrix to a DataFrame with generated column names.
-- `snapvals`: Snap numeric values to a set of reference values within a tolerance.
-- `dcf`: Display the current figure (requires CairoMakie).
-
-## OSM Functions
-- `osm_roads`: Download an OpenStreetMap road network (requires LightOSM + NearestNeighbors).
-- `stitchnetworks`: Stitch multiple OSM subnetworks into one (requires LightOSM + NearestNeighbors).
-
-## Road Network Functions
-- `dgc`: Great circle distance between two points.
-- `dgca`: Area-adjusted great-circle distance (floored by mean centroid distance).
-- `d1`: Rectilinear (Manhattan) distance between two points.
-- `d2`: Euclidean distance between two points.
-- `dists`: Unified distance matrix (replaces Dgc, supports all metrics incl. lp/Chebychev).
-- `prune_reindex`: Prune network to common vertices and reindex.
-- `thin`: Remove degree-2 nodes from network (use `verbose=true` for statistics).
-- `addconnectors`: Add demand point connectors to road network.
-- `links2graph`: Convert links DataFrame to weighted directed graph.
-- `x2ln`: Convert graph edges to line coordinates for plotting.
-- `cropnetwork`: Crop road network to bounding box of coordinates.
-- `shortestpaths`: Compute shortest path distances and parent pointers.
-- `tracepath`: Reconstruct a shortest-path node sequence from a parent vector.
-
-## Routing Functions
-- `segcost`: Calculate segment costs in a location sequence.
-- `rteTC`: Total route cost for pickup-delivery routes.
-- `isorigin`: Identify pickup positions in a route.
-- `rte2loc`: Convert route to location sequence.
-- `twoopt`: 2-opt route improvement procedure.
-- `mincostinsert`: Insert shipment at minimum cost position.
-- `pairwisesavings`: Calculate savings for shipment pairs.
-- `savings`: Savings-ordered insertion heuristic for PDP route construction.
-
-## Constants
-- `WORLD_LIMITS`: Geographical limits for world map projections.
-- `US_LIMITS`: Geographical limits for U.S. map projections.
-- `CUS_LIMITS`: Geographical limits for continental U.S. map projections.
+- **Facility location:** `ufladd`, `ufldrop`, `uflxchg`, `ufl`, `pmedian`, `ala`, `wcentroid`, `randX`.
+- **Transportation economics:** `rate_ltl`, `charge_tl`, `charge_ltl`, `mincharge_tl`, `mincharge_ltl`,
+  `maxpayld`, `qmax_ltl`, `totlogcost`, `aggshmt`, `minTLC`.
+- **Distances:** `dgc`, `dgca`, `d1`, `d2`, `dists`.
+- **Road networks:** `thin`, `addconnectors`, `links2graph`, `shortestpaths`, `tracepath`, `pathroads`,
+  `x2ln`, `cropnetwork`, `prune_reindex`, and `osm_roads` for OpenStreetMap (a download needs LightOSM).
+- **Routing:** `segcost`, `rteTC`, `rte2loc`, `isorigin`, `rte2ldmx`, `rtesegsum`, `rte2idx`, `sh2rte`,
+  `mincostinsert`, `twoopt`, `pairwisesavings`, `savings`.
+- **Data and geocoding:** `usplace`, `usstate`, `uscounty`, `uscentract`, `uscenblkgrp`, `uszcta5`,
+  `uszcta3`, `uscbsa`, `uscsa`, `st2fips`, `fips2st`, `faf5nodes`, `faf5links`, `loc2lonlat`,
+  `lonlat2loc`, `lonlat`.
+- **Maps** (GeoMakie): `makemap`, `mapbbox`, `aligntext`, `alloclines`, `plotroads!`, `plotroute!`, `dcf`,
+  and the constants `WORLD_LIMITS`, `US_LIMITS`, `CUS_LIMITS`.
+- **Display:** `prt`, `snapvals`, `thousands`.
+- **Public, not exported** (called as `Logjam.name`, so a script's own function of the name does not collide):
+  `scanTW`, `usstates`.
 
 ## Dependencies
 
-Core dependencies (always loaded):
-- `Serialization`, `Artifacts`, `LazyArtifacts`: For loading pre-serialized geographic data.
-- `DataFrames`, `CSV`: For tabular data representation.
-- `DelaunayTriangulation`: For triangulation in text alignment and addconnectors.
-- `Graphs`, `SimpleWeightedGraphs`, `SparseArrays`: For graph-based network operations.
-- `Optim`: For continuous-location minisum solves (`ala`, single-facility idiom).
+Always loaded: `Serialization`, `Artifacts`, `LazyArtifacts`, `Random`, `DataFrames`, `CSV`,
+`DelaunayTriangulation`, `Graphs`, `SimpleWeightedGraphs`, `SparseArrays`, `Optim`.
 
-Optional dependencies (weak deps — activate extensions when loaded):
-- `CairoMakie`, `GeoMakie`: For creating and rendering maps (`makemap`, `plotroads!`, `plotroute!`).
-- `GLMakie`: For interactive map display.
-- `HTTP`, `JSON3`: For street-address geocoding via the Nominatim API.
-- `LightOSM`, `NearestNeighbors`: For OpenStreetMap road networks (`osm_roads`, `stitchnetworks`).
+Weak dependencies, which activate an extension when loaded: `GeoMakie` (with `CairoMakie` to render)
+for maps; `HTTP` and `JSON3` for street-address geocoding with Nominatim; `LightOSM` to download an
+OpenStreetMap road network.
 """
 module Logjam
 
@@ -118,6 +39,7 @@ module Logjam
 using Artifacts
 using LazyArtifacts
 using Serialization
+using Random: Xoshiro, AbstractRNG
 using DataFrames
 using CSV
 using DelaunayTriangulation
@@ -126,27 +48,17 @@ using SimpleWeightedGraphs
 using SparseArrays
 using Optim
 
-# CairoMakie extension support (set by LogjamCairoMakieExt)
-const _cairomakie_available = Ref{Bool}(false)
-const _cairomakie_activate = Ref{Any}(nothing)
-const _dcf_impl = Ref{Any}(nothing)
+# DelaunayTriangulation's `triangulate` and `find_triangle` draw from the global random stream unless given an
+# `rng`, which makes the triangle chosen among cocircular nodes vary from run to run and advances the caller's
+# stream. Every call here passes a generator of its own, a fresh one each time, so the answer depends on the
+# points alone and the global stream is left where it was.
+_tri_rng() = Xoshiro(0)
 
-# Map extension support (set by LogjamMapExt when CairoMakie + GeoMakie loaded)
-const _geomakie_available = Ref{Bool}(false)
-const _makemap_impl = Ref{Any}(nothing)
-const _plotroads_impl = Ref{Any}(nothing)
-const _plotroute_impl = Ref{Any}(nothing)
-
-# GLMakie extension support (set by LogjamGLMakieExt when GLMakie is loaded)
-const _glmakie_available = Ref{Bool}(false)
-const _glmakie_activate = Ref{Any}(nothing)
-
-# OSM extension support (set by LogjamOSMExt when LightOSM + NearestNeighbors are loaded)
-const _osm_available = Ref{Bool}(false)
-const _osm_download = Ref{Any}(nothing)
-const _osm_stitch = Ref{Any}(nothing)
-
-# Nominatim extension support (set by LogjamNominatimExt when HTTP + JSON3 are loaded)
+# Three extensions (C5). The map extension (LogjamMapExt, triggered by GeoMakie) adds the methods of `makemap`,
+# `plotroads!`, `plotroute!` and `dcf`, and the OSM extension (LogjamOSMExt, triggered by LightOSM) the method of
+# `_osm_download`; each function is declared in core, with its docstring, so a call made without its extension is a
+# MethodError and `__init__` (below) says what to load. The one Ref left is Nominatim's query function, which
+# LogjamNominatimExt (HTTP + JSON3) sets and the tests swap to stand in for the network.
 const _nominatim_available = Ref{Bool}(false)
 const _nominatim_geocode = Ref{Any}(nothing)
 
@@ -154,18 +66,20 @@ const _nominatim_geocode = Ref{Any}(nothing)
 export ufladd, ufldrop, uflxchg, ufl, pmedian, randX, ala, wcentroid
 
 # Export transportation economics functions
-export rate_ltl, charge_tl, charge_ltl, mincharge_tl, mincharge_ltl, maxpayld
-export totlogcost, aggshmt, transport_costs, minTLC
+export rate_ltl, charge_tl, charge_ltl, mincharge_tl, mincharge_ltl, maxpayld, qmax_ltl
+export totlogcost, aggshmt, minTLC
 
 # Export data functions
+export usstate    # one row per state, aggregated from uscounty(): Lecture 2.5's ladder (CR 12)
 export usplace, uscounty, uscentract, uscenblkgrp, uszcta5, uszcta3
 export uscbsa, uscsa, st2fips, fips2st
-export faf5nodes, faf5links, faf5interstate
+export faf5nodes, faf5links
 export loc2lonlat, lonlat2loc
+export lonlat    # a table's, row's or geocoded places' coordinates as [lon, lat] or an n x 2 matrix (A1, LL)
 
 # Export data helper functions (H1–H3) and relocated functions
-export mat2df, prt, snapvals
-export isptinbbox, alloclines
+export prt, snapvals, thousands
+export alloclines
 
 # Export map functions and constants
 export makemap, mapbbox, aligntext, plotroads!, plotroute!
@@ -176,17 +90,22 @@ export dcf
 
 # Export road network functions (including H5–H6)
 export dgc, d1, d2, dgca, dists, prune_reindex, thin, addconnectors
-export links2graph, x2ln, cropnetwork, shortestpaths, tracepath
+export links2graph, x2ln, cropnetwork, shortestpaths, tracepath, pathroads
 
-# Export OSM functions (require LightOSM + NearestNeighbors extension)
-export osm_roads, stitchnetworks
+# Export OSM functions (a download requires the LightOSM extension)
+export osm_roads
 
 # Export routing functions
 export segcost, rteTC, isorigin, rte2loc
 export twoopt, savings, mincostinsert, pairwisesavings
+export rte2ldmx    # the shipments on board at each load mix (CR 59); `rteTC` carries Matlog's checks (CR 42, D6)
+export rtesegsum    # what is on board over each segment of a route (CR 53); `rtesegid` is internal (IN5)
+export rte2idx, sh2rte        # the shipments of a route; a route of its own for each shipment on none (CR 53)
 
 # Public API (accessible as Logjam.func, not auto-imported into namespace)
-public rte2lines
+public scanTW    # Lecture 5.3's time-window scan (routetools.jl), the implementation rung of a model; not exported, so the lecture's own `scanTW` does not collide (CR 42, D10)
+public usstates    # the state borders as NaN-separated polylines (maptools.jl); Lecture 5.1 and four Lecture 2.2 generators call it qualified (C12, V6); not exported, so it does not collide with `usstate`
+public _osm_cache_path, _osm_snap_bbox    # the tile files and the tile of a box (osmtools.jl); Lecture 4.2's data generator reports its boxes' tiles with them, so they are public (S18)
 
 # Include component files
 include("loctools.jl")
@@ -199,19 +118,29 @@ include("routetools.jl")
 include("osmtools.jl")
 include("geocode.jl")
 
-# ─── Stub functions for CairoMakie extension (H7, H8) ───
-
 """
     dcf()
 
-Display current figure. Requires `using CairoMakie`.
+Display current figure. Requires `using CairoMakie, GeoMakie`.
 """
-function dcf()
-    if _cairomakie_available[]
-        _dcf_impl[]()
-    else
-        error("dcf() requires CairoMakie. Run: using CairoMakie")
+function dcf end
+
+# The hint a MethodError carries when a function whose methods an extension adds is called without it (C5): the map
+# functions and `dcf` need GeoMakie (and CairoMakie to draw), a download needs LightOSM. Silent for any other error,
+# and for these functions once their extension is loaded, when a MethodError is a wrong argument.
+function _extension_hint(io, exc, argtypes, kwargs)
+    f = exc.f === Core.kwcall ? exc.args[2] : exc.f
+    if f in (makemap, plotroads!, plotroute!, dcf) && Base.get_extension(Logjam, :LogjamMapExt) === nothing
+        print(io, "\n$(nameof(f)) needs the map extension, which GeoMakie loads. Run: using CairoMakie, GeoMakie")
+    elseif f === _osm_download && Base.get_extension(Logjam, :LogjamOSMExt) === nothing
+        print(io, "\nosm_roads downloads a box that is not saved in `cache_dir` with the OpenStreetMap extension. ",
+              "Run: using LightOSM")
     end
+    return nothing
+end
+
+function __init__()
+    Base.Experimental.register_error_hint(_extension_hint, MethodError)
 end
 
 end # module Logjam

@@ -67,16 +67,6 @@ end
     @test sub[:offset] == full[:offset][1]
 end
 
-# Test for isptinbbox function
-@testset "isptinbbox tests" begin
-    bbox = ((-180, 180), (-90, 90))
-    pt_inside = (0, 0)
-    pt_outside = (200, 100)
-
-    @test isptinbbox(pt_inside, bbox) == true
-    @test isptinbbox(pt_outside, bbox) == false
-end
-
 # Test for makemap function
 @testset "makemap tests" begin
     # Test different regions (M1: 2-tuple return)
@@ -95,11 +85,11 @@ end
         @test ax isa GeoAxis
     end
 
-    # M1.2: roadcolor/roadalpha kwargs accepted; overlay override runs
-    @testset "roadcolor/roadalpha kwargs" begin
+    # M1.2, as C4 (PCV K11b): the road overlay is restyled by `roads = (; color, alpha)`; roadcolor and roadalpha are gone
+    @testset "roads = (; color, alpha) restyles the overlay" begin
         x = [-80.0, -75.0, -78.0]
         y = [35.0, 40.0, 38.0]
-        fig2, ax2 = makemap(x, y; roadcolor=:red, roadalpha=0.5)
+        fig2, ax2 = makemap(x, y; roads = (; color = :red, alpha = 0.5))
         @test fig2 isa Figure
         @test ax2 isa GeoAxis
     end
@@ -117,23 +107,17 @@ end
         @test ax.yticklabelsvisible[] == true
     end
 
-    # Test invalid backend error message
-    @testset "invalid backend error" begin
-        @test_throws ErrorException makemap(backend=:InvalidBackend)
-    end
-
-    # Test GLMakie backend without loading GLMakie
-    @testset "GLMakie not loaded error" begin
-        if !Logjam._glmakie_available[]
-            err = try
-                makemap(backend=:GLMakie)
-                nothing
-            catch e
-                e
-            end
-            @test err isa ErrorException
-            @test occursin("GLMakie", err.msg)
-        end
+    # P8 (PCV K11a): the backend keyword and the GLMakie extension are removed (0 course calls)
+    @testset "[P8] backend keyword is removed, with the GLMakie extension" begin
+        @test_throws MethodError makemap(backend = :CairoMakie)
+        @test_throws MethodError makemap(backend = :GLMakie)
+        @test_throws MethodError makemap([-80.0, -75.0], [35.0, 40.0]; backend = :CairoMakie)
+        @test !isdefined(Logjam, :_glmakie_available) && !isdefined(Logjam, :_glmakie_activate)
+        @test Base.get_extension(Logjam, :LogjamGLMakieExt) === nothing
+        proj = Base.parsed_toml(joinpath(pkgdir(Logjam), "Project.toml"))
+        @test !haskey(get(proj, "weakdeps", Dict()), "GLMakie") && !haskey(get(proj, "extensions", Dict()), "LogjamGLMakieExt")
+        @test !haskey(get(proj, "compat", Dict()), "GLMakie")
+        @test !isfile(joinpath(pkgdir(Logjam), "ext", "LogjamGLMakieExt.jl"))
     end
 end
 
@@ -314,44 +298,4 @@ end
     end
 end
 
-# Tests for plotroute! function
-@testset "plotroute! tests" begin
-    using DataFrames
-
-    dfN_test = DataFrame(
-        IDX = [1, 2, 3, 4],
-        LON = [-78.9, -78.5, -78.7, -79.1],
-        LAT = [35.8, 35.8, 36.0, 35.6]
-    )
-    x_test = [-79.2, -78.4]
-    y_test = [35.5, 36.1]
-
-    @testset "single path with markers" begin
-        fig, ax = makemap(x_test, y_test)
-        handles = plotroute!(ax, [1, 2, 3, 4], dfN_test)
-        @test length(handles) == 3  # line + origin scatter + dest scatter
-    end
-
-    @testset "single path without markers" begin
-        fig, ax = makemap(x_test, y_test)
-        handles = plotroute!(ax, [1, 2, 3], dfN_test; show_markers=false)
-        @test length(handles) == 1  # line only
-    end
-
-    @testset "multi-path" begin
-        fig, ax = makemap(x_test, y_test)
-        paths = [[1, 2, 3], [1, 4, 3]]
-        all_handles = plotroute!(ax, paths, dfN_test)
-        @test length(all_handles) == 2  # two path groups
-        @test length(all_handles[1]) == 3  # each has line + 2 markers
-        @test length(all_handles[2]) == 3
-    end
-
-    @testset "multi-path without markers" begin
-        fig, ax = makemap(x_test, y_test)
-        paths = [[1, 2], [3, 4]]
-        all_handles = plotroute!(ax, paths, dfN_test; show_markers=false)
-        @test length(all_handles) == 2
-        @test length(all_handles[1]) == 1  # line only
-    end
-end
+# plotroute! is tested in test_plotroute.jl (PCV K11a, D2)
