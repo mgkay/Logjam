@@ -13,14 +13,15 @@ include(joinpath(@__DIR__, "map_pin_cases.jl"))
 
 const _C4_INK = colorant"#252525"          # Lecture 5.3's ink
 
-# the labeled base-layer plots of an axis: label => (RGBA, alpha attribute, linewidth, dashed?, points)
+# the labeled base-layer plots of an axis: label => (RGBA, alpha attribute, linewidth, dashed?, points); a width for each
+# point (N4's regional road tier) reads as its widest, the Interstate's (mmpin_width, map_pin_cases.jl)
 function _c4_layers(ax)
     out = Pair[]
     for p in ax.scene.plots
         haskey(p.attributes, :label) || continue
         c = Makie.to_color(p.color[])
         push!(out, string(p.label[]) => (round.(Float64[Makie.Colors.red(c), Makie.Colors.green(c), Makie.Colors.blue(c), Makie.Colors.alpha(c)], digits = 4),
-                                         round(Float64(p.alpha[]), digits = 4), round(Float64(p.linewidth[]), digits = 4),
+                                         round(Float64(p.alpha[]), digits = 4), round(Float64(mmpin_width(p.linewidth[])), digits = 4),
                                          p.linestyle[] !== nothing, length(p[1][])))
     end
     return out

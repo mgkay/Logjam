@@ -17,7 +17,15 @@ include(joinpath(@__DIR__, "map_pin_cases.jl"))
 # an image type the caller set (`type = "svg"`) stays; every lecture runs `activate!(px_per_unit = 2)`, which sets none.
 # xy_both_expands: a synthetic 12-mile box with Lecture 2.6's keywords (2.6's own call is 1,152 miles across and unchanged), draws the FAF5 network where it drew the Interstates
 # (S22, K11c); its size, limits and the state borders are pinned again in test_map_s22.jl.
-const MMPIN_MOVED = Dict("makemap_activate_type" => "P8", "xy_both_expands" => "S22")
+# N4 (CR 19, his answer to Q2): a map over 150 miles across draws Logjam's U.S. road network (usrdlink) cropped to the
+# map, classes 1 to 3 up to 10 degrees of latitude and its Interstates up to 30, where it drew all 82,323 Interstate
+# polylines (246,969 points, both carriageways) whatever the map's place, so the road layer's point count moves; its
+# label, opacity and Interstate width stay, but region_CUS's far step is 0.3, not 0.35 (S23: every stroke below 0.35).
+# Each case's size, limits, extent and other layers are pinned again in test_map_tiers.jl (T5.6), with the road layer
+# as it is drawn now.
+const MMPIN_MOVED = Dict("makemap_activate_type" => "P8", "xy_both_expands" => "S22",
+                         "xy_default" => "N4", "xy_xexpand_0.1" => "N4", "xy_xexpand_0.3" => "N4", "xy_xexpand_0.05" => "N4",
+                         "tuple_pair" => "N4", "region_CUS" => "N4", "xy_hawaii_not_CUS" => "N4", "xy_outside_US" => "N4")
 
 # size, requested limits, projected extent (6 significant digits), base layers (label, points, alpha, linewidth, line style)
 const MMPIN_EXPECTED = Dict(

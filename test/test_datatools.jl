@@ -154,22 +154,12 @@ end
     @test all(df.DIST .>= 0)
 end
 
-# the road background the map functions draw (P8: the exported faf5interstate, 0 calls, duplicated it)
-@testset "faf5interstateroads: the interstate polylines" begin
+# the Interstate polylines the map drew above 150 miles (P8: the exported faf5interstate, 0 calls, duplicated them) are
+# retired with their data file (CR 19, N4): makemap draws Logjam's U.S. road network (usrdlink) there instead
+@testset "faf5interstateroads and its data file are retired (N4)" begin
     @test !isdefined(Logjam, :faf5interstate)
-    x, y = Logjam.faf5interstateroads()
-    @test isa(x, Vector)
-    @test isa(y, Vector)
-    @test length(x) == length(y)
-    @test !isempty(x)
-    # Polyline vectors should contain NaN separators
-    @test any(isnan, x)
-    @test any(isnan, y)
-    # Non-NaN values should be valid coordinates
-    valid_x = filter(!isnan, x)
-    valid_y = filter(!isnan, y)
-    @test all(-180 .<= valid_x .<= 180)
-    @test all(-90 .<= valid_y .<= 90)
+    @test !isdefined(Logjam, :faf5interstateroads) && !isdefined(Logjam, :_faf5interstate_cache)
+    @test !isfile(joinpath(pkgdir(Logjam), "data", "faf5_interstate_roads.jls"))
 end
 
 # Test for loc2lonlat function (replaces name2lonlat)

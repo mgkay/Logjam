@@ -24,26 +24,41 @@ end
 # =============================================================================
 _zoom(latspan) = latspan <= 10 ? :close : latspan <= 20 ? :mid : :far
 
-# makemap's Interstate layer is drawn up to this span, and by zoom with this opacity and width
-const _INTERSTATE_MAXLATSPAN = 30.0
-const _INTERSTATE_STYLE = (close = (alpha = 0.2, linewidth = 0.6), mid = (alpha = 0.25, linewidth = 0.5),
-                           far = (alpha = 0.35, linewidth = 0.3))
-
 # =============================================================================
-# The road network on a small map (S22, S23): a map 150 miles across or less draws the FAF5 network, cropped to the map
+# makemap's road layer, in the tiers of his answer to Q2 (MakePlan D8), told apart by `Logjam._maproadtier` on the box
+# as drawn:
+#   :close     150 miles across or less (S22's measure, tested first): the FAF5 network as published, every class, 1 to
+#              5, as `plotroads!` groups them, ramps left out, as five Lines, one for each class (S22, S23);
+#   :regional  otherwise, at most 10 degrees of latitude: Logjam's U.S. road network (`usrdlink`, derived from FAF5; CR
+#              19, N4), classes 1 to 3 (Interstates, other freeways and expressways, other principal arterials), as one
+#              Lines, the classes by width;
+#   :national  otherwise, at most 30 degrees: the U.S. road network's links flagged `INTERSTATE`, as one Lines;
+#   :none      more than 30 degrees: nothing.
+# Each is cropped to the box (every link whose segment meets it, so the roads run to the frame). The close tier stays
+# FAF5's (N4): drawn from the derived network, its collapsed interchanges were stars of straight stubs at 20 miles across
+# and its density proxy rose (the stop rule; his ruling pending), so v0.3.0's ramp filter by name stays with it. The
+# derived network has no ramp (its derivation drops them, D2).
 # =============================================================================
 
 # the FCLASS tier (1 to 5) of a link: the Interstate is 1, a class of 5 or more, or of 0, is 5
 _fclasstier(fc) = fc <= 0 ? 5 : (fc >= 5 ? 5 : fc)
 
 # S23: one hue, as Lecture 2.5 draws it by hand ("Same hue as makemap's own roads, so the two layers look alike"), and
-# every stroke below alpha 0.35, the course figure gate's muted base (`FAINT_ALPHA`, figure_labels.jl); 2.5's own
-# network is 0.45, over it, so that number is not copied. The classes differ by width, the Interstate the heaviest.
-# There is no casing: a second, wider stroke of the same hue under each class would be a second stroke to keep below 0.35.
+# every stroke below alpha 0.35, the course figure gate's muted base (`FAINT_ALPHA`, figure_labels.jl, which files a
+# stroke apart only when it is fainter than 0.35); 2.5's own network is 0.45, over it, so that number is not copied. The
+# classes differ by width, the Interstate the heaviest. There is no casing: a second, wider stroke of the same hue under
+# each class would be a second stroke to keep below 0.35.
 const _NETWORK_HUE = :steelblue
 const _NETWORK_ALPHA = 0.3
 const _NETWORK_WIDTHS = (1.4, 1.0, 0.7, 0.5, 0.3)         # class 1 (Interstate) to class 5 (local, and any class 5 or more)
 const _NETWORK_LAYERS = (:class1, :class2, :class3, :class4, :class5)
+
+# The regional and national tiers keep v0.3.0's Interstate layer's steps by latitude span (`_zoom`): its opacity, and
+# its width as the Interstate's, classes 2 and 3 of the regional tier in the close tier's ratios to it (1.0 / 1.4 and
+# 0.7 / 1.4). The regional tier is always `close` (10 degrees or less), the national `mid` or `far`. The `far` step was
+# 0.35, which is not below 0.35 (S23); it is 0.3, the close tier's opacity.
+const _INTERSTATE_STYLE = (close = (alpha = 0.2, linewidth = 0.6), mid = (alpha = 0.25, linewidth = 0.5),
+                           far = (alpha = 0.3, linewidth = 0.3))
 
 # does the segment from (x1, y1) to (x2, y2) meet the closed box [xmin, xmax] x [ymin, ymax]? (Liang and Barsky's clip)
 function _meetsbox(x1, y1, x2, y2, xmin, xmax, ymin, ymax)
@@ -66,39 +81,54 @@ function _meetsbox(x1, y1, x2, y2, xmin, xmax, ymin, ymax)
     return true
 end
 
-# The ramps of an interchange are not drawn (his ruling of 2026-11-21, on S22's pictures): at this scale they pile up
-# into blotches. FAF5 tells them only by name, as Lecture 4.1's make_faf5_interstate.jl reads them: a ramp, a
-# collector-distributor lane or a turn lane. "CONNECTOR" alone also names real roads ("AIRPORT CONNECTOR"), so only the
-# connector-distributor lane is read; a missing name is not a ramp. 137,156 of FAF5's 483,530 links.
+# The ramps of an interchange are not drawn on the close tier (his ruling of 2026-11-21, on S22's pictures): at this
+# scale they pile up into blotches. FAF5 tells them only by name, as Lecture 4.1's make_faf5_interstate.jl reads them: a
+# ramp, a collector-distributor lane or a turn lane. "CONNECTOR" alone also names real roads ("AIRPORT CONNECTOR"), so
+# only the connector-distributor lane is read; a missing name is not a ramp. 137,156 of FAF5's 483,530 links. (Core's
+# `Logjam._isramp_v030` is the same rule, the first part of the derived network's.)
 const _RAMP_NAME = r"\bRAMPS?\b|(COLLECTOR|CONNECTOR)\s*/\s*DISTRIBUTOR|\bC/D LANE\b|\bTURN LANE\b"
 _isramp(name) = !ismissing(name) && occursin(_RAMP_NAME, uppercase(string(name)))
 
-# The end points and class of each FAF5 link, in the order of `faf5links()`, read from the cached tables on the first
-# map that needs them and kept (about 16 MB), so that a crop is a pass over four plain vectors and not a lookup of every
-# link's two nodes in the node table on each call (a crop that did that took 0.14 to 0.17 s; this one 0.5 to 0.8 ms).
-# The FAF5 tables have no `SOURCE` column and no connector; `plotroads!` hides a connector if a table has one.
-const _LINKENDS = Ref{Any}(nothing)
+# The end points and class of each link a tier draws, read on the first map of that tier and kept, so that a crop is a
+# pass over four plain vectors and not a lookup of every link's two nodes in the node table on each call (a crop that
+# did that took 0.14 to 0.17 s): the close tier from the cached FAF5 tables (about 16 MB), the regional and national
+# tiers from the derived network's (`usrdnode`, `usrdlink`). A class of 0 marks a link not drawn: a ramp on the close
+# tier, a link to a node the table lacks (none: plotroads! refuses one). The regional and national tiers keep their links
+# lightest class first, the table's order within a class, so that one Lines draws the Interstate last, on top; the
+# national tier's links are all class 1. The FAF5 tables have no `SOURCE` column and no connector; `plotroads!` hides a
+# connector if a table has one.
+const _LINKENDS = Dict{Symbol, Any}()
+const _LINKENDS_LOCK = ReentrantLock()
 
-function _linkends()
-    isnothing(_LINKENDS[]) || return _LINKENDS[]
-    N, L = Logjam._faf5tables()
+_linkends(tier::Symbol) = lock(() -> get!(() -> _tierends(tier), _LINKENDS, tier), _LINKENDS_LOCK)
+
+function _tierends(tier::Symbol)
+    tier in (:close, :regional, :national) || throw(ArgumentError("no road tier $(repr(tier))"))
+    N, L = tier === :close ? Logjam._faf5tables() : (Logjam._usrdnodes(), Logjam._usrdlinks())
     lon = fill(NaN, maximum(N.IDX))
     lat = fill(NaN, maximum(N.IDX))
     lon[N.IDX] = N.LON
     lat[N.IDX] = N.LAT
-    x1, y1, x2, y2 = lon[L.SRC], lat[L.SRC], lon[L.DST], lat[L.DST]
-    tier = Int8.(_fclasstier.(L.FCLASS))
-    tier[.!isfinite.(x1 .+ y1 .+ x2 .+ y2)] .= 0              # a link to a node the table lacks (none: plotroads! refuses one)
-    tier[_isramp.(L.NAME)] .= 0                                # a ramp (above); tier 0 is never drawn
-    _LINKENDS[] = (; x1, y1, x2, y2, tier)
-    return _LINKENDS[]
+    cls = Int8.(_fclasstier.(L.FCLASS))
+    if tier === :close
+        k = collect(eachindex(cls))
+        cls[_isramp.(L.NAME)] .= 0
+    else
+        keep = tier === :regional ? cls .<= 3 : L.INTERSTATE
+        tier === :national && (cls .= 1)
+        k = reduce(vcat, [findall(keep .& (cls .== c)) for c in 5:-1:1])
+    end
+    x1, y1, x2, y2 = lon[L.SRC[k]], lat[L.SRC[k]], lon[L.DST[k]], lat[L.DST[k]]
+    c = cls[k]
+    c[.!isfinite.(x1 .+ y1 .+ x2 .+ y2)] .= 0
+    return (; x1, y1, x2, y2, tier = c)
 end
 
-# The FAF5 links whose segment meets the box (so the roads run to the frame's edge), as NaN-separated polylines for each
-# class 1 to 5.
-_networkcrop(limits) = (e = _linkends(); _cropends(e.x1, e.y1, e.x2, e.y2, e.tier, limits))
+# The links of a tier whose segment meets the box (so the roads run to the frame's edge), as NaN-separated polylines for
+# each class 1 to 5.
+_networkcrop(tier::Symbol, limits) = (e = _linkends(tier); _cropends(e.x1, e.y1, e.x2, e.y2, e.tier, limits))
 
-# (a function of its own so that the loop is compiled for the vectors' types, which the Ref that holds them does not say)
+# (a function of its own so that the loop is compiled for the vectors' types, which the Dict that holds them does not say)
 function _cropends(x1::Vector{Float64}, y1::Vector{Float64}, x2::Vector{Float64}, y2::Vector{Float64}, tier::Vector{Int8}, limits)
     (xmin, xmax), (ymin, ymax) = limits
     polylines = [(Float64[], Float64[]) for _ in 1:5]
@@ -113,14 +143,14 @@ function _cropends(x1::Vector{Float64}, y1::Vector{Float64}, x2::Vector{Float64}
     return polylines
 end
 
-# The network as five plots, lightest class first so the Interstate is on top; `over` is `roads`' NamedTuple, if any:
-# `color` replaces the hue, `alpha` the opacity of every class, and `linewidth` the Interstate's width, the other
-# classes keeping their ratios to it. The heaviest class drawn carries the label. Returns `(; class1, ..., class5)`,
-# `nothing` for a class with no link in the box.
+# The close tier as five plots (S22, S23), lightest class first so the Interstate is on top; `over` is `roads`'
+# NamedTuple, if any: `color` replaces the hue, `alpha` the opacity of every class, and `linewidth` the Interstate's
+# width, the other classes keeping their ratios to it. The heaviest class drawn carries the label. Returns
+# `(; class1, ..., class5)`, `nothing` for a class with no link in the box.
 function _networkroads!(ax, limits, over)
     hue, alpha = get(over, :color, _NETWORK_HUE), get(over, :alpha, _NETWORK_ALPHA)
     scale = get(over, :linewidth, _NETWORK_WIDTHS[1]) / _NETWORK_WIDTHS[1]
-    polylines = _networkcrop(limits)
+    polylines = _networkcrop(:close, limits)
     heaviest = findfirst(k -> !isempty(polylines[k][1]), 1:5)
     handles = Any[nothing, nothing, nothing, nothing, nothing]
     for k in 5:-1:1
@@ -131,6 +161,29 @@ function _networkroads!(ax, limits, over)
             lines!(ax, x, y; color = (hue, alpha), linewidth = scale * _NETWORK_WIDTHS[k])
     end
     return NamedTuple{_NETWORK_LAYERS}(Tuple(handles))
+end
+
+# The regional and national tiers as one Lines labeled "Interstate Roads", as v0.3.0's Interstate layer was: opacity and
+# the Interstate's width by `_zoom`'s step, `over` replacing the hue, the opacity and the Interstate's width; on the
+# regional tier each segment has its class's width (a width per point, classes 3, 2 and 1 in that order, so the
+# Interstate is drawn last; CairoMakie strokes each NaN-separated piece of such a Lines on its own). A box with no link in
+# it draws an empty Lines at the Interstate's width, so `layers.roads` is a Lines on these tiers.
+function _wideroads!(ax, tier, limits, over)
+    style = _INTERSTATE_STYLE[_zoom(abs(limits[2][2] - limits[2][1]))]
+    hue, alpha = get(over, :color, _NETWORK_HUE), get(over, :alpha, style.alpha)
+    w1 = get(over, :linewidth, style.linewidth)
+    polylines = _networkcrop(tier, limits)
+    if tier === :national
+        x, y = polylines[1]
+        return lines!(ax, x, y; color = (hue, alpha), linewidth = w1, label = "Interstate Roads")
+    end
+    x, y, w = Float64[], Float64[], Float64[]
+    for k in 3:-1:1
+        append!(x, polylines[k][1])
+        append!(y, polylines[k][2])
+        append!(w, fill(w1 * _NETWORK_WIDTHS[k] / _NETWORK_WIDTHS[1], length(polylines[k][1])))
+    end
+    return lines!(ax, x, y; color = (hue, alpha), linewidth = isempty(w) ? w1 : w, label = "Interstate Roads")
 end
 
 # =============================================================================
@@ -252,19 +305,17 @@ function _drawmap(target, x::Union{Nothing, AbstractVector{<:Real}, NTuple{2, <:
         ax.xgridstyle, ax.ygridstyle = :dot, :dot
     end
 
-    # The road layer, if wanted; a NamedTuple overrides attributes. A map 150 miles across or less (S22) draws the FAF5
-    # network cropped to the map; a larger one the Interstates, if it is within the latitude span limit.
+    # The road layer, if wanted; a NamedTuple overrides attributes. The tier the map's size calls for (above), cropped to
+    # the map: FAF5's every class at 150 miles across or less, the derived network's classes 1 to 3 up to 10 degrees of
+    # latitude and its Interstates up to 30, nothing beyond.
     hroads = nothing
     if roads !== false
         over = roads === :auto ? (;) : roads
-        latspan = abs(limits[2][2] - limits[2][1])
-        if Logjam._mapisclose(limits)
+        tier = Logjam._maproadtier(limits)
+        if tier === :close
             hroads = _networkroads!(ax, limits, over)
-        elseif latspan <= _INTERSTATE_MAXLATSPAN
-            style = _INTERSTATE_STYLE[_zoom(latspan)]
-            hroads = lines!(ax, Logjam.faf5interstateroads()...,
-                            color = (get(over, :color, :steelblue), get(over, :alpha, style.alpha)),
-                            linewidth = get(over, :linewidth, style.linewidth), label = "Interstate Roads")
+        elseif tier !== :none
+            hroads = _wideroads!(ax, tier, limits, over)
         end
     end
 

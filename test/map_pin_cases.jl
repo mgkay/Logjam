@@ -17,6 +17,10 @@ mmpin_nc() = filter(r -> (r.STFIP == st2fips(:NC)) && (r.POP > 100_000), usplace
 # Lecture 4.2's first box, as `mapbbox` returns it (`4-net-2.qmd:319-320`, rounded to what the lecture prints)
 const MMPIN_BB42 = ((-78.688, -78.657), (35.762, 35.796))
 
+# a plot's width: its linewidth, or the widest of a width for each point (N4's regional road tier, whose widest is the
+# Interstate's)
+mmpin_width(w) = w isa AbstractVector ? maximum(w) : w
+
 # what a lecture sees of a map: size, limits, projected extent (6 significant digits), base layers
 function mmpin_describe(fig, ax)
     ext = ax.finallimits[]
@@ -24,7 +28,7 @@ function mmpin_describe(fig, ax)
     for p in ax.scene.plots
         haskey(p.attributes, :label) || continue                 # GeoAxis's own two unlabeled plots are not the base layer
         c = p.color[]
-        push!(layers, (string(p.label[]), length(p[1][]), round(Float64(Makie.Colors.alpha(Makie.to_color(c))), digits = 3), round(Float64(p.linewidth[]), digits = 3),
+        push!(layers, (string(p.label[]), length(p[1][]), round(Float64(Makie.Colors.alpha(Makie.to_color(c))), digits = 3), round(Float64(mmpin_width(p.linewidth[])), digits = 3),
                        p.linestyle[] === nothing ? "solid" : "dashed"))
     end
     return (size = size(fig.scene),

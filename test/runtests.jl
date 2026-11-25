@@ -26,6 +26,7 @@ include("test_makemap_c4.jl")      # makemap's interface: cell, size, roads, bor
 include("test_map_line_pins.jl")   # plotroads!, makemap's base-layer styles, the FAF5 tables and tracepath on the course's idiom (PCV K11b, principle 9)
 include("test_map_k11c_pins.jl")   # the default-road makemap calls' drawn extents and layers, and the map functions' declarations (PCV K11c, principle 9)
 include("test_map_s22.jl")         # the road network on a small map: the measure, the crop, the style, layers.roads (PCV K11c, S22, S23)
+include("test_map_tiers.jl")       # makemap's road layer in tiers, the derived network above 150 miles: T5.1 to T5.6 (PCV N4, CR 19); after the map pin files, whose dicts it reads
 include("test_k12_pins.jl")        # what the course gets today from the calls K12's functions replace: Lecture 5.1's randtour, disk, sfcpos, tspspfillcur, hcat(df.LON, df.LAT), string ZIPs, Wake's box, usstates (PCV K12, principle 9)
 include("test_k12_functions.jl")   # the small functions K12 adds, each equal to the course definition it takes the place of (PCV K12, principles 8 and 9)
 include("test_roadtools.jl")

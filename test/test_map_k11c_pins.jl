@@ -27,7 +27,15 @@ const K11CPIN_MOVED = Dict("kwarg_decl_makemap" => "MAP (C5)", "kwarg_decl_plotr
                            "kwarg_decl_plotroute!" => "MAP (C5)",
                            # S22: a map 150 miles across or less draws the FAF5 network where it drew the Interstates
                            "dwt_clinics_0.25" => "S22", "triangle_node_box" => "S22", "synthetic_tall_149" => "S22",
-                           "synthetic_wide_149" => "S22")
+                           "synthetic_wide_149" => "S22",
+                           # N4 (CR 19): a map over 150 miles across draws Logjam's U.S. road network cropped to the map
+                           # (classes 1 to 3 up to 10 degrees of latitude, its Interstates up to 30) where it drew every
+                           # Interstate polyline, so the road layer's point count moves; the label, the opacity and the
+                           # Interstate's width stay. The layers are pinned again in test_map_tiers.jl (T5.6).
+                           "nc_cities_default" => "N4", "nc_cities_xe0.2" => "N4", "carolinas_xe0.1" => "N4",
+                           "nc_counties_xe0.05" => "N4", "nc_counties_xe0.1" => "N4", "popco_xe0.04" => "N4",
+                           "popco_default" => "N4", "high_point_goldsboro" => "N4", "synthetic_tall_151" => "N4",
+                           "synthetic_wide_151" => "N4")
 
 _k11cpin_moved(name) = haskey(K11CPIN_MOVED, name) && (@info("K11c pin $name moved under $(K11CPIN_MOVED[name])"); true)
 

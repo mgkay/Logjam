@@ -1,6 +1,7 @@
 # test_map_s22.jl -- the road network on a small map (PCV K11c, S22 and S23). `roads = :auto` on a map 150 miles across
 # or less draws the FAF5 network, cropped to the map, in one hue and below alpha 0.35; above 150 miles the layers are
-# K11b's (pinned in test_map_pins.jl, test_map_line_pins.jl and test_map_k11c_pins.jl).
+# N4's tiers of the derived network (test_map_tiers.jl), K11b's before them (pinned in test_map_pins.jl,
+# test_map_line_pins.jl and test_map_k11c_pins.jl, the cases N4 moved listed there).
 
 using Test
 using Logjam

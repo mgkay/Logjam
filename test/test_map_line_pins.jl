@@ -12,8 +12,11 @@ using DataFrames
 using CairoMakie
 using GeoMakie
 
-# case name => ruled ID that moves it (none so far)
-const MLPIN_MOVED = Dict{String, String}()
+# case name => ruled ID that moves it. N4 (CR 19): the road layer of a map spanning more than 20 and at most 30 degrees of
+# latitude is drawn at opacity 0.3, not 0.35 (S23: every stroke below 0.35); its width, 0.3, stays. Pinned again in
+# test_map_tiers.jl (T5.6).
+const MLPIN_MOVED = Dict{String, String}("layers_CUS_map" => "N4", "road_tier_20.5" => "N4", "road_tier_29.99" => "N4",
+                                         "road_tier_30.0" => "N4")
 
 _mlpin_moved(name) = haskey(MLPIN_MOVED, name) && (@info("line pin $name moved under $(MLPIN_MOVED[name])"); true)
 
@@ -109,6 +112,8 @@ const MLPIN_ROADS = [
 end
 
 # ---- the base layers makemap draws: color, alpha attribute, width, style, and the road layer's zoom tiers ----------
+# (a width for each point, N4's regional road tier, reads as its widest, the Interstate's)
+_mlpin_width(w) = w isa AbstractVector ? maximum(w) : w
 function _mlpin_layers(ax)
     rows = Tuple[]
     for p in ax.scene.plots
@@ -116,7 +121,7 @@ function _mlpin_layers(ax)
         c = Makie.to_color(p.color[])
         push!(rows, (string(p.label[]),
                      round.(Float64[Makie.Colors.red(c), Makie.Colors.green(c), Makie.Colors.blue(c), Makie.Colors.alpha(c)], digits = 3),
-                     round(Float64(p.alpha[]), digits = 3), round(Float64(p.linewidth[]), digits = 3),
+                     round(Float64(p.alpha[]), digits = 3), round(Float64(_mlpin_width(p.linewidth[])), digits = 3),
                      p.linestyle[] === nothing ? "solid" : "dashed"))
     end
     return rows

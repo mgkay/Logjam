@@ -58,7 +58,6 @@ const CUS_LIMITS = ((-125, -65), (24, 50))
 # Cache for geographic data (loaded on first use)
 const _countries_cache = Ref{Union{Nothing, Tuple}}(nothing)
 const _usstates_cache = Ref{Union{Nothing, Tuple}}(nothing)
-const _faf5interstate_cache = Ref{Union{Nothing, Tuple}}(nothing)
 
 """
     countries() -> Tuple{Vector, Vector}
@@ -101,22 +100,6 @@ function usstates()
         _usstates_cache[] = open(deserialize, joinpath(data_dir, "usstates.jls"))
     end
     return map(copy, _usstates_cache[])
-end
-
-"""
-    faf5interstateroads() -> Tuple{Vector, Vector}
-
-Load and cache FAF5 interstate road coordinates from serialized data.
-
-Returns polyline vectors (x, y) with NaN separators for interstate highways
-derived from the Freight Analysis Framework version 5 (FAF5) network.
-"""
-function faf5interstateroads()
-    if isnothing(_faf5interstate_cache[])
-        data_dir = joinpath(dirname(@__FILE__), "..", "data")
-        _faf5interstate_cache[] = open(deserialize, joinpath(data_dir, "faf5_interstate_roads.jls"))
-    end
-    return _faf5interstate_cache[]
 end
 
 # makemap's argument types: points (or none) and the box `mapbbox` returns
@@ -192,6 +175,21 @@ end
 
 _mapisclose(box) = _mapextent(box) <= _MAP_CLOSE_MILES
 
+# CR 19, N4 (his answer to Q2, MakePlan D8): which tier of the road network `roads = :auto` draws on a map of `box`, the
+# box as drawn. The close test comes first; the wider tiers are the box's latitude span in degrees, as v0.3.0's
+# Interstate layer measured it, so a continental map still draws its Interstates. They nest in that order (150 miles is
+# about 2.2 degrees of latitude).
+const _MAP_REGIONAL_LATSPAN = 10.0
+const _MAP_NATIONAL_LATSPAN = 30.0
+
+function _maproadtier(box)
+    _mapisclose(box) && return :close
+    latspan = abs(box[2][2] - box[2][1])
+    latspan <= _MAP_REGIONAL_LATSPAN && return :regional
+    latspan <= _MAP_NATIONAL_LATSPAN && return :national
+    return :none
+end
+
 # makemap, plotroads!, plotroute! and dcf are declared here, with their docstrings, and given their methods by the map
 # extension (ext/LogjamMapExt.jl, which GeoMakie triggers), so that the manual builds and `?makemap` answers without
 # Makie. Called without the extension, each is a MethodError with a hint (`__init__` in Logjam.jl). The argument
@@ -202,7 +200,7 @@ _mapisclose(box) = _mapextent(box) <= _MAP_CLOSE_MILES
             size = (600, 450), showgrid = false) -> (; fig, ax, layers)
 
 Create a map of a predefined region or of the box around a set of longitude-latitude points, in Mercator projection with
-`GeoMakie`, with the Interstate Highways, U.S. state borders and country borders behind it. Requires
+`GeoMakie`, with roads, U.S. state borders and country borders behind it. Requires
 `using CairoMakie, GeoMakie`. The box alone is `makemap(bb)`; a map in a cell of a figure that exists is
 `makemap(cell, x, y)` (see their docstrings).
 
@@ -211,21 +209,22 @@ Create a map of a predefined region or of the box around a set of longitude-lati
   (`mapbbox`), made `xexpand` and `yexpand` times larger on each side.
 - `region`: with no `x` and `y`, `:World` (default), `:US` or `:CUS`, the continental U.S.
 - `xexpand`, `yexpand`: the fraction of the box's width and height added on each side. Defaults `0.3` and `0.1`.
-- `roads`: the road layer. `:auto` (default) draws one of three layers by how far across the map is, the larger of its
-  north-south and east-west great-circle extents through the center of the box as drawn (after `xexpand` and
-  `yexpand`), in miles. (1) A map **150 miles across or less** draws the FAF5 network, cropped to the map (every link
-  whose segment meets the box, so the roads run to the frame; no connectors; and no ramps, since an interchange's
-  ramps pile up into a blotch at this scale: a link FAF5 names a ramp, a collector-distributor lane or a turn lane
-  is left out), in `:steelblue` at opacity 0.3, the
-  classes (`FCLASS` 1 to 5, as `plotroads!` groups them) at widths 1.4, 1.0, 0.7, 0.5 and 0.3, the Interstate on top.
-  (2) A larger map that spans at most 30 degrees of latitude draws the FAF5 Interstate Highways in `:steelblue`,
-  fainter and thinner as the span grows (opacity and width 0.2 and 0.6 up to 10 degrees, 0.25 and 0.5 up to 20, 0.35
-  and 0.3 up to 30). (3) A map of more than 30 degrees draws no roads. `:World`, `:US` and `:CUS` are never 150 miles
-  across. `false` draws no roads. A `NamedTuple` of `color`, `alpha` (the opacity, which multiplies a color's own) and
-  `linewidth` restyles whichever layer `:auto` would draw: the Interstate layer takes those attributes as given and
-  the others as `:auto`'s, and is still drawn only up to 30 degrees of span; on the network `color` replaces the hue,
-  `alpha` the opacity of every class, and `linewidth` the Interstate's width, the other four classes keeping their
-  ratios to it.
+- `roads`: the road layer. `:auto` (default) draws one of four tiers by the size of the box as drawn (after `xexpand`
+  and `yexpand`), each cropped to the map (every link whose segment meets the box, so the roads run to the frame), in
+  `:steelblue`. (1) A map **150 miles across or less**, the larger of its north-south and east-west great-circle
+  extents through the center of the box, in miles, draws the FAF5 network (`faf5links`) at opacity 0.3, the classes
+  (`FCLASS` 1 to 5, as `plotroads!` groups them) at widths 1.4, 1.0, 0.7, 0.5 and 0.3, the Interstate on top; no
+  connectors, and no ramps, since an interchange's ramps pile up into a blotch at this scale: a link FAF5 names a ramp,
+  a collector-distributor lane or a turn lane is left out. (2) A larger map that spans **at most 10 degrees of
+  latitude** draws Logjam's U.S. road network (`usrdlink`, derived from FAF5, with no ramps and one line for each
+  divided road), its classes 1 to 3 (Interstates, other freeways and expressways, other principal arterials), at
+  opacity 0.2, the Interstate at width 0.6 and classes 2 and 3 in the ratios of (1), the Interstate on top. (3) A map
+  that spans **at most 30 degrees** draws that network's Interstates (`INTERSTATE`), at opacity and width 0.25 and 0.5
+  up to 20 degrees, 0.3 and 0.3 up to 30. (4) A map of more than 30 degrees draws no roads. `region = :World` and `:US`
+  draw none and `:CUS` the Interstates. `false` draws no roads. A `NamedTuple` of `color`, `alpha` (the opacity, which
+  multiplies a color's own) and `linewidth` restyles whichever tier `:auto` would draw: `color` replaces the hue,
+  `alpha` the opacity, and `linewidth` the Interstate's width, the other classes of (1) and (2) keeping their ratios to
+  it.
 - `borders`: the border layers, in blue at width 0.75. `true` (default) draws the U.S. state borders and the country borders
   that the map's place calls for (below); `false` draws neither; a `NamedTuple` of `color` and `linewidth` draws the same
   layers with those attributes.
@@ -236,10 +235,11 @@ Create a map of a predefined region or of the box around a set of longitude-lati
 
 # Returns
 A `NamedTuple` `(; fig, ax, layers)`: the `Figure`, the `GeoAxis`, and `layers`, a `NamedTuple` of the base-layer plots
-drawn, each a `Lines`: `roads`, `states` and `countries`, `nothing` for a layer not drawn; except that `roads` of a map
-150 miles across or less is itself a `NamedTuple` of the network's five `Lines`, `class1` (the Interstate) to `class5`,
-`nothing` for a class with no link in the map. `fig, ax = makemap(...)` takes the first two, as it takes the first two of
-any tuple.
+drawn, each a `Lines`: `roads`, `states` and `countries`, `nothing` for a layer not drawn. `roads` of a map 150 miles
+across or less is itself a `NamedTuple` of the network's five `Lines`, `class1` (the Interstate) to `class5`, `nothing`
+for a class with no link in the map; on tiers (2) and (3) it is one `Lines` labeled "Interstate Roads", with a width for
+each point on tier (2) (its class's), and empty where the map holds no road of the network. `fig, ax = makemap(...)`
+takes the first two, as it takes the first two of any tuple.
 
 # Behavior
 - A map that lies within the continental U.S. limits (`CUS_LIMITS`) is drawn with U.S. state borders only, one within the U.S.
@@ -251,7 +251,7 @@ any tuple.
   warns only under `--depwarn=yes`, and giving it together with `roads` throws an `ArgumentError`. `roadcolor`, `roadalpha`
   and `maxroadlatspan` are gone: `roadcolor = :steelblue, roadalpha = 0.5` is `roads = (; color = :steelblue, alpha = 0.5)`.
 
-Interstate roads are derived from FAF5: https://geodata.bts.gov/datasets/usdot::freight-analysis-framework-faf5-network-links/about. U.S. state borders are derived from https://raw.githubusercontent.com/PublicaMundi/MappingAPI/master/data/geojson/us-states.json. Country borders are derived from https://github.com/PublicaMundi/MappingAPI/blob/master/data/geojson/countries.geojson.
+Roads are FAF5's, or derived from FAF5 (`usrdlink`): https://geodata.bts.gov/datasets/usdot::freight-analysis-framework-faf5-network-links/about. U.S. state borders are derived from https://raw.githubusercontent.com/PublicaMundi/MappingAPI/master/data/geojson/us-states.json. Country borders are derived from https://github.com/PublicaMundi/MappingAPI/blob/master/data/geojson/countries.geojson.
 
 # Examples
 Lecture 2.3 draws the world, the continental U.S. and the box around a set of points (`df.LON`, `df.LAT`; here three
@@ -282,7 +282,7 @@ fig, ax = makemap(x, y; xexpand = 0.02, yexpand = 0.12, roads = false,
                   borders = (; color = (ink, 0.45), linewidth = 1.5), size = (600, :auto))
 ```
 
-README Example 2 restyles the Interstate layer:
+README Example 2 restyles the road layer:
 
 ```julia
 fig, ax = makemap(x, y; roads = (; color = :steelblue, alpha = 0.5))
@@ -308,10 +308,11 @@ Create a map of exactly the box `bb = ((xmin, xmax), (ymin, ymax))`, the shape `
 `makemap(bb; ...)` is `makemap(bb[1], bb[2]; xexpand = 0, yexpand = 0, ...)` and takes the keywords `makemap(x, y)` takes
 (`roads`, `borders`, `size`, `showgrid`, `region`, and the deprecated `doRoadbkgd`), with the same return; `makemap(cell, bb)`
 draws it in a cell. `xexpand` and `yexpand` are not keywords of these methods (`mapbbox` expands a box:
-`makemap(mapbbox(x, y; xexpand = 0.3))`) and throw an `ArgumentError`. `roads = :auto` draws one of three layers by how
-far across the box is, as `makemap(x, y)` says: the FAF5 network cropped to the box when it is 150 miles across or less,
-the Interstate Highways when it is larger and spans at most 30 degrees of latitude, no roads beyond that; `layers.roads`
-is then a `NamedTuple` of the network's five `Lines` (`class1` to `class5`) or one `Lines`.
+`makemap(mapbbox(x, y; xexpand = 0.3))`) and throw an `ArgumentError`. `roads = :auto` draws one of four tiers by the
+box's size, as `makemap(x, y)` says, each cropped to the box: the FAF5 network when it is 150 miles across or less;
+classes 1 to 3 of Logjam's U.S. road network (`usrdlink`) when it is larger and spans at most 10 degrees of latitude;
+that network's Interstates up to 30 degrees; no roads beyond that. `layers.roads` is then a `NamedTuple` of the
+network's five `Lines` (`class1` to `class5`) or one `Lines`.
 
 # Example
 Lecture 4.2 draws the whole of a box it has just downloaded, with no roads behind it and no margin:
