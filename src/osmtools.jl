@@ -322,13 +322,13 @@ function _join_clip(px, py, qx, qy, box)
     return t0 <= t1 ? (t0, t1) : nothing
 end
 
-# the box as (xmin, xmax, ymin, ymax): the one given, as `mapbbox` returns it or as four numbers, or the extent of the
-# OpenStreetMap nodes
-function _join_box(box, lon, lat)
-    box === nothing && return (minimum(lon), maximum(lon), minimum(lat), maximum(lat))
+# the box as (xmin, xmax, ymin, ymax), from `mapbbox`'s form or the four numbers. It is required (his ruling RN22): an
+# uncropped tile's ways run past the tile's edge, so the nodes' extent, the default until then, joined at the wrong
+# places with no error (PCV N3b: 18 of 31 connectors to a road of a class not adjacent on 4.2's larger Raleigh tile).
+function _join_box(box)
     b = box isa Tuple{Tuple{Real,Real},Tuple{Real,Real}} ? (box[1]..., box[2]...) : box
     (b isa Tuple{Real,Real,Real,Real} && b[1] <= b[2] && b[3] <= b[4]) ||
-        throw(ArgumentError("box must be ((xmin, xmax), (ymin, ymax)), as mapbbox returns it, or (xmin, xmax, ymin, ymax), " *
+        throw(ArgumentError("the box bb must be ((xmin, xmax), (ymin, ymax)), as mapbbox returns it, or (xmin, xmax, ymin, ymax), " *
                             "with xmin <= xmax and ymin <= ymax; got $(repr(box))"))
     return Float64.(b)
 end
@@ -353,13 +353,14 @@ function _join_check(N, L, what)
 end
 
 """
-    joinroads(N, L, Nosm, Losm; box = nothing, radius = $(_JOIN_RADIUS), verbose = false) -> (dfN, dfL)
+    joinroads(N, L, Nosm, Losm, bb; radius = $(_JOIN_RADIUS), verbose = false) -> (dfN, dfL)
 
 The U.S. road network with an OpenStreetMap network joined in, for routes that start or end on a city's streets and
-run far beyond them: inside the OpenStreetMap network's box its streets replace the national roads, outside it the
+run far beyond them: inside the box `bb` the OpenStreetMap streets replace the national roads, outside it the
 national roads stay, and each national road that crosses the box edge is joined to the streets by a connector at the
 edge. `N` and `L` are the national network as `usrdnode` and `usrdlink` return it (with any of their keywords), `Nosm`
-and `Losm` the OpenStreetMap network as `osm_roads` returns it; none of the four is changed.
+and `Losm` the OpenStreetMap network as `osm_roads(bb)` returns it, and `bb` is the box given to `osm_roads`; none of
+the five is changed.
 
 1. Inside the box, every national node goes, and with it every national link with an end inside or whose straight line
    crosses the box.
@@ -375,14 +376,12 @@ and `Losm` the OpenStreetMap network as `osm_roads` returns it; none of the four
 - `N`, `L`: the national network: nodes with `IDX`, `LON`, `LAT`; links with `osm_roads`' first eight columns (`SRC`,
   `DST`, `DIST`, `SPEED`, `FCLASS`, `DIR`, `NAME`, `SOURCE`), which `usrdlink` has.
 - `Nosm`, `Losm`: the OpenStreetMap network, the same columns.
+- `bb`: the box inside which the OpenStreetMap streets replace the national roads, the box given to `osm_roads`:
+  `((xmin, xmax), (ymin, ymax))` as `mapbbox` returns it, or the four numbers `(xmin, xmax, ymin, ymax)`. The
+  OpenStreetMap network is cropped to it too, so that no road of either network lies where the other has one, and a
+  whole tile read without `crop` joins as it does cropped to `bb`.
 
 # Keywords
-- `box = nothing`: the box inside which OpenStreetMap's streets replace the national roads, `((xmin, xmax), (ymin,
-  ymax))` as `mapbbox` returns it, or the four numbers. With `nothing` it is the extent of the OpenStreetMap nodes,
-  which needs nothing but the tables and is the network's own box when it was cropped to one, as `osm_roads(bb;
-  crop = true)` and `cropnetwork` crop it. A whole tile that `osm_roads` reads without cropping has ways that run on
-  past the tile's edge, so its extent is wider than the area it covers: give its box (`box = bb`). A box given crops
-  the OpenStreetMap network to it too, so that no road of either network lies where the other has one.
 - `radius = $(_JOIN_RADIUS)`: miles, around the point where a national link meets the box edge, within which a node of
   an adjacent class is looked for.
 - `verbose = false`: with `true`, report the national links and nodes dropped, the connectors made and how many of
@@ -422,6 +421,8 @@ A national road running east through a box of streets, joined at both edges:
 ```jldoctest
 julia> using DataFrames
 
+julia> bb = ((-78.65, -78.55), (35.77, 35.83));
+
 julia> N = DataFrame(IDX = 1:5, LON = [-79.4, -79.0, -78.6, -78.2, -77.8], LAT = 35.8, SOURCE = "FAF5");
 
 julia> L = DataFrame(SRC = 1:4, DST = 2:5, DIST = 22.5, SPEED = 65, FCLASS = 1, DIR = 0, NAME = "I 40", SOURCE = "FAF5");
@@ -433,7 +434,7 @@ julia> Losm = DataFrame(SRC = [1, 2, 2, 3, 2, 4, 2, 5], DST = [2, 1, 3, 2, 4, 2,
                         SPEED = [65, 65, 65, 65, 25, 25, 25, 25], FCLASS = [1, 1, 1, 1, 7, 7, 7, 7], DIR = 1,
                         NAME = ["Freeway", "Freeway", "Freeway", "Freeway", "Main St", "Main St", "Main St", "Main St"], SOURCE = "OSM");
 
-julia> dfN, dfL = joinroads(N, L, Nosm, Losm);
+julia> dfN, dfL = joinroads(N, L, Nosm, Losm, bb);
 
 julia> (nrow(dfN), [count(==(s), dfL.SOURCE) for s in ("FAF5", "OSM", "CONNECTOR")])
 (9, [2, 8, 2])
@@ -444,18 +445,18 @@ julia> [(r.SRC, r.DST, r.DIR, round(r.DIST, digits = 1), r.SPEED) for r in eachr
  (3, 7, 0, 19.6, 65)
 ```
 """
-function joinroads(N::AbstractDataFrame, L::AbstractDataFrame, Nosm::AbstractDataFrame, Losm::AbstractDataFrame;
-                   box = nothing, radius::Real = _JOIN_RADIUS, verbose::Bool = false)
+function joinroads(N::AbstractDataFrame, L::AbstractDataFrame, Nosm::AbstractDataFrame, Losm::AbstractDataFrame, bb;
+                   radius::Real = _JOIN_RADIUS, verbose::Bool = false)
     _join_check(N, L, "national"); _join_check(Nosm, Losm, "OpenStreetMap")
     radius >= 0 || throw(ArgumentError("radius is in miles and cannot be negative; got $radius"))
     nrow(Nosm) > 0 || throw(ArgumentError("the OpenStreetMap network has no nodes"))
     nx, ny = Float64.(N.LON), Float64.(N.LAT)
     ox, oy = Float64.(Nosm.LON), Float64.(Nosm.LAT)
-    bx = _join_box(box, ox, oy)
+    bx = _join_box(bb)
     inbox(x, y) = bx[1] <= x <= bx[2] && bx[3] <= y <= bx[4]
 
-    # the OpenStreetMap nodes in the box (every one, by default) and the links between them; each node's links by the
-    # way they are traveled, out of it and into it
+    # the OpenStreetMap nodes in the box and the links between them; each node's links by the way they are traveled,
+    # out of it and into it
     okeep = [inbox(ox[i], oy[i]) for i in eachindex(ox)]
     any(okeep) || throw(ArgumentError("no OpenStreetMap node lies in the box $bx"))
     orow = Dict(x => i for (i, x) in enumerate(Nosm.IDX))

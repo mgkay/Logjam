@@ -1,7 +1,8 @@
 # test_joinroads.jl -- an OpenStreetMap network joined to the U.S. road network at its box's edge (CR 19, his ruling
-# RD3, PCV N3b). T4.6 on synthetic networks (a national road crossing the box edge, a road ending inside, a one-way
-# pair, a link passing through the box, FAF5's class 0, a road with no street of an adjacent class at the edge) and on
-# Lecture 4.2's larger Raleigh pair joined to usrdnode() and usrdlink(), read from the lecture's committed data through
+# RD3, PCV N3b; the box a required argument and the routes to Greensboro and Winston-Salem by his rulings RN22 and
+# RN21). T4.6 on synthetic networks (a national road crossing the box edge, a road ending inside, a one-way pair, a link
+# passing through the box, FAF5's class 0, a road with no street of an adjacent class at the edge) and on Lecture 4.2's
+# larger Raleigh pair joined to usrdnode() and usrdlink(), read from the lecture's committed data through
 # LOGJAM_LECTURE_DATA, no network; T4.7 for the joined table. The expected Raleigh numbers are N3b's measurements.
 
 using Test
@@ -129,11 +130,12 @@ end
 @testset "joinroads: T4.6 on synthetic networks (RD3)" begin
     city = _jrcity(); nat = _jrnation()
     No, Lo = _jrosm(city); N, L = _jrnational(nat)
-    copies = deepcopy.((N, L, No, Lo))
-    dfN, dfL = _JR(N, L, No, Lo)
-    @test isequal((N, L, No, Lo), copies)                                       # none of the four is changed
-    b = (minimum(No.LON), maximum(No.LON), minimum(No.LAT), maximum(No.LAT))    # the default box: the city's extent
-    @test b == (-78.70, -78.60, 35.75, 35.85)
+    bb = ((-78.70, -78.60), (35.75, 35.85))                                     # the city's box, as osm_roads takes it
+    copies = deepcopy.((N, L, No, Lo, bb))
+    dfN, dfL = _JR(N, L, No, Lo, bb)
+    @test isequal((N, L, No, Lo, bb), copies)                                   # none of the five is changed
+    b = (bb[1]..., bb[2]...)
+    @test (minimum(No.LON), maximum(No.LON), minimum(No.LAT), maximum(No.LAT)) == b   # the streets fill it
     xy(v) = (dfN.LON[v], dfN.LAT[v])
     natpt(v) = only(c for (c, p) in _JR_PT if p == xy(v))                       # a national node's letter
     osmpt(v) = xy(v)
@@ -172,7 +174,7 @@ end
         @test (sp['B'], sp['F'], sp['K'], sp['R'], sp['T']) == (65, 45, 55, 25, 25)
         @test all(r -> r.FCLASS == Dict('B' => 1, 'D' => 1, 'F' => 3, 'K' => 2, 'M' => 2, 'R' => 4, 'S' => 4, 'T' => 0)[natpt(r.SRC)], eachrow(C))
         @test isequal(C.NAME[[natpt(v) == 'F' for v in C.SRC]], ["US 70"]) && all(ismissing, C.NAME[[natpt(v) == 'T' for v in C.SRC]])
-        @test_logs (:info, r"8 national links and 6 national nodes dropped.*10 connectors for 8 link ends \(4 two-way\), 2 to a road") _JR(N, L, No, Lo; verbose = true)
+        @test_logs (:info, r"8 national links and 6 national nodes dropped.*10 connectors for 8 link ends \(4 two-way\), 2 to a road") _JR(N, L, No, Lo, bb; verbose = true)
     end
 
     @testset "the columns (T4.7): osm_roads' first eight, then the national extras, missing off the national links" begin
@@ -211,30 +213,32 @@ end
         @test W[dfL.SRC[k], dfL.DST[k]] == dfL.AB_TIME[k] && W[dfL.DST[k], dfL.SRC[k]] == dfL.BA_TIME[k]
     end
 
-    @testset "a box given crops the streets to it" begin
-        bb = ((-78.70, -78.62), (35.75, 35.85))
-        jN, jL = _JR(N, L, No, Lo; box = bb)
+    @testset "the box crops the streets to it (RN22: the box is required)" begin
+        bb2 = ((-78.70, -78.62), (35.75, 35.85))                               # narrower than the streets
+        jN, jL = _JR(N, L, No, Lo, bb2)
         b2 = (-78.70, -78.62, 35.75, 35.85)
         @test all(v -> _jrin((jN.LON[v], jN.LAT[v]), b2), findall(==("OSM"), jN.SOURCE))
         @test all(v -> !_jrin((jN.LON[v], jN.LAT[v]), b2), findall(==("FAF5"), jN.SOURCE))
         f = findall(==("FAF5"), jL.SOURCE)
         @test !any(k -> _jrmeets((jN.LON[jL.SRC[k]], jN.LAT[jL.SRC[k]]), (jN.LON[jL.DST[k]], jN.LAT[jL.DST[k]]), b2), f)
         @test count(==("FAF5"), jL.SOURCE) == 4                                  # A-B, D-E, and US 1's pair, now outside
-        @test isequal(_JR(N, L, No, Lo; box = (-78.70, -78.62, 35.75, 35.85)), (jN, jL))   # the four numbers alike
-        Nc, Lc = cropnetwork(No, Lo, bb)
-        @test isequal(_JR(N, L, Nc, Lc)[2][:, 1:8], jL[:, 1:8])                  # the same as the streets cropped first
+        @test isequal(_JR(N, L, No, Lo, b2), (jN, jL))                         # the four numbers alike
+        Nc, Lc = cropnetwork(No, Lo, bb2)
+        @test isequal(_JR(N, L, Nc, Lc, bb2), (jN, jL))                         # the same as the streets cropped first
     end
 
     @testset "errors and the warning" begin
-        @test_throws ArgumentError _JR(N, select(L, Not(:SPEED)), No, Lo)
-        @test_throws ArgumentError _JR(N, L, select(No, Not(:LAT)), Lo)
-        @test_throws ArgumentError _JR(N, L, No, Lo; box = ((-78.6, -78.7), (35.75, 35.85)))
-        @test_throws ArgumentError _JR(N, L, No, Lo; box = ((-80.0, -79.9), (35.0, 35.1)))       # no street in it
-        @test_throws ArgumentError _JR(N, L, No, Lo; radius = -1)
+        @test_throws MethodError _JR(N, L, No, Lo)                              # no box (RN22)
+        @test_throws ArgumentError _JR(N, select(L, Not(:SPEED)), No, Lo, bb)
+        @test_throws ArgumentError _JR(N, L, select(No, Not(:LAT)), Lo, bb)
+        @test_throws ArgumentError _JR(N, L, No, Lo, ((-78.6, -78.7), (35.75, 35.85)))
+        @test_throws ArgumentError _JR(N, L, No, Lo, ((-80.0, -79.9), (35.0, 35.1)))       # no street in it
+        @test_throws ArgumentError _JR(N, L, No, Lo, (-78.70, -78.60, 35.75))              # three numbers
+        @test_throws ArgumentError _JR(N, L, No, Lo, bb; radius = -1)
         L2 = copy(L); L2.DIR[1] = 2
-        @test_throws ArgumentError _JR(N, L2, No, Lo)
+        @test_throws ArgumentError _JR(N, L2, No, Lo, bb)
         far = filter(r -> r.SRC in (1001, 1002) && r.DST in (1001, 1002), L)    # A-B alone: nothing crosses the edge
-        @test_logs (:warn, r"not joined") _JR(N, far, No, Lo)
+        @test_logs (:warn, r"not joined") _JR(N, far, No, Lo, bb)
     end
 end
 
@@ -245,11 +249,14 @@ end
     if !(isfile(np) && isfile(lp))
         @info "Lecture 4.2 not reachable (LOGJAM_LECTURE_DATA): its Raleigh pair not joined"
     else
-        Nosm, Losm = osm_roads(tile; cache_dir = lec, crop = true)               # the pair read, cropped to its tile
+        bb = ((tile[1], tile[2]), (tile[3], tile[4]))                            # the box given to osm_roads (RN22)
+        Nosm, Losm = osm_roads(bb; cache_dir = lec, crop = true)                 # the pair read, cropped to its tile
         N0, L0 = usrdnode(), usrdlink()
-        _JR(N0, L0, Nosm, Losm)                                                  # compiled first, then timed
-        t = @elapsed ((dfN, dfL) = _JR(N0, L0, Nosm, Losm))
-        b = (minimum(Nosm.LON), maximum(Nosm.LON), minimum(Nosm.LAT), maximum(Nosm.LAT))
+        _JR(N0, L0, Nosm, Losm, bb)                                              # compiled first, then timed
+        t = @elapsed ((dfN, dfL) = _JR(N0, L0, Nosm, Losm, bb))
+        b = tile
+        # the whole tile, read without crop, joins as the pair cropped to it does (RN22)
+        @test isequal(_JR(N0, L0, osm_roads(bb; cache_dir = lec)..., bb), (dfN, dfL))
         xy(v) = (dfN.LON[v], dfN.LAT[v])
         f = findall(==("FAF5"), dfL.SOURCE)
         C = _jrconnectors(dfN, dfL)
@@ -275,16 +282,16 @@ end
         spec = Logjam._OSM_LINK_TYPES[1:8]
         @test names(dfL)[1:8] == first.(spec) && eltype.(eachcol(dfL))[1:8] == last.(spec)
         @test eltype.(eachcol(vcat(dfL[:, 1:8], Losm[:, 1:8]))) == last.(spec)
-        # Routes from 4.1's Raleigh point, inside the box, to its Charlotte and Greensboro (Code block 47's places), on
-        # distance and on time: where each leaves the box, the national road it joins
+        # Routes from 4.1's Raleigh point, inside the box, to its Greensboro, Winston-Salem and Charlotte (Code block 47's
+        # places), on distance and on time: where each leaves the box, the national road it joins
         pl = filter(r -> r.STFIP == st2fips(:NC) && r.POP > 100_000, usplace())
-        P = pl[[findfirst(==(c), pl.NAME) for c in ("Raleigh", "Charlotte", "Greensboro")], [:NAME, :LON, :LAT]]
-        @test _jrin((P.LON[1], P.LAT[1]), b) && !_jrin((P.LON[2], P.LAT[2]), b) && !_jrin((P.LON[3], P.LAT[3]), b)
+        P = pl[[findfirst(==(c), pl.NAME) for c in ("Raleigh", "Greensboro", "Winston-Salem", "Charlotte")], [:NAME, :LON, :LAT]]
+        @test _jrin((P.LON[1], P.LAT[1]), b) && !any(j -> _jrin((P.LON[j], P.LAT[j]), b), 2:4)
         Na, La = addconnectors(dfN, dfL, P.LON, P.LAT; speed = 20)
         inb(v) = _jrin((Na.LON[v], Na.LAT[v]), b)
         for (lab, w) in (("shortest", 3), ("fastest", :time))
             ds = dijkstra_shortest_paths(links2graph(La; weight = w), 1)
-            for j in 2:3
+            for j in 2:4
                 p = tracepath(ds.parents, 1, j)
                 m = findfirst(i -> inb(p[i]) && !inb(p[i+1]), 1:length(p)-1)
                 kc = only(k for k in _jrpathlinks(La, p[m:m+1], "CONNECTOR"))   # the crossing: one of joinroads' connectors
@@ -293,9 +300,10 @@ end
                 println("  joinroads T4.6: the ", lab, " route from Raleigh to ", P.NAME[j], " (", round(ds.dists[j], digits = 2),
                         w === :time ? " min" : " mi", ") leaves the box on ", coalesce(La.NAME[kc], "an unnamed road"), " (class ",
                         La.FCLASS[kc], "), then ", coalesce(La.SIGN[kf], "-"), La.INTERSTATE[kf] ? ", an Interstate" : ", not an Interstate")
-                # Greensboro's fastest route leaves on I 40. Charlotte's is reported only (N3b, for his ruling): from every
-                # point measured it leaves on US 1, a freeway, as the derived network alone routes it from downtown.
-                lab == "fastest" && P.NAME[j] == "Greensboro" && @test La.INTERSTATE[kf] === true
+                # RN21 (his ruling on round n3): the fastest routes to Greensboro and Winston-Salem leave the box on an
+                # Interstate (I 40). Charlotte's is printed only: from every point N3b measured it leaves on US 1, a
+                # freeway, by FAF5's own times, as the derived network alone routes it from downtown.
+                lab == "fastest" && P.NAME[j] in ("Greensboro", "Winston-Salem") && @test La.INTERSTATE[kf] === true
             end
         end
     end
