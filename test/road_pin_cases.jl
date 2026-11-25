@@ -563,7 +563,8 @@ function rdpin_cases()
         for b in (_rd_osm_bb1(), _rd_osm_bb3())
             bb = (b[1]..., b[2]...)
             np, lp = Logjam._osm_cache_path(bb, "data")
-            push!(out, (b, Logjam._osm_snap_bbox(bb), np, lp))
+            # the paths come from joinpath, so the separator is the platform's; the pin holds them with "/"
+            push!(out, (b, Logjam._osm_snap_bbox(bb), replace(np, '\\' => '/'), replace(lp, '\\' => '/')))
         end
         _rd(out)
     end)
