@@ -109,7 +109,7 @@ Continental US 3-digit ZIPs: 882
 
 ### Example 2 — Mapping
 
-Logjam's `makemap` function creates GeoMakie map figures with automatic projection, region detection, and a FAF5 interstate highway background. This example maps NC cities and introduces the full mapping toolkit: `makemap` for the figure and axis, `scatter!` and `text!` for data, `aligntext` for automatic label positioning, and the `roads` keyword for customizing the built-in road overlay.
+Logjam's `makemap` function creates GeoMakie map figures with automatic projection, region detection, and a road background drawn from FAF5 that shows more roads the smaller the map. This example maps NC cities and introduces the full mapping toolkit: `makemap` for the figure and axis, `scatter!` and `text!` for data, `aligntext` for automatic label positioning, and the `roads` keyword for customizing the built-in road overlay.
 
 ```julia
 using Logjam
@@ -119,7 +119,7 @@ using CairoMakie, GeoMakie, DataFrames
 cities = filter(r -> r.STFIP == st2fips(:NC) && r.POP > 100_000, usplace())
 x, y, name = cities.LON, cities.LAT, cities.NAME
 
-# Create map — auto-fits region to data; draws FAF5 interstates by default
+# Create map — auto-fits region to data; draws the major roads by default
 fig, ax = makemap(x, y; roads = (; color = :steelblue, alpha = 0.5))
 ax.title = "North Carolina Cities with Population > 100,000"
 
@@ -132,7 +132,7 @@ dcf()
 
 ![NC Cities Plot](docs/assets/nc_cities_plot.png)
 
-**After-action.** `makemap` detects when coordinates fall within the continental U.S. and automatically overlays the FAF5 interstate network as a geographic reference. The `roads` keyword restyles that road overlay directly (`color`, `alpha` and `linewidth`), as shown above where the interstates are drawn in semi-transparent steel blue. `aligntext(x, y)` returns a named tuple of keyword arguments (`:align`, `:offset`) that are splatted into `text!` via `...`, automatically positioning each label to avoid overlap with its marker.
+**After-action.** `makemap` detects when coordinates fall within the continental U.S. and automatically overlays a road network as a geographic reference, chosen by the map's size: FAF5's roads on a map 150 miles across or less, the major roads of Logjam's U.S. road network (`usrdlink`, derived from FAF5) on a state or a region such as this one, and its Interstates on a larger map. The `roads` keyword restyles that road overlay directly (`color`, `alpha` and `linewidth`), as shown above where the roads are drawn in semi-transparent steel blue. `aligntext(x, y)` returns a named tuple of keyword arguments (`:align`, `:offset`) that are splatted into `text!` via `...`, automatically positioning each label to avoid overlap with its marker.
 
 ---
 

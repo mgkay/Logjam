@@ -416,33 +416,26 @@ connector to one carriageway would lead against it. A one-way national link has 
   an OpenStreetMap link and a connector at `60 * DIST / SPEED` and a national link by its own times.
 
 # Example
-A national road running east through a box of streets, joined at both edges:
+A national road running east through a box of streets, joined at both edges: the nodes, the links by `SOURCE`, and
+each connector's `SRC`, `DST`, `DIR`, `DIST` and `SPEED`:
 
 ```jldoctest
-julia> using DataFrames
+using DataFrames
+bb = ((-78.65, -78.55), (35.77, 35.83))
+N = DataFrame(IDX = 1:5, LON = [-79.4, -79.0, -78.6, -78.2, -77.8], LAT = 35.8, SOURCE = "FAF5")
+L = DataFrame(SRC = 1:4, DST = 2:5, DIST = 22.5, SPEED = 65, FCLASS = 1, DIR = 0, NAME = "I 40", SOURCE = "FAF5")
+Nosm = DataFrame(IDX = 1:5, LON = [-78.65, -78.6, -78.55, -78.6, -78.6], LAT = [35.8, 35.8, 35.8, 35.83, 35.77],
+                 SOURCE = "OSM")
+Losm = DataFrame(SRC = [1, 2, 2, 3, 2, 4, 2, 5], DST = [2, 1, 3, 2, 4, 2, 5, 2], DIST = [2.8, 2.8, 2.8, 2.8, 2.1, 2.1, 2.1, 2.1],
+                 SPEED = [65, 65, 65, 65, 25, 25, 25, 25], FCLASS = [1, 1, 1, 1, 7, 7, 7, 7], DIR = 1,
+                 NAME = ["Freeway", "Freeway", "Freeway", "Freeway", "Main St", "Main St", "Main St", "Main St"], SOURCE = "OSM")
+dfN, dfL = joinroads(N, L, Nosm, Losm, bb)
+(nrow(dfN), [count(==(s), dfL.SOURCE) for s in ("FAF5", "OSM", "CONNECTOR")],
+ [(r.SRC, r.DST, r.DIR, round(r.DIST, digits = 1), r.SPEED) for r in eachrow(dfL) if r.SOURCE == "CONNECTOR"])
 
-julia> bb = ((-78.65, -78.55), (35.77, 35.83));
+# output
 
-julia> N = DataFrame(IDX = 1:5, LON = [-79.4, -79.0, -78.6, -78.2, -77.8], LAT = 35.8, SOURCE = "FAF5");
-
-julia> L = DataFrame(SRC = 1:4, DST = 2:5, DIST = 22.5, SPEED = 65, FCLASS = 1, DIR = 0, NAME = "I 40", SOURCE = "FAF5");
-
-julia> Nosm = DataFrame(IDX = 1:5, LON = [-78.65, -78.6, -78.55, -78.6, -78.6], LAT = [35.8, 35.8, 35.8, 35.83, 35.77],
-                        SOURCE = "OSM");
-
-julia> Losm = DataFrame(SRC = [1, 2, 2, 3, 2, 4, 2, 5], DST = [2, 1, 3, 2, 4, 2, 5, 2], DIST = [2.8, 2.8, 2.8, 2.8, 2.1, 2.1, 2.1, 2.1],
-                        SPEED = [65, 65, 65, 65, 25, 25, 25, 25], FCLASS = [1, 1, 1, 1, 7, 7, 7, 7], DIR = 1,
-                        NAME = ["Freeway", "Freeway", "Freeway", "Freeway", "Main St", "Main St", "Main St", "Main St"], SOURCE = "OSM");
-
-julia> dfN, dfL = joinroads(N, L, Nosm, Losm, bb);
-
-julia> (nrow(dfN), [count(==(s), dfL.SOURCE) for s in ("FAF5", "OSM", "CONNECTOR")])
-(9, [2, 8, 2])
-
-julia> [(r.SRC, r.DST, r.DIR, round(r.DIST, digits = 1), r.SPEED) for r in eachrow(dfL) if r.SOURCE == "CONNECTOR"]
-2-element Vector{Tuple{Int64, Int64, Int64, Float64, Int64}}:
- (2, 5, 0, 19.6, 65)
- (3, 7, 0, 19.6, 65)
+(9, [2, 8, 2], [(2, 5, 0, 19.6, 65), (3, 7, 0, 19.6, 65)])
 ```
 """
 function joinroads(N::AbstractDataFrame, L::AbstractDataFrame, Nosm::AbstractDataFrame, Losm::AbstractDataFrame, bb;

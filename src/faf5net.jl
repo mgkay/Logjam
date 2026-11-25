@@ -1163,18 +1163,38 @@ The first eight are `osm_roads`' columns, in its order, so the two tables can be
 - `AB_TIME`, `BA_TIME`: free-flow minutes from `SRC` to `DST` and from `DST` to `SRC`, a divided road's from each of
   its carriageways; `links2graph(L; weight = :time)` reads them.
 - `STFIP`, `COFIP`: state and county FIPS codes.
-- `URBAN`: FAF5's urban area code (`missing` outside one).
+- `URBAN`: FAF5's urban area code as FAF5 gives it, its codes `99998` and `99999` included (`missing` where FAF5
+  gives none).
 
 # Sources
 Derived from U.S. Department of Transportation, Bureau of Transportation Statistics, Freight Analysis Framework (FAF5)
 Network (see `faf5links`).
 
-# Example
-```julia
-L = usrdlink(interstate = true, region = :CUS)     # the Interstates of the lower 48
-sum(L.DIST)                                        # their miles
+# Examples
+The Interstates of the lower 48, their links and their miles:
+
+```jldoctest
+using DataFrames
+L = usrdlink(interstate = true, region = :CUS)
+(nrow(L), round(Int, sum(L.DIST)))
+
+# output
+
+(27136, 48339)
+```
+
+The network of classes 1 to 3 as a graph: `prune_reindex` numbers the nodes from 1, as `links2graph` needs, and the
+graph's weights are the free-flow minutes, each direction its own:
+
+```jldoctest
+using DataFrames
 N, L = prune_reindex(usrdnode(fclass = 1:3), usrdlink(fclass = 1:3))
-g = links2graph(L; weight = :time)                 # minutes, each direction its own
+g = links2graph(L; weight = :time)
+(nrow(N), nrow(L))
+
+# output
+
+(101779, 123828)
 ```
 """
 function usrdlink(; interstate::Bool = false, fclass = nothing, region = nothing)
@@ -1201,12 +1221,19 @@ As `usrdlink`: `interstate = true` the Interstates, `fclass` one functional clas
 - `SOURCE`: `"FAF5"`.
 
 # Example
-Lecture 4.1's Interstate network of the lower 48, then thinned:
+Lecture 4.1's Interstate network of the lower 48, then thinned (`thin` numbers the nodes it keeps from 1, ready for
+`links2graph`): its nodes, and the nodes and links left:
 
-```julia
+```jldoctest
+using DataFrames
 N = usrdnode(interstate = true, region = :CUS)
 L = usrdlink(interstate = true, region = :CUS)
-tN, tL = thin(N, L)          # numbered from 1, ready for links2graph
+tN, tL = thin(N, L)
+(nrow(N), nrow(tN), nrow(tL))
+
+# output
+
+(26273, 1488, 2109)
 ```
 """
 function usrdnode(; interstate::Bool = false, fclass = nothing, region = nothing)
@@ -1233,11 +1260,18 @@ its ramps reach. The 310 nodes of FAF5's 145 connected pieces made only of ramps
 - `IDX`: the node of `usrdnode` that stands for it, or `missing`.
 
 # Example
-```julia
+Every FAF5 node is in the map once, and 310 of them, those of FAF5's pieces made only of ramps, have no node; a
+`Dict` finds a FAF5 node's node by its `IDX`:
+
+```jldoctest
+using DataFrames
 M = usrdnodemap()
-nrow(M) == nrow(faf5nodes())          # true: every FAF5 node, once
-count(ismissing, M.IDX)               # 310: the nodes of FAF5's pieces made only of ramps
-img = Dict(zip(M.FAF5_IDX, M.IDX))    # a FAF5 node's derived node, by its IDX
+img = Dict(zip(M.FAF5_IDX, M.IDX))
+(nrow(M) == nrow(faf5nodes()), count(ismissing, M.IDX))
+
+# output
+
+(true, 310)
 ```
 """
 usrdnodemap() = copy(_usrdcached(_usrdnodemap_cache, "faf5net_nodemap.csv", _USRD_NODEMAP_TYPES))

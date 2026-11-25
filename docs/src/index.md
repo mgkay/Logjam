@@ -204,6 +204,12 @@ _osm_cache_path
 _osm_snap_bbox
 ```
 
+An OpenStreetMap network joins the U.S. road network (below, under Data Functions) at the edge of its box, for routes that start or end on a city's streets and run beyond them:
+
+```@docs
+joinroads
+```
+
 ## Routing Functions
 
 Functions for vehicle routing problems, including pickup-and-delivery and capacitated VRP.
@@ -278,6 +284,16 @@ lonlat
 ```@docs
 faf5nodes
 faf5links
+```
+
+### U.S. Road Network
+
+Logjam's U.S. road network is derived from FAF5 and differs from it in that each stretch of road between two junctions is one link, the two carriageways of a divided road one two-way link, each interchange and divided-highway intersection one node with its ramps gone, and each link carries an Interstate flag, so the Interstates are a subset of it.
+
+```@docs
+usrdlink
+usrdnode
+usrdnodemap
 ```
 
 ## Map Functions

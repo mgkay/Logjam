@@ -1,5 +1,131 @@
 # Logjam Release Notes
 
+## v0.3.1
+
+An additive release. It adds Logjam's U.S. road network, derived from FAF5 (`usrdnode`, `usrdlink`, `usrdnodemap`):
+every road of FAF5 as published, each stretch of road between two junctions one link, the two carriageways of a
+divided road one two-way link, each interchange and each divided-highway intersection one node with its ramps gone,
+and an Interstate flag on each link, so the Interstates are a subset of one network rather than a second dataset (CR
+19). It adds `joinroads`, which joins an OpenStreetMap network to it at the edge of the OpenStreetMap network's box.
+And `makemap` draws its road layer from it on a map more than 150 miles across. FAF5 as published (`faf5nodes`,
+`faf5links`) is unchanged. **No migration:** every call a course makes returns what it returned at v0.3.0; the
+pictures of maps over 150 miles across change, and those of smaller maps only where FAF5 has ramps v0.3.0's name rule
+missed.
+
+### New
+
+- **`usrdlink(; interstate = false, fclass = nothing, region = nothing)`, `usrdnode(...)` with the same keywords, and
+  `usrdnodemap()`: Logjam's U.S. road network, derived from FAF5 (CR 19; names RD1, keywords RD2).** The network is
+  made from `faf5nodes()` and `faf5links()` by `tools/v0_3_1/make_faf5net.jl` and ships as the `faf5net` lazy
+  artifact (7.9 MB compressed, 29.7 MB as three CSV files), downloaded on first use like FAF5's own; each table is
+  read once per session (about 2 s the first time) and each call returns a copy (about 6 ms), so a caller may change
+  it freely. 145,722 nodes and 210,119 links (FAF5 as published: 344,998 and 483,530). How it is made:
+  - **Ramps and junctions.** A link is a ramp by its name (a ramp, a collector-distributor lane in any of FAF5's
+    spellings, a turn lane, or "X TO Y" on a one-way link with a route designation on one side) or by structure (a
+    cluster of unnamed one-way links within 0.75 mi that touches two or more routes, one of them on a class 1 or 2
+    link); 139,796 links. Each interchange (the ramps between two or more routes, merged into one junction within
+    1.5 mi of a seed sharing two of its routes, or 0.25 mi of any) and each at-grade crossing of a divided road (its
+    nodes of one route pair within 150 m) is one junction, at the member node nearest the members' center.
+  - **Carriageways.** The two one-way carriageways of a route between the same two junctions are one two-way link
+    when they lie within the separation of rule C (classes 0 to 2 at most 1,000 m apart at the median; classes 3 and
+    up at most 100 m and a name in common; a frontage road never); a road that is genuinely one-way (a downtown
+    couplet, a frontage road) stays one-way. A link keeps the node path of its shorter carriageway, so it follows the
+    road's course, and a link end moved to its junction's node adds the straight-line distance moved.
+  - **Columns.** Links: `osm_roads`' eight first, in its order (`SRC`, `DST`, `DIST`, `SPEED`, `FCLASS`, `DIR`,
+    `NAME`, `SOURCE`, so the two kinds of table stack with `vcat`), then `SIGN` (the routes as FAF5 signs them,
+    sorted and joined by `;` where the two carriageways differ), `TYPE` (Matlog's road type: `"I"`, `"U"`, `"S"`,
+    `"L"`, RD4), `INTERSTATE`, `AB_TIME` and `BA_TIME` (free-flow minutes each way, each from its own carriageway,
+    which `links2graph(L; weight = :time)` reads), `STFIP`, `COFIP`, `URBAN`. Nodes: `IDX` (FAF5's own node
+    number, so `prune_reindex` or `thin` comes before `links2graph`), `LON`, `LAT`, `SOURCE`. The node map:
+    `FAF5_IDX` (every FAF5 node once) and `IDX` (the node that stands for it; `missing` for the 310 nodes of FAF5's
+    145 pieces made only of ramps).
+  - **Keywords.** `interstate = true` keeps the links whose `INTERSTATE` is `true` (a sign that is exactly an
+    Interstate designation, Alaska's and Hawaii's lettered ones included, or a class 1 link so named; Business
+    routes not); `fclass` one functional class or a collection (`1:3`); `region = :CUS` the links with both ends
+    in the continental U.S. (`CUS_LIMITS`, as `makemap` names it). `usrdnode` with the same keywords returns the
+    nodes the kept links use, so the two are one network.
+  - **Checked against** 4.1's Interstate files (Interstate miles without the moved ends 3.37% fewer than theirs,
+    0.64% of Interstate carriageway left unpaired), road distances and times between 4.1's ten North Carolina cities
+    against FAF5 as published (over 50 mi: distance 0.85% mean, time 2.25%), connectivity (26 components, FAF5's
+    171 less its 145 pieces made only of ramps), and 4.1 Ex. 3's High Point to Goldsboro routes (the derived route
+    within FAF5's own distance of OSRM's: 0.094 mi against 0.793, 0.061 min against 5.464) (`test/test_faf5net.jl`).
+  **Lectures served:** Lecture 4.1's Interstate network (Code block 31), which the lecture ships as two CSV files its
+  own script derives from FAF5, becomes `usrdnode(interstate = true, region = :CUS)` and
+  `usrdlink(interstate = true, region = :CUS)` at the re-pin, and with it the thinning and Ex. 4's transshipment
+  terminals (set covering with a linehaul condition); 4.1's Exs. 2 and 3, which build their graphs from FAF5 as
+  published, can use it. Every number those examples quote is recomputed at the re-pin: the derived network
+  collapses every interchange, not only the 754 Interstate junctions of the lecture's script, so its lower-48
+  Interstates thin to 1,488 nodes and 2,109 links where the lecture's files thin to 600 and 989. **No migration.**
+- **`joinroads(N, L, Nosm, Losm, bb; radius = 0.5, verbose = false)`: an OpenStreetMap network joined to the U.S.
+  road network (CR 19, RD3; the name is provisional, for the interface review).** For a route that starts or ends
+  on a city's streets and runs far beyond them, as v0.2.8's `stitchnetworks` did: inside the box `bb` (the box
+  given to `osm_roads`, required) the OpenStreetMap streets replace the national roads; each national link that
+  crosses the box edge is joined at its node outside the box by a connector to the OpenStreetMap node nearest the
+  point where it meets the edge, on a road of the same or an adjacent class (FAF5 and `osm_roads` share the FHWA
+  class scale: class c joins c - 1 to c + 1, FAF5's 0 any class) within `radius` miles, else the nearest road of
+  any class that continues it; one connector each way the link can be traveled; then the three sets of links are
+  stacked and renumbered with `prune_reindex`. `SOURCE` marks `"FAF5"`, `"OSM"` and `"CONNECTOR"`; a connector's
+  `DIST` is great-circle, its `SPEED` the slower road's, so `links2graph(dfL; weight = :time)` times it at
+  `60 * DIST / SPEED`. Core, so no extension is needed: it works on the tables `osm_roads` reads. **Lecture
+  served:** Lecture 4.2's OpenStreetMap networks; no lecture calls it yet, and `test/test_joinroads.jl` joins
+  4.2's committed Raleigh tile to the network and routes from inside it to Greensboro (leaving on I-40) and to
+  Winston-Salem. **No migration.**
+
+### Changed
+
+- **`makemap`'s road layer is drawn in three tiers, from FAF5 and the derived network (CR 19, ruling Q2;
+  rulings RN23 to RN28).** `roads = :auto` draws, by the size of the map as drawn (after `xexpand` and `yexpand`),
+  each tier cropped to the map in `:steelblue`:
+  1. **Close, 150 miles across or less** (the larger of the box's north-south and east-west great-circle extents
+     through its center, tested first): FAF5's own links, every class (`FCLASS` 1 to 5 as `plotroads!` groups them)
+     at widths 1.4, 1.0, 0.7, 0.5 and 0.3 and opacity 0.3, labeled "FAF5 Roads", as at v0.3.0, but with every link
+     the network's ramp rule (`Logjam._ramp_links`) calls a ramp left out (139,796 links, where v0.3.0 left out the
+     137,156 named ramps): the "X TO Y" ramps, the misspelled collector-distributor lanes and the unnamed clusters at
+     interchanges no longer draw (RN23). The derived network was tried here and not kept: it draws each collapsed
+     interchange as a star of straight stubs.
+  2. **Regional, up to 10 degrees of latitude:** the derived network's classes 1 to 3 (Interstates, other freeways
+     and expressways, other principal arterials), labeled "Major Roads" (RN26), the Interstate at opacity 0.32 and
+     width 0.7, classes 2 and 3 at 0.3 and 0.15 of its width beneath it, one hue (RN24, RN27).
+  3. **National, up to 30 degrees:** the derived network's Interstates (`INTERSTATE`), labeled "Interstate Roads",
+     at opacity 0.32 and width 0.85 up to 20 degrees, 0.3 and 0.8 up to 30 (RN24, RN25, RN27).
+  4. **None** above 30 degrees, as before; `region = :World` and `:US` draw none, `:CUS` the national tier.
+  Tiers 2 and 3 replace v0.3.0's Interstate layer, which drew FAF5's 82,323 Interstate polylines, both carriageways,
+  whatever the map's place: one line now stands for a divided road, and its width and opacity are set so that the
+  Interstates carry 0.93 to 0.97 of v0.3.0's ink (measured on five maps). `roads = (; color, alpha, linewidth)`
+  restyles whichever tier is drawn: `color` the hue, `alpha` the opacity of every class, `linewidth` the
+  Interstate's width, the other classes keeping their ratios to it (on the regional tier 0.3 and 0.15).
+  `layers.roads` keeps its shapes: a `NamedTuple` of five `Lines` (`class1` to `class5`) on the close tier, one
+  `Lines` on the regional tier (with a width for each point, its class's) and on the national tier. **The first
+  close-tier map in a session takes 1.6 to 1.9 s longer** (the ramp rule over FAF5's 483,530 links, computed once;
+  RN28); a map after it about 9 ms. **Pins moved,** each listed with its reason in its file's moved-cases dict and
+  pinned anew in `test/test_map_tiers.jl`: `test/test_map_pins.jl` 8 (`MMPIN_MOVED`), `test/test_map_k11c_pins.jl`
+  10 (`K11CPIN_MOVED`), `test/test_map_line_pins.jl` 11 (`MLPIN_MOVED`), 29 cases: 22 under "N4" (the tiers: the
+  road layer's point count, and the 20-to-30-degree step's opacity 0.3, not 0.35), 20 under "N4b (RN26)" (the
+  regional label) and all 29 under "N4b (RN24)" (the Interstate's opacity and width). No other pin moved.
+  **Course figures that change:** every course map over 150 miles across with the default road layer, the call
+  shapes pinned in `test/test_map_k11c_pins.jl` (Lectures 2.2, 2.3 and its High Point to Goldsboro generator, 2.6,
+  2.7, 4.2, 5.1 to 5.3); and, only where FAF5 has ramps the name rule missed, a map 150 miles across or less (of the
+  course's, Lecture 2.7's clinics map is the one at that scale with the default road layer). **No migration.**
+
+### Internal
+
+- **One ramp rule, in core (D2, RN23).** `Logjam._ramp_links(N, L)` decides what a ramp is for the derivation and
+  for the map's close tier alike; the map extension's own name filter (`_RAMP_NAME`, `_isramp`) is retired.
+- **`faf5interstateroads()` and `data/faf5_interstate_roads.jls` (3.95 MB) are retired (N4).** The internal
+  function was the map's Interstate layer, which the derived network now draws. v0.3.0's Migration table pointed
+  scripts that called the removed `faf5interstate()` at `Logjam.faf5interstateroads()`; its replacement is
+  `usrdnode(interstate = true)` and `usrdlink(interstate = true)` (with `region = :CUS` for the lower 48).
+- **The derivation is a committed script with byte-reproducible output (D7).** `tools/v0_3_1/make_faf5net.jl`
+  runs the derivation (`Logjam._faf5net`, `src/faf5net.jl`) on `faf5nodes()` and `faf5links()`, writes the three
+  CSV files and packs them as `faf5net.tar.gz` (sorted keys, four decimals for `DIST` and the times, LF endings, no
+  time stamps); SHA-256 equal on Julia 1.12.6 and 1.13.4 (tarball `28604d8a…`, git-tree-sha1 `df2473c5…`). It
+  takes about 9 s after FAF5's tables are read. The tarball is the `data-faf5net-v1` release asset that
+  `Artifacts.toml`'s `[faf5net]` entry names.
+- **CI rebuilds a small extract (SC 1, T1.3).** `test/fixtures/faf5net_raleigh/` holds FAF5 cut to a box around
+  Raleigh and the network the derivation makes of it (`tools/v0_3_1/make_faf5net_fixture.jl`); the suite derives
+  it again and compares the three files byte for byte. `.gitattributes` checks them out with LF endings.
+- **The version reads `0.3.1-DEV`** until the release.
+
 ## v0.3.0
 
 One breaking release, so a course pinned to v0.2.8 or v0.2.9 re-pins once. It makes the heuristics
