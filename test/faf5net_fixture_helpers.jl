@@ -1,6 +1,6 @@
 # faf5net_fixture_helpers.jl -- the small extract of SC 1's T1.3 (PCV N3): FAF5 as Logjam ships it, cut to a box around
 # Raleigh, and the network the derivation makes of it. The box, the cut, the reader and the bytes the driver would
-# write. Kept apart from test_faf5net.jl so tools/v0_3_2/make_faf5net_fixture.jl can load it without running tests.
+# write. Kept apart from test_faf5net.jl so tools/v0_3_1/make_faf5net_fixture.jl can load it without running tests.
 
 using Logjam
 using DataFrames

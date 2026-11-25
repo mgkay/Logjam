@@ -1,7 +1,7 @@
 # make_faf5net.jl -- derive Logjam's road network from FAF5 (CR 19, PCV N2), write it as three CSV files, and pack them
 # as the `faf5net` artifact (PCV N3, D7).
 #
-#   julia +1.12.6 --project=<repo> tools/v0_3_2/make_faf5net.jl <output directory>
+#   julia +1.12.6 --project=<repo> tools/v0_3_1/make_faf5net.jl <output directory>
 #
 # Reads faf5nodes() and faf5links() (copies, so the tables Logjam ships are never changed), runs the derivation
 # (Logjam._faf5net, src/faf5net.jl: ramps and junctions, each route's two directions paired from stop to stop and
@@ -65,5 +65,5 @@ function main(out)
     println("git-tree-sha1 = \"", tree, "\"")
 end
 
-length(ARGS) == 1 || error("usage: julia --project=<repo> tools/v0_3_2/make_faf5net.jl <output directory>")
+length(ARGS) == 1 || error("usage: julia --project=<repo> tools/v0_3_1/make_faf5net.jl <output directory>")
 main(ARGS[1])

@@ -1,6 +1,6 @@
 # faf5net.jl -- the derived FAF5 road network (CR 19). Part one: what route a link carries, which links are
 # Interstates, what a ramp is, and where the junctions are (PCV N1, his rulings RN3 to RN10, RN12 as narrowed by RN17).
-# Part two: the derivation itself (PCV N2, his rulings RN13 to RN19), `_faf5net`, which tools/v0_3_2/make_faf5net.jl
+# Part two: the derivation itself (PCV N2, his rulings RN13 to RN19), `_faf5net`, which tools/v0_3_1/make_faf5net.jl
 # runs to write the shipped files. Part three (PCV N3, his rulings RD1 and RD2, D7): how those files are written, and
 # the three exported accessors, `usrdnode`, `usrdlink` and `usrdnodemap`, which read them from the `faf5net` artifact;
 # everything else here is internal. From N4 the map's road layer reads the same ramp rule, so the derivation and the
@@ -1022,7 +1022,7 @@ end
 # The shipped files and their accessors (PCV N3, his rulings RD1 and RD2, D7, D11)
 # ---------------------------------------------------------------------------------------------------------------------
 
-# How the three files are written (tools/v0_3_2/make_faf5net.jl, and the regenerated extract of the tests), the same
+# How the three files are written (tools/v0_3_1/make_faf5net.jl, and the regenerated extract of the tests), the same
 # bytes from run to run, on Julia 1.12 and 1.13: a missing value an empty field; DIST and the times, which the derivation
 # has rounded to 4 decimals, with exactly 4; any other number in its shortest form that reads back as the same value;
 # text quoted when it holds a comma, a quote or a line break; LF line endings.
@@ -1132,7 +1132,7 @@ Returns the links of Logjam's U.S. road network, derived from FAF5 (`faf5nodes`,
 publishes them) for long-distance routing and map backgrounds. Each stretch of road between two junctions is one link;
 the two carriageways of a divided road are one two-way link, and a road that is genuinely one-way stays one-way; each
 interchange and each divided-highway intersection is one node, and its ramps are gone; the nodes along each road are
-kept, so it follows the road's course. The network is made by `tools/v0_3_2/make_faf5net.jl` and ships as a lazy
+kept, so it follows the road's course. The network is made by `tools/v0_3_1/make_faf5net.jl` and ships as a lazy
 artifact, downloaded on first use. The file is read once per session and each call returns a copy, so the table may
 be changed freely.
 
