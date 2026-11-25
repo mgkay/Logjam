@@ -52,11 +52,11 @@ end
             fig, ax, layers = Dict(k11cpin_synthetic())[name]()
             @test layers.roads isa NamedTuple && keys(layers.roads) == (:class1, :class2, :class3, :class4, :class5)
             @test all(p -> p isa Makie.Lines, _s22_plots(layers.roads))
-            @test !any(p -> haskey(p.attributes, :label) && string(p.label[]) == "Interstate Roads", ax.scene.plots)
+            @test !any(p -> haskey(p.attributes, :label) && string(p.label[]) in ("Interstate Roads", "Major Roads"), ax.scene.plots)
         end
         for name in ("synthetic_tall_151", "synthetic_wide_151")
             fig, ax, layers = Dict(k11cpin_synthetic())[name]()
-            @test layers.roads isa Makie.Lines && string(layers.roads.label[]) == "Interstate Roads"
+            @test layers.roads isa Makie.Lines && string(layers.roads.label[]) == "Major Roads"   # N4b (RN26): regional
         end
         for r in (:World, :US, :CUS)                          # region maps are never close
             fig, ax, layers = makemap(region = r)
@@ -85,13 +85,16 @@ end
 
     @testset "the crop: every link whose segment meets the box and is not a ramp is drawn, in its own class, and no other" begin
         tier(fc) = (fc <= 0 || fc >= 5) ? 5 : fc                              # plotroads!'s grouping, written out
-        # a ramp by its name, written out independently of the extension's pattern
-        isramp(nm) = !ismissing(nm) && (u = uppercase(string(nm));
+        # a ramp is a link core's one rule calls one (RN23, D2: the name rule, X TO Y, the C/D spellings and the structural
+        # cluster test); v0.3.0's name rule, written out here independently, is the part of it every name catches
+        ramp = Logjam._ramp_links(N, L)
+        isname(nm) = !ismissing(nm) && (u = uppercase(string(nm));
             any(w -> occursin(Regex("\\b$w\\b"), u), ("RAMP", "RAMPS", "C/D LANE", "TURN LANE")) ||
             occursin("COLLECTOR/DISTRIBUTOR", replace(u, " " => "")) || occursin("CONNECTOR/DISTRIBUTOR", replace(u, " " => "")))
-        @test count(isramp, L.NAME) == 137156                                 # FAF5 as shipped
-        @test !isramp("N RAMPART ST") && !isramp("AIRPORT CONNECTOR") && isramp("SYSTEM RAMP - I 35 NB") &&
-              isramp("CA 65 NB CONNECTOR/DISTRIBUTOR LANE") && isramp("I 405 COLLECTOR/DISTRIBUTOR LANE")
+        @test count(isname, L.NAME) == 137156                                 # FAF5 as shipped
+        @test !isname("N RAMPART ST") && !isname("AIRPORT CONNECTOR") && isname("SYSTEM RAMP - I 35 NB") &&
+              isname("CA 65 NB CONNECTOR/DISTRIBUTOR LANE") && isname("I 405 COLLECTOR/DISTRIBUTOR LANE")
+        @test all(ramp[isname.(L.NAME)]) && count(ramp) > 137156              # the core rule keeps v0.3.0's and adds to it
         nramps = 0
         for bb in (((-79.2, -78.4), (35.5, 36.1)), ((-78.80, -78.50), (35.70, 35.90)), ((-79.0, -78.9), (35.0, 36.4)))
             Logjam._mapisclose(bb) || continue
@@ -111,7 +114,7 @@ end
             for i in 1:nrow(L)
                 a, b = xy[L.SRC[i]], xy[L.DST[i]]
                 _s22_meets(a, b, bb) || continue
-                if isramp(L.NAME[i])
+                if ramp[i]
                     nramps += 1
                 else
                     push!(want[tier(L.FCLASS[i])], (a, b))
@@ -170,7 +173,7 @@ end
                 if miles <= 150.0
                     @test string(layers.roads.class1.label[]) == "FAF5 Roads"
                 else
-                    @test layers.roads isa Makie.Lines && string(layers.roads.label[]) == "Interstate Roads"
+                    @test layers.roads isa Makie.Lines && string(layers.roads.label[]) in ("Major Roads", "Interstate Roads")   # regional, national (N4b, RN26)
                 end
             end
         end

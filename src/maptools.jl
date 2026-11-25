@@ -214,11 +214,14 @@ Create a map of a predefined region or of the box around a set of longitude-lati
   `:steelblue`. (1) A map **150 miles across or less**, the larger of its north-south and east-west great-circle
   extents through the center of the box, in miles, draws the FAF5 network (`faf5links`) at opacity 0.3, the classes
   (`FCLASS` 1 to 5, as `plotroads!` groups them) at widths 1.4, 1.0, 0.7, 0.5 and 0.3, the Interstate on top; no
-  connectors, and no ramps, since an interchange's ramps pile up into a blotch at this scale: a link FAF5 names a ramp,
-  a collector-distributor lane or a turn lane is left out. (2) A larger map that spans **at most 10 degrees of
-  latitude** draws Logjam's U.S. road network (`usrdlink`, derived from FAF5, with no ramps and one line for each
-  divided road), its classes 1 to 3 (Interstates, other freeways and expressways, other principal arterials), at
-  opacity 0.2, the Interstate at width 0.6 and classes 2 and 3 in the ratios of (1), the Interstate on top. (3) A map
+  connectors, and no ramps, since an interchange's ramps pile up into a blotch at this scale. A ramp is a link that the
+  rule `faf5net` applies to FAF5 calls one: its name marks one (a ramp, a collector-distributor lane in any of its
+  spellings, a turn lane, or "X TO Y" on a one-way link), or it belongs to a cluster of unnamed one-way links, within
+  three quarters of a mile of each other, that joins two routes at an interchange. (2) A larger map that spans **at
+  most 10 degrees of latitude** draws Logjam's U.S. road network (`usrdlink`, derived from FAF5, with no ramps and one
+  line for each divided road), its classes 1 to 3 (Interstates, other freeways and expressways, other principal
+  arterials), labeled "Major Roads", at opacity 0.2, the Interstate at width 0.6 and classes 2 and 3 in the ratios
+  of (1), the Interstate on top. (3) A map
   that spans **at most 30 degrees** draws that network's Interstates (`INTERSTATE`), at opacity and width 0.25 and 0.5
   up to 20 degrees, 0.3 and 0.3 up to 30. (4) A map of more than 30 degrees draws no roads. `region = :World` and `:US`
   draw none and `:CUS` the Interstates. `false` draws no roads. A `NamedTuple` of `color`, `alpha` (the opacity, which
@@ -237,8 +240,9 @@ Create a map of a predefined region or of the box around a set of longitude-lati
 A `NamedTuple` `(; fig, ax, layers)`: the `Figure`, the `GeoAxis`, and `layers`, a `NamedTuple` of the base-layer plots
 drawn, each a `Lines`: `roads`, `states` and `countries`, `nothing` for a layer not drawn. `roads` of a map 150 miles
 across or less is itself a `NamedTuple` of the network's five `Lines`, `class1` (the Interstate) to `class5`, `nothing`
-for a class with no link in the map; on tiers (2) and (3) it is one `Lines` labeled "Interstate Roads", with a width for
-each point on tier (2) (its class's), and empty where the map holds no road of the network. `fig, ax = makemap(...)`
+for a class with no link in the map; on tiers (2) and (3) it is one `Lines`, labeled "Major Roads" on tier (2) and
+"Interstate Roads" on tier (3), with a width for each point on tier (2) (its class's), and empty where the map holds no
+road of the network. `fig, ax = makemap(...)`
 takes the first two, as it takes the first two of any tuple.
 
 # Behavior

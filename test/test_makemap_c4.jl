@@ -56,7 +56,7 @@ end
         @test keys(layers) == (:roads, :states, :countries)
         @test layers.roads isa Lines && layers.states isa Lines && layers.countries === nothing
         @test all(p -> any(q -> q === p, ax.scene.plots), (layers.roads, layers.states))     # the plots drawn, by identity
-        @test string(layers.roads.label[]) == "Interstate Roads" && string(layers.states.label[]) == "US State Borders"
+        @test string(layers.roads.label[]) == "Major Roads" && string(layers.states.label[]) == "US State Borders"   # N4b (RN26): NC's cities are the regional tier
         @test layers.states.linestyle[] === nothing
         # a layer not drawn is nothing
         r = makemap(region = :World)
@@ -76,7 +76,7 @@ end
             @test a.ax.limits[] == b.ax.limits[]
             c, d = makemap(x, y; doRoadbkgd = false, kw...), makemap(x, y; roads = false, kw...)
             @test _c4_layers(c.ax) == _c4_layers(d.ax)
-            @test "Interstate Roads" ∉ _c4_labels(d.ax) && d.layers.roads === nothing
+            @test all(l -> l ∉ ("Interstate Roads", "Major Roads"), _c4_labels(d.ax)) && d.layers.roads === nothing
             e = makemap(x, y; doRoadbkgd = true, kw...)
             @test _c4_layers(e.ax) == _c4_layers(a.ax)
         end
@@ -101,8 +101,8 @@ end
         @test _c4_layers(makemap(nc.LON, nc.LAT; roads = (;)).ax) == _c4_layers(makemap(nc.LON, nc.LAT).ax)   # no override: :auto's
         # the layer is still the Interstate skeleton, drawn up to 30 degrees of span, with every point
         @test _c4_layers(makemap(nc.LON, nc.LAT; roads = (; color = :red)).ax)[1][2][5] == base[5]
-        @test "Interstate Roads" ∉ _c4_labels(makemap(region = :US; roads = (; color = :red)).ax)
-        @test "Interstate Roads" ∉ _c4_labels(makemap([-100.0, -90.0], [20.0, 50.5]; xexpand = 0, yexpand = 0, roads = (; color = :red)).ax)
+        @test all(l -> l ∉ ("Interstate Roads", "Major Roads"), _c4_labels(makemap(region = :US; roads = (; color = :red)).ax))
+        @test all(l -> l ∉ ("Interstate Roads", "Major Roads"), _c4_labels(makemap([-100.0, -90.0], [20.0, 50.5]; xexpand = 0, yexpand = 0, roads = (; color = :red)).ax))
         @test "Interstate Roads" ∈ _c4_labels(makemap([-100.0, -90.0], [20.0, 50.0]; xexpand = 0, yexpand = 0, roads = (; color = :red)).ax)
     end
 
@@ -113,7 +113,7 @@ end
             @test r.layers.states === nothing && r.layers.countries === nothing
             @test all(l -> l ∉ ("US State Borders", "Country Borders"), _c4_labels(r.ax))
         end
-        @test _c4_labels(makemap(nc.LON, nc.LAT; borders = false).ax) == ["Interstate Roads"]
+        @test _c4_labels(makemap(nc.LON, nc.LAT; borders = false).ax) == ["Major Roads"]     # N4b (RN26)
         # a color and a width, on each layer drawn; the dashed, half-opaque state layer where both draw
         r = makemap([-158.0, -155.0], [19.0, 22.0]; roads = false, borders = (; color = :red, linewidth = 2))
         L = Dict(_c4_layers(r.ax))
@@ -130,7 +130,7 @@ end
         old = _c4_layers(_c4_basemap(x, y; roads = true)[2])
         new = _c4_layers(makemap(x, y; xexpand = 0.02, yexpand = 0.12, borders = (; color = (_C4_INK, 0.45), linewidth = 1.5)).ax)
         @test [l for l in new if l[1] == "US State Borders"] == [l for l in old if l[1] == "US State Borders"]
-        @test [l for l in new if l[1] == "Interstate Roads"] == [l for l in old if l[1] == "Interstate Roads"]   # the roads stay faded
+        @test [l for l in new if l[1] == "Major Roads"] == [l for l in old if l[1] == "Major Roads"] && any(l -> l[1] == "Major Roads", new)   # the roads stay faded
     end
 
     @testset "size: (width, height), the default, and (width, :auto) fits the height to the map" begin

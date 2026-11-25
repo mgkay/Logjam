@@ -126,10 +126,10 @@ _fnjunctions(n) = (t = _fntables(n); r = LJ._ramp_links(t...); (r, LJ._junctions
         @test LJ._isramp_name("SYSTEM RAMP - I 35 NB", 1, "I 35") && LJ._isramp_name("I 80 COLLECCTOR/DISTRIBUTOR LANE", 1, "I 80")
         @test LJ._isramp_name("I 96 EB TO I 696 EB", 1, "US 1") && LJ._isramp_name("I 96 EB TO I 696 EB", 1, "I 40 B")
         @test LJ._isramp_name("I 96 EB TO I 696 EB", 1, missing) && LJ._isramp_name("I 96 EB TO I 696 EB", 1, " ")
-        # the map keeps v0.3.0's rule until N4, and it is the first part of the rule here
+        # one ramp rule, in core (D2, RN23): the map's own name filter is retired, and v0.3.0's rule is the first part here
         ext = Base.get_extension(Logjam, :LogjamMapExt)
-        @test ext._RAMP_NAME.pattern == LJ._RAMP_WORDS.pattern
-        @test ext._isramp("I 40 EB RAMP") && !ext._isramp("I 96 EB TO I 696 EB")
+        @test !isdefined(ext, :_RAMP_NAME) && !isdefined(ext, :_isramp)
+        @test LJ._isramp_v030("I 40 EB RAMP") && !LJ._isramp_v030("I 96 EB TO I 696 EB")
     end
 
     @testset "_ramp_links: the structural test, by cluster (RN4, T2.8)" begin

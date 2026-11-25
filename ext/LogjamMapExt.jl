@@ -28,7 +28,8 @@ _zoom(latspan) = latspan <= 10 ? :close : latspan <= 20 ? :mid : :far
 # makemap's road layer, in the tiers of his answer to Q2 (MakePlan D8), told apart by `Logjam._maproadtier` on the box
 # as drawn:
 #   :close     150 miles across or less (S22's measure, tested first): the FAF5 network as published, every class, 1 to
-#              5, as `plotroads!` groups them, ramps left out, as five Lines, one for each class (S22, S23);
+#              5, as `plotroads!` groups them, every link core's ramp rule calls a ramp left out (RN23), as five Lines, one
+#              for each class (S22, S23);
 #   :regional  otherwise, at most 10 degrees of latitude: Logjam's U.S. road network (`usrdlink`, derived from FAF5; CR
 #              19, N4), classes 1 to 3 (Interstates, other freeways and expressways, other principal arterials), as one
 #              Lines, the classes by width;
@@ -36,7 +37,7 @@ _zoom(latspan) = latspan <= 10 ? :close : latspan <= 20 ? :mid : :far
 #   :none      more than 30 degrees: nothing.
 # Each is cropped to the box (every link whose segment meets it, so the roads run to the frame). The close tier stays
 # FAF5's (N4): drawn from the derived network, its collapsed interchanges were stars of straight stubs at 20 miles across
-# and its density proxy rose (the stop rule; his ruling pending), so v0.3.0's ramp filter by name stays with it. The
+# and its density proxy rose, so it draws FAF5's own links with the ramps core finds left out (RN23, option b). The
 # derived network has no ramp (its derivation drops them, D2).
 # =============================================================================
 
@@ -81,19 +82,15 @@ function _meetsbox(x1, y1, x2, y2, xmin, xmax, ymin, ymax)
     return true
 end
 
-# The ramps of an interchange are not drawn on the close tier (his ruling of 2026-11-21, on S22's pictures): at this
-# scale they pile up into blotches. FAF5 tells them only by name, as Lecture 4.1's make_faf5_interstate.jl reads them: a
-# ramp, a collector-distributor lane or a turn lane. "CONNECTOR" alone also names real roads ("AIRPORT CONNECTOR"), so
-# only the connector-distributor lane is read; a missing name is not a ramp. 137,156 of FAF5's 483,530 links. (Core's
-# `Logjam._isramp_v030` is the same rule, the first part of the derived network's.)
-const _RAMP_NAME = r"\bRAMPS?\b|(COLLECTOR|CONNECTOR)\s*/\s*DISTRIBUTOR|\bC/D LANE\b|\bTURN LANE\b"
-_isramp(name) = !ismissing(name) && occursin(_RAMP_NAME, uppercase(string(name)))
+# The ramps of an interchange are not drawn on the close tier (his ruling of 2026-11-21, on S22's pictures, and RN23): at
+# this scale they pile up into blotches. Which links are ramps is core's one rule (`Logjam._ramp_links`, D2), computed
+# once with the tier's link ends below.
 
 # The end points and class of each link a tier draws, read on the first map of that tier and kept, so that a crop is a
 # pass over four plain vectors and not a lookup of every link's two nodes in the node table on each call (a crop that
 # did that took 0.14 to 0.17 s): the close tier from the cached FAF5 tables (about 16 MB), the regional and national
-# tiers from the derived network's (`usrdnode`, `usrdlink`). A class of 0 marks a link not drawn: a ramp on the close
-# tier, a link to a node the table lacks (none: plotroads! refuses one). The regional and national tiers keep their links
+# tiers from the derived network's (`usrdnode`, `usrdlink`). A class of 0 marks a link not drawn: a ramp (core's rule) on the
+# close tier, a link to a node the table lacks (none: plotroads! refuses one). The regional and national tiers keep their links
 # lightest class first, the table's order within a class, so that one Lines draws the Interstate last, on top; the
 # national tier's links are all class 1. The FAF5 tables have no `SOURCE` column and no connector; `plotroads!` hides a
 # connector if a table has one.
@@ -112,7 +109,7 @@ function _tierends(tier::Symbol)
     cls = Int8.(_fclasstier.(L.FCLASS))
     if tier === :close
         k = collect(eachindex(cls))
-        cls[_isramp.(L.NAME)] .= 0
+        cls[Logjam._ramp_links(N, L)] .= 0
     else
         keep = tier === :regional ? cls .<= 3 : L.INTERSTATE
         tier === :national && (cls .= 1)
@@ -163,7 +160,8 @@ function _networkroads!(ax, limits, over)
     return NamedTuple{_NETWORK_LAYERS}(Tuple(handles))
 end
 
-# The regional and national tiers as one Lines labeled "Interstate Roads", as v0.3.0's Interstate layer was: opacity and
+# The regional and national tiers as one Lines, labeled "Major Roads" on the regional tier (RN26) and "Interstate Roads"
+# on the national, as v0.3.0's Interstate layer was: opacity and
 # the Interstate's width by `_zoom`'s step, `over` replacing the hue, the opacity and the Interstate's width; on the
 # regional tier each segment has its class's width (a width per point, classes 3, 2 and 1 in that order, so the
 # Interstate is drawn last; CairoMakie strokes each NaN-separated piece of such a Lines on its own). A box with no link in
@@ -183,7 +181,7 @@ function _wideroads!(ax, tier, limits, over)
         append!(y, polylines[k][2])
         append!(w, fill(w1 * _NETWORK_WIDTHS[k] / _NETWORK_WIDTHS[1], length(polylines[k][1])))
     end
-    return lines!(ax, x, y; color = (hue, alpha), linewidth = isempty(w) ? w1 : w, label = "Interstate Roads")
+    return lines!(ax, x, y; color = (hue, alpha), linewidth = isempty(w) ? w1 : w, label = "Major Roads")
 end
 
 # =============================================================================

@@ -15,8 +15,12 @@ using GeoMakie
 # case name => ruled ID that moves it. N4 (CR 19): the road layer of a map spanning more than 20 and at most 30 degrees of
 # latitude is drawn at opacity 0.3, not 0.35 (S23: every stroke below 0.35); its width, 0.3, stays. Pinned again in
 # test_map_tiers.jl (T5.6).
+# N4b (RN26): the regional tier's road layer is labeled "Major Roads", not "Interstate Roads"; the regional frames and the
+# spans of 9 and 10 degrees move under that alone (the national tier keeps its label). Pinned again in test_map_tiers.jl.
 const MLPIN_MOVED = Dict{String, String}("layers_CUS_map" => "N4", "road_tier_20.5" => "N4", "road_tier_29.99" => "N4",
-                                         "road_tier_30.0" => "N4")
+                                         "road_tier_30.0" => "N4", "layers_NC_frame" => "N4b (RN26)",
+                                         "layers_Hawaii_frame" => "N4b (RN26)", "layers_Europe_frame" => "N4b (RN26)",
+                                         "road_tier_9.0" => "N4b (RN26)", "road_tier_10.0" => "N4b (RN26)")
 
 _mlpin_moved(name) = haskey(MLPIN_MOVED, name) && (@info("line pin $name moved under $(MLPIN_MOVED[name])"); true)
 

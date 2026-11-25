@@ -1,9 +1,9 @@
 # test_map_tiers.jl -- makemap's road layer in the tiers of his answer to Q2 (PCV N4, CR 19; MakePlan D8; test spec SC 5,
 # T5.1 to T5.6). `roads = :auto` draws, on the box as drawn:
-#   close     150 miles across or less (S22's measure, tested first): the FAF5 network, every class 1 to 5, ramps by
-#             name left out, five Lines (S22, S23; unchanged by N4: drawn from the derived network its density proxy
-#             rose, so the stop rule holds it back for his ruling);
-#   regional  otherwise, at most 10 degrees of latitude: Logjam's U.S. road network (usrdlink), classes 1 to 3, one Lines;
+#   close     150 miles across or less (S22's measure, tested first): the FAF5 network, every class 1 to 5, every link
+#             core's ramp rule calls a ramp left out (N4b, RN23), five Lines (S22, S23);
+#   regional  otherwise, at most 10 degrees of latitude: Logjam's U.S. road network (usrdlink), classes 1 to 3, one Lines
+#             labeled "Major Roads" (N4b, RN26);
 #   national  otherwise, at most 30 degrees: that network's INTERSTATE links, one Lines;
 #   none      more than 30 degrees: nothing.
 # Runs after test_map_pins.jl, test_map_line_pins.jl and test_map_k11c_pins.jl, whose expected values and moved-cases
@@ -151,7 +151,7 @@ const _T5_NATIONAL = ((-100.0, -90.0), (30.0, 41.0))    # 11 degrees: the nation
         # regional: every derived link of class 1 to 3 whose segment meets the box, in its class's width, and no other
         fig, ax, layers = makemap(_T5_NC)
         p = layers.roads
-        @test p isa Makie.Lines && string(p.label[]) == "Interstate Roads"
+        @test p isa Makie.Lines && string(p.label[]) == "Major Roads"                 # RN26
         w1 = 0.6
         width = Dict(1 => w1, 2 => w1 / 1.4, 3 => w1 * 0.7 / 1.4)
         drawn = Set((a, b, k) for (a, b, w) in _t5_pieces(p) for k in 1:3 if isapprox(w, width[k]; rtol = 1e-6))
@@ -169,15 +169,27 @@ const _T5_NATIONAL = ((-100.0, -90.0), (30.0, 41.0))    # 11 degrees: the nation
         # none: nothing above 30 degrees
         @test makemap(_t5_tall_deg(30.5)).layers.roads === nothing
         @test makemap(region = :US).layers.roads === nothing
-        # close: the FAF5 network as S22 draws it (test_map_s22.jl checks the crop link by link), five classes
+        # close: the FAF5 network as S22 draws it (test_map_s22.jl checks the crop link by link), five classes, every link
+        # core's ramp rule calls a ramp left out (RN23)
         fig, ax, layers = makemap(((-81.0, -80.7), (35.1, 35.35)))                # Charlotte, about 20 miles across
         @test layers.roads isa NamedTuple && keys(layers.roads) == (:class1, :class2, :class3, :class4, :class5)
         inbox = _t5_crop(fE, ax.limits[])
+        ramp = Logjam._ramp_links(fN, fL)
         for (k, name) in enumerate(keys(layers.roads))
             got = Set((a, b) for (a, b, w) in _t5_pieces(layers.roads[name]))
-            want = Set(_t5_seg(fE, i) for i in inbox if tierclass(fL.FCLASS[i]) == k && !Logjam._isramp_v030(fL.NAME[i]))
+            want = Set(_t5_seg(fE, i) for i in inbox if tierclass(fL.FCLASS[i]) == k && !ramp[i])
             @test got == want
         end
+    end
+
+    @testset "RN26 each tier's label" begin
+        close = makemap(((-81.0, -80.7), (35.1, 35.35))).layers.roads
+        labels = [string(p.label[]) for p in _t5_plots(close) if haskey(p.attributes, :label)]
+        @test labels == ["FAF5 Roads"]                                              # the heaviest class carries it, as before
+        @test string(close.class1.label[]) == "FAF5 Roads"
+        @test string(makemap(_T5_NC).layers.roads.label[]) == "Major Roads"          # regional
+        @test string(makemap(_T5_NATIONAL).layers.roads.label[]) == "Interstate Roads"   # national
+        @test string(makemap(CUS_LIMITS).layers.roads.label[]) == "Interstate Roads"
     end
 
     @testset "T5.2 D8's boundary shapes: wide-and-short and narrow-and-tall, a hair under and over each line" begin
@@ -212,14 +224,21 @@ const _T5_NATIONAL = ((-100.0, -90.0), (30.0, 41.0))    # 11 degrees: the nation
             got = [(a, b) for (a, b, w) in _t5_pieces(makemap(box).layers.roads)]
             @test !isempty(got) && !any(in(rampseg), got)
         end
-        # close: no link v0.3.0's name rule calls a ramp (the close tier's own rule), with a control: the boxes hold them
+        # close (RN23): no link core's ramp rule calls a ramp meets the drawn set, with a control: the boxes hold them
         nramps = 0
-        for box in (((-81.0, -80.7), (35.1, 35.35)), ((-84.55, -84.25), (33.65, 33.9)), ((-79.2, -78.4), (35.5, 36.1)))
+        for box in (((-81.0, -80.7), (35.1, 35.35)), ((-84.55, -84.25), (33.65, 33.9)), ((-79.2, -78.4), (35.5, 36.1)),
+                    ((-79.9, -77.9), (35.2, 36.4)))
             r = makemap(box)
             got = Set((a, b) for p in _t5_plots(r.layers.roads) for (a, b, w) in _t5_pieces(p))
-            named = [_t5_seg(fE, i) for i in _t5_crop(fE, box) if Logjam._isramp_v030(fL.NAME[i])]
-            nramps += length(named)
-            @test !any(in(got), named)
+            inbox = _t5_crop(fE, box)
+            # (a ramp link can share its two ends with a link that is not a ramp: FAF5 has such twins, and the twin is
+            # drawn, so a ramp is read as drawn only if no link that is not a ramp lies on its segment)
+            kept = Set(s for i in inbox if !ramp[i] for s in (_t5_seg(fE, i), reverse(_t5_seg(fE, i))))
+            ramps = [_t5_seg(fE, i) for i in inbox if ramp[i] && _t5_seg(fE, i) ∉ kept]
+            nramps += length(ramps)
+            @test !isempty(got) && !any(in(got), ramps)
+            # and v0.3.0's name rule, the part of it every name catches, is among them
+            @test !any(in(got), [_t5_seg(fE, i) for i in _t5_crop(fE, box) if Logjam._isramp_v030(fL.NAME[i])])
         end
         @test nramps > 0
     end
@@ -271,20 +290,21 @@ const _T5_NATIONAL = ((-100.0, -90.0), (30.0, 41.0))    # 11 degrees: the nation
     end
 
     # T5.5: the density proxy of every reference picture of the map spec (N4's picture page): name => (call, tier, the
-    # proxy before N4 (v0.3.0's layer), the proxy now). The close tier must not rise; it is v0.3.0's layer still, and the
-    # "before" of each close picture is computed again here from the FAF5 tables, so the rule holds on whatever the close
-    # tier draws. The regional and national values are a record: classes 2 and 3 add roads; one line for each divided
-    # road removes the second carriageway. (Drawn from the derived network, the close tier's proxies were 21, 22, 21, 11,
-    # 19, 21, 20, 23 and 27 in the order below: Charlotte, Atlanta and the 12-mile box rose, which is why it is not.)
+    # proxy before N4 (v0.3.0's layer), the proxy now). The close tier must not rise; it is FAF5's own links with core's
+    # ramps left out (N4b, RN23), and the "before" of each close picture is computed again here from the FAF5 tables with
+    # v0.3.0's name rule, so the rule holds on whatever the close tier draws. The regional and national values are a
+    # record: classes 2 and 3 add roads; one line for each divided road removes the second carriageway. (Drawn from the
+    # derived network, the close tier's proxies were 21, 22, 21, 11, 19, 21, 20, 23 and 27 in the order below: Charlotte,
+    # Atlanta and the 12-mile box rose, which is why it is not.)
     mm, kc, sy = Dict(mmpin_cases()), Dict(k11cpin_cases()), Dict(k11cpin_synthetic())
     T5_PICTURES = [
-        "s22_dwt_clinics"      => (kc["dwt_clinics_0.25"], :close, 27, 27),
+        "s22_dwt_clinics"      => (kc["dwt_clinics_0.25"], :close, 27, 23),
         "s22_triangle_nodes"   => (kc["triangle_node_box"], :close, 29, 29),
         "s22_tall_149"         => (sy["synthetic_tall_149"], :close, 37, 37),
         "s22_wide_149"         => (sy["synthetic_wide_149"], :close, 21, 21),
-        "charlotte_20mi"       => (() -> makemap(((-81.0, -80.7), (35.1, 35.35))), :close, 13, 13),
+        "charlotte_20mi"       => (() -> makemap(((-81.0, -80.7), (35.1, 35.35))), :close, 13, 12),
         "atlanta_20mi"         => (() -> makemap(((-84.55, -84.25), (33.65, 33.9))), :close, 17, 17),
-        "raleigh_durham_55mi"  => (() -> makemap(((-79.2, -78.4), (35.5, 36.1))), :close, 26, 26),
+        "raleigh_durham_55mi"  => (() -> makemap(((-79.2, -78.4), (35.5, 36.1))), :close, 26, 23),
         "triangle_triad_120mi" => (() -> makemap(((-79.9, -77.9), (35.2, 36.4))), :close, 31, 31),
         "xy_both_expands"      => (mm["xy_both_expands"], :close, 16, 16),
         "s22_tall_151"         => (sy["synthetic_tall_151"], :regional, 8, 13),
@@ -330,19 +350,23 @@ const _T5_NATIONAL = ((-100.0, -90.0), (30.0, 41.0))    # 11 degrees: the nation
     end
 
     @testset "T5.6 every moved map pin is listed with its reason; the rest of it holds, and its road layer is pinned anew" begin
-        roadrow(l) = l[1] == "Interstate Roads"
-        # test_map_pins.jl: the road layer as N4 draws it (label, points, opacity, the Interstate's width, style)
+        roadrow(l) = l[1] in ("Interstate Roads", "Major Roads")
+        # test_map_pins.jl: the road layer as N4 and N4b draw it (label, points, opacity, the Interstate's width, style);
+        # the regional tier's label is "Major Roads" (N4b, RN26), the national tier's "Interstate Roads"
         N4_MMPIN = Dict(
-            "xy_default"        => ("Interstate Roads", 9840, 0.2, 0.6, "solid"),
-            "xy_xexpand_0.1"    => ("Interstate Roads", 8223, 0.2, 0.6, "solid"),
-            "xy_xexpand_0.3"    => ("Interstate Roads", 9840, 0.2, 0.6, "solid"),
-            "xy_xexpand_0.05"   => ("Interstate Roads", 7689, 0.2, 0.6, "solid"),
-            "tuple_pair"        => ("Interstate Roads", 34692, 0.2, 0.6, "solid"),
+            "xy_default"        => ("Major Roads", 9840, 0.2, 0.6, "solid"),
+            "xy_xexpand_0.1"    => ("Major Roads", 8223, 0.2, 0.6, "solid"),
+            "xy_xexpand_0.3"    => ("Major Roads", 9840, 0.2, 0.6, "solid"),
+            "xy_xexpand_0.05"   => ("Major Roads", 7689, 0.2, 0.6, "solid"),
+            "tuple_pair"        => ("Major Roads", 34692, 0.2, 0.6, "solid"),
             "region_CUS"        => ("Interstate Roads", 81408, 0.3, 0.3, "solid"),
-            "xy_hawaii_not_CUS" => ("Interstate Roads", 876, 0.2, 0.6, "solid"),
-            "xy_outside_US"     => ("Interstate Roads", 0, 0.2, 0.6, "solid"),
+            "xy_hawaii_not_CUS" => ("Major Roads", 876, 0.2, 0.6, "solid"),
+            "xy_outside_US"     => ("Major Roads", 0, 0.2, 0.6, "solid"),
         )
-        @test sort([k for (k, v) in MMPIN_MOVED if v == "N4"]) == sort(collect(keys(N4_MMPIN)))
+        isn4(v) = startswith(v, "N4")
+        @test sort([k for (k, v) in MMPIN_MOVED if isn4(v)]) == sort(collect(keys(N4_MMPIN)))
+        @test all(((k, v),) -> !isn4(v) || (v == "N4, N4b (RN26)") == (N4_MMPIN[k][1] == "Major Roads"), MMPIN_MOVED)
+        @test all(((k, v),) -> !isn4(v) || v in ("N4", "N4, N4b (RN26)"), MMPIN_MOVED)
         for (name, thunk) in mmpin_cases()
             @testset "map pin $name" begin
                 fig, ax = thunk()
@@ -351,7 +375,7 @@ const _T5_NATIONAL = ((-100.0, -90.0), (30.0, 41.0))    # 11 degrees: the nation
                         _t5_close(got.extent, want.extent; rtol = 1e-5)
                 same = frame && got.layers == want.layers
                 same || @test haskey(MMPIN_MOVED, name)                   # a case that differs is listed
-                if get(MMPIN_MOVED, name, "") == "N4"
+                if isn4(get(MMPIN_MOVED, name, ""))
                     @test !same                                           # and a case listed under N4 differs
                     @test frame                                           # in its road layer alone
                     @test filter(!roadrow, got.layers) == filter(!roadrow, want.layers)
@@ -364,22 +388,29 @@ const _T5_NATIONAL = ((-100.0, -90.0), (30.0, 41.0))    # 11 degrees: the nation
             "nc_cities_default" => 9840, "nc_cities_xe0.2" => 9237, "carolinas_xe0.1" => 20967, "nc_counties_xe0.05" => 18216,
             "nc_counties_xe0.1" => 19071, "popco_xe0.04" => 19014, "popco_default" => 24753, "high_point_goldsboro" => 4059,
             "synthetic_tall_151" => 420, "synthetic_wide_151" => 441)
-        @test sort([k for (k, v) in K11CPIN_MOVED if v == "N4"]) == sort(collect(keys(N4_K11C)))
+        @test sort([k for (k, v) in K11CPIN_MOVED if isn4(v)]) == sort(collect(keys(N4_K11C)))
+        K11C_REGIONAL = ("nc_cities_default", "nc_cities_xe0.2", "carolinas_xe0.1", "nc_counties_xe0.05", "nc_counties_xe0.1",
+                         "high_point_goldsboro", "synthetic_tall_151", "synthetic_wide_151")
+        @test sort([k for (k, v) in K11CPIN_MOVED if v == "N4, N4b (RN26)"]) == sort(collect(K11C_REGIONAL))
         for (name, thunk) in vcat(k11cpin_cases(), k11cpin_synthetic())
             @testset "K11c pin $name" begin
                 fig, ax = thunk()
                 got, want = mmpin_describe(fig, ax).layers, K11CPIN_EXPECTED[name].layers
                 got == want || @test haskey(K11CPIN_MOVED, name)
-                if get(K11CPIN_MOVED, name, "") == "N4"
+                if isn4(get(K11CPIN_MOVED, name, ""))
                     @test got != want
                     @test filter(!roadrow, got) == filter(!roadrow, want)
                     old = only(filter(roadrow, want))
-                    @test only(filter(roadrow, got)) == (old[1], N4_K11C[name], old[3], old[4], old[5])   # only the points move
+                    label = name in K11C_REGIONAL ? "Major Roads" : "Interstate Roads"
+                    @test only(filter(roadrow, got)) == (label, N4_K11C[name], old[3], old[4], old[5])   # the points and the regional label move
                 end
             end
         end
-        # test_map_line_pins.jl: the far step's opacity, 0.35 before, 0.3 now; nothing else
+        # test_map_line_pins.jl: the far step's opacity, 0.35 before, 0.3 now (N4); the regional label, "Major Roads" (N4b,
+        # RN26); nothing else
         @test sort([k for (k, v) in MLPIN_MOVED if v == "N4"]) == ["layers_CUS_map", "road_tier_20.5", "road_tier_29.99", "road_tier_30.0"]
+        @test sort([k for (k, v) in MLPIN_MOVED if v == "N4b (RN26)"]) ==
+              ["layers_Europe_frame", "layers_Hawaii_frame", "layers_NC_frame", "road_tier_10.0", "road_tier_9.0"]
         for (name, thunk, want) in MLPIN_LAYERS
             got = _mlpin_layers(thunk()[2])
             got == want || @test haskey(MLPIN_MOVED, "layers_" * name)
@@ -387,14 +418,20 @@ const _T5_NATIONAL = ((-100.0, -90.0), (30.0, 41.0))    # 11 degrees: the nation
                 @test filter(!roadrow, got) == filter(!roadrow, want)
                 old = only(filter(roadrow, want))
                 @test old[2][4] == 0.35 && only(filter(roadrow, got)) == (old[1], [old[2][1:3]; 0.3], old[3], old[4], old[5])
+            elseif get(MLPIN_MOVED, "layers_" * name, "") == "N4b (RN26)"
+                @test filter(!roadrow, got) == filter(!roadrow, want)
+                old = only(filter(roadrow, want))
+                @test old[1] == "Interstate Roads" && only(filter(roadrow, got)) == ("Major Roads", old[2], old[3], old[4], old[5])
             end
         end
         for (span, y0, want) in MLPIN_ROAD_TIERS
             fig, ax = makemap([-100.0, -90.0], [y0, y0 + span]; xexpand = 0, yexpand = 0)
-            roads = [r for r in _mlpin_layers(ax) if r[1] == "Interstate Roads"]
+            roads = [r for r in _mlpin_layers(ax) if roadrow(r)]
             got = isempty(roads) ? nothing : (roads[1][2][4], roads[1][4])
+            label = isempty(roads) ? "" : roads[1][1]
             got == want || @test haskey(MLPIN_MOVED, "road_tier_$span")
             get(MLPIN_MOVED, "road_tier_$span", "") == "N4" && @test want == (0.35, 0.3) && got == (0.3, 0.3)
+            get(MLPIN_MOVED, "road_tier_$span", "") == "N4b (RN26)" && @test got == want && label == "Major Roads"
         end
     end
 end

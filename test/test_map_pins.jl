@@ -23,9 +23,12 @@ include(joinpath(@__DIR__, "map_pin_cases.jl"))
 # label, opacity and Interstate width stay, but region_CUS's far step is 0.3, not 0.35 (S23: every stroke below 0.35).
 # Each case's size, limits, extent and other layers are pinned again in test_map_tiers.jl (T5.6), with the road layer
 # as it is drawn now.
+# N4b (RN26): the regional tier's label is "Major Roads" (it was "Interstate Roads", which it kept through N4); the
+# national tier (region_CUS) keeps "Interstate Roads". The regional cases therefore move under both, in that order.
 const MMPIN_MOVED = Dict("makemap_activate_type" => "P8", "xy_both_expands" => "S22",
-                         "xy_default" => "N4", "xy_xexpand_0.1" => "N4", "xy_xexpand_0.3" => "N4", "xy_xexpand_0.05" => "N4",
-                         "tuple_pair" => "N4", "region_CUS" => "N4", "xy_hawaii_not_CUS" => "N4", "xy_outside_US" => "N4")
+                         "xy_default" => "N4, N4b (RN26)", "xy_xexpand_0.1" => "N4, N4b (RN26)", "xy_xexpand_0.3" => "N4, N4b (RN26)",
+                         "xy_xexpand_0.05" => "N4, N4b (RN26)", "tuple_pair" => "N4, N4b (RN26)", "region_CUS" => "N4",
+                         "xy_hawaii_not_CUS" => "N4, N4b (RN26)", "xy_outside_US" => "N4, N4b (RN26)")
 
 # size, requested limits, projected extent (6 significant digits), base layers (label, points, alpha, linewidth, line style)
 const MMPIN_EXPECTED = Dict(
@@ -76,7 +79,7 @@ end
     resize!(fig, 900, 500)
     @test size(fig.scene) == (900, 500)
     @test _mmpin_close(ax.limits[], MMPIN_EXPECTED["xy_xexpand_0.05"].limits; rtol = 1e-12)
-    @test [string(p.label[]) for p in ax.scene.plots if haskey(p.attributes, :label)] == ["Interstate Roads", "US State Borders"]
+    @test [string(p.label[]) for p in ax.scene.plots if haskey(p.attributes, :label)] == ["Major Roads", "US State Borders"]   # N4b (RN26)
 end
 
 # The lectures from 3.2 on run `CairoMakie.activate!(px_per_unit = 2)` in their setup cell and then call makemap,
@@ -148,7 +151,7 @@ end
         fig, ax = makemap(MMPIN_BB42; doRoadbkgd = false, showgrid = true)
         @test ax.xgridvisible[] == true
         fig, ax = makemap(((-80.5, -77.5), (35.0, 36.5)); roads = (; color = :red, alpha = 0.5))   # a box that draws the Interstates (S22: a box under 150 miles draws the network, in test_map_s22.jl)
-        @test any(p -> haskey(p.attributes, :label) && string(p.label[]) == "Interstate Roads", ax.scene.plots)
+        @test any(p -> haskey(p.attributes, :label) && string(p.label[]) == "Major Roads", ax.scene.plots)   # 3 degrees wide: the regional tier (N4b, RN26)
         @test_throws ArgumentError makemap(MMPIN_BB42; xexpand = 0.1)    # makemap(bb) never expands
         @test_throws ArgumentError makemap(MMPIN_BB42; yexpand = 0.1)
         @test_throws MethodError makemap(MMPIN_BB42; backend = :CairoMakie)

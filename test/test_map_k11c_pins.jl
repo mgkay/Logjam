@@ -32,10 +32,12 @@ const K11CPIN_MOVED = Dict("kwarg_decl_makemap" => "MAP (C5)", "kwarg_decl_plotr
                            # (classes 1 to 3 up to 10 degrees of latitude, its Interstates up to 30) where it drew every
                            # Interstate polyline, so the road layer's point count moves; the label, the opacity and the
                            # Interstate's width stay. The layers are pinned again in test_map_tiers.jl (T5.6).
-                           "nc_cities_default" => "N4", "nc_cities_xe0.2" => "N4", "carolinas_xe0.1" => "N4",
-                           "nc_counties_xe0.05" => "N4", "nc_counties_xe0.1" => "N4", "popco_xe0.04" => "N4",
-                           "popco_default" => "N4", "high_point_goldsboro" => "N4", "synthetic_tall_151" => "N4",
-                           "synthetic_wide_151" => "N4")
+                           # N4b (RN26): on the regional tier (every case below but Popco's two) the label is "Major Roads".
+                           "nc_cities_default" => "N4, N4b (RN26)", "nc_cities_xe0.2" => "N4, N4b (RN26)",
+                           "carolinas_xe0.1" => "N4, N4b (RN26)", "nc_counties_xe0.05" => "N4, N4b (RN26)",
+                           "nc_counties_xe0.1" => "N4, N4b (RN26)", "popco_xe0.04" => "N4",
+                           "popco_default" => "N4", "high_point_goldsboro" => "N4, N4b (RN26)",
+                           "synthetic_tall_151" => "N4, N4b (RN26)", "synthetic_wide_151" => "N4, N4b (RN26)")
 
 _k11cpin_moved(name) = haskey(K11CPIN_MOVED, name) && (@info("K11c pin $name moved under $(K11CPIN_MOVED[name])"); true)
 
