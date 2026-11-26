@@ -132,33 +132,12 @@ minTLC
 
 ### The `sh` and `tr` contract
 
-A function of one shipment takes `sh` as a row (a `NamedTuple` or a `DataFrameRow`) and a function of a set of
-shipments takes the table, one row for each shipment; a truck `tr` is a `NamedTuple`. The same `sh` and `tr`
-serve the transport functions and the routing functions: each reads the fields it needs, a field it reads is
-used when it is present, and a field it does not read is ignored. The reading, field by field:
+The fields of a shipment `sh` and a truck `tr`, shared by the transport and the routing functions, are the
+docstring of `Logjam.shtr`, so `?Logjam.shtr` shows them at the REPL:
 
-| Field of `sh` | Meaning | Read by |
-|:--|:--|:--|
-| `b`, `e` | begin and end location index | routing (`rte2loc`, `rteTC`) |
-| `f`, `q` | annual demand (ton/yr); shipment weight (ton) | transport; `q` also by `rteTC` against `Kwt` |
-| `s` | density (lb/ft³) | transport; with `q`, `rteTC` against `Kcu` |
-| `a`, `v`, `h` | inventory fraction, unit value (\$/ton), holding rate (1/yr) | transport |
-| `d` | distance (mi) | transport |
-| `tL`, `tU`, `tbmin`, `tbmax`, `temin`, `temax` | loading and unloading times, time windows | `rteTC(...; full = true)` |
-| `avh` | demand-weighted mean of `a·v·h`, attached by `aggshmt` | `totlogcost`, `minTLC` when present |
-| `qmax`, `qᵒ`, `TLCᵒ`, `isLTL` | attached by `maxpayld` and `minTLC` | none |
-
-| Field of `tr` | Meaning | Read by |
-|:--|:--|:--|
-| `b`, `e` | depot begin and end location | `rte2loc`, `rteTC` |
-| `Kwt`, `Kcu` | weight (ton) and cube (ft³) capacity | `maxpayld`; `rteTC` checks each load mix |
-| `maxTC` | maximum cost of a route | `rteTC` |
-| `r`, `ppi` | TL rate per mile (\$/mi) and its PPI | transport |
-| `tbmin`, `tbmax`, `temin`, `temax` | time windows at the depot | `rteTC(...; full = true)` |
-
-Where a function documents a default for an absent field, it is used (a truck with none of `Kwt`, `Kcu`,
-`maxTC` is uncapacitated, and a plain `rteTC` is the sum of the segment costs); a field with no default is
-required. The LTL PPI is a separate scalar at the call site, since LTL and TL are different carriers.
+```@docs
+shtr
+```
 
 ## Distance Functions
 

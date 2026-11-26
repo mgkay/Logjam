@@ -87,6 +87,32 @@ missed.
   (`test/test_invtools.jl`, `tools/v0_3_1/make_oracles_v031.m`). **Lectures served:** 6.2 and 6.3, which define
   them inline today (6.3 repeating 6.2's measures) and may call Logjam's at the re-pin; not exported, so a
   lecture's own definitions, made after `using Logjam`, do not collide. **No migration.**
+- **`maxpayld(s::AbstractVector, tr)` and `maxpayld(sh::AbstractDataFrame, tr)`: the maximum payload of each
+  shipment, from its densities or from its table (B6).** Element `i` is the scalar rule at `s[i]` on the truck's
+  `Kwt` and `Kcu`, read as the row form `maxpayld(sh, tr)` reads them, so the table form returns exactly what
+  `[maxpayld(row, tr) for row in eachrow(sh)]` does. Each density is computed on its own, so a range of densities
+  gives the scalar rule's value at each one; the keyword form `maxpayld(s; Kwt, Kcu)`, unchanged, does a range's own
+  arithmetic, which differs in the last place at 61 of the 500 densities from 0.1 to 50 in steps of 0.1 on a truck
+  of 25 tons and 2,750 ft³. **Lectures served:**
+  3.3 Code block 13, 3.4 Code blocks 2, 14, 21, 22 and 24, which write that comprehension, and 5.3 Code block 41's
+  `maxpayld.(eachrow(sho), Ref(tro))`, which can call `maxpayld(sh, tr)` at the re-pin. **No migration.**
+- **`minTLC(sh::AbstractDataFrame, tr, ppi_ltl)`, and its keyword form: the minimum-TLC shipment of every row of a
+  table (B6).** It returns a new table, `sh`'s columns unchanged and in their order with `qᵒ`, `TLCᵒ` and `isLTL`
+  added, each row's values those of the row form `minTLC(row, tr, ppi_ltl)`; `sh` itself is not changed. Every call
+  mode of the row form works (TL only, LTL only, both; positional or keyword), and a `qᵒ`, `TLCᵒ` or `isLTL` column
+  already there is replaced in its place. A table given to `minTLC` was an error before, so no call changes.
+  **Lectures served:** 3.3 Code block 13 and 3.4 Code blocks 21 and 22, which add the three columns with
+  `transform!(sh, AsTable(:) => ByRow(r -> minTLC(r, tr, ppiLTL)) => AsTable)`, and the homework keys' row-by-row
+  calls, can call it at the re-pin. **No migration.**
+- **`charge_tl(d::Real, tr)`: the charge of one truckload over `d` miles (B9).** `max(r·d, MC_TL)`, with `r` read
+  from `tr.r` or, when `tr` has none, derived from `tr.ppi` as the shipment form derives it (D5), and the minimum
+  `mincharge_tl(tr)`. It is the shipment form `charge_tl(q, s, d; ...)` whenever `q` fills at most one truck and
+  `d` is at least `1e-4` mi; it has no zero rule, so at `d = 0` it is the minimum charge, where the shipment form
+  charges nothing (N4, TRN3). Distinct from the existing methods by arity, so no existing call changes method.
+  **Lectures served:** 5.2's Ex. 9, whose independent and route charges are written `max.(2.00 .* dL,
+  mincharge_tl())` and `max(2.00 * rteTC(rte, shL, D30), mincharge_tl())` (Code blocks 50 and 52), and 4.3 Code
+  block 31, which charges one truck with `charge_tl(qmax, s, d; r, Kwt, Kcu, ppi)`; 3.3 keeps the formula, since
+  there it is the lesson. **No migration.**
 
 ### Changed
 
@@ -147,6 +173,21 @@ missed.
   loads them; a script that loads none of them gets nothing new. All four are already in the course's environment
   (JuMP 1.31, HiGHS 1.25, Makie 0.24, PrecompileTools 1.3), and the compat bounds admit those versions, so the re-pin
   brings no new package.
+- **The LTL estimate's domain, named once (B10).** `_LTL_MIN_WEIGHT` (150/2000 ton), `_LTL_MAX_WEIGHT` (5.0 ton),
+  `_LTL_MAX_CUBE` (650 ft³), `_LTL_MIN_DIST` (37 mi) and `_LTL_MAX_DIST` (3354 mi) replace their literals in
+  `rate_ltl`, `qmax_ltl`, `mincharge_ltl` and `minTLC`, each with its literal's value and type. `totlogcost(q, c,
+  sh)` reads an aggregate's `avh` through `_avh`, and without one keeps its order of multiplication, `q·a·v·h`;
+  the TL rate derived from the index is one expression (`_tlrate`) for both `charge_tl` methods that derive it, and
+  `minTLC`'s check that the carrier and the LTL index are not given twice is one function for its row and table
+  forms. No value moves: `test/test_transtools_v031.jl` compares v0.3.0's bodies, copied as text, with the new ones
+  bit for bit, and every transport pin and oracle holds.
+- **The `sh` and `tr` contract is `?Logjam.shtr` (B11).** The contract was a bare string at the top of
+  `transtools.jl`, which `?` could not show; it is now the docstring of `Logjam.shtr`, public and not exported,
+  whose value lists the fields of each (`shtr.sh`, `shtr.tr`). It now says that a function of one shipment takes a
+  row, and `maxpayld` and `minTLC` the table too (B6); that a function of a set of shipments takes the table; and
+  that a field a function reads is used when present, an absent one takes the default the function documents (the
+  scalar method's or Matlog's), and one with no default is required. The manual's section shows the docstring in
+  place of its own copy of the tables.
 
 ## v0.3.0
 

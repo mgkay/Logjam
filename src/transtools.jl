@@ -3,87 +3,106 @@
 # =============================================================================
 
 """
-Unified `sh`/`tr` field contract (transport + routing).
+    Logjam.shtr
 
-`sh` (a per-shipment `NamedTuple` or `DataFrameRow`, or a table of shipments) and `tr` (a per-carrier
-`NamedTuple`) are ONE unified abstraction shared across the transport helpers
-(`rate_ltl`, `charge_tl`, `charge_ltl`, `maxpayld`, `mincharge_tl`, `totlogcost`,
-`minTLC`, `aggshmt`) and the routing helpers (`rteTC`, `rte2loc`, `savings`, ...). They are
-progressively-extended structures: a routing `sh`/`tr` may carry only `b,e`; a
-transport `sh`/`tr` carries the economic fields; a fully-populated row carries
-the superset and works in BOTH regimes, because each function reads only its own
-field subset (the cross-regime test `I5` proves this isolation). Do NOT rename
-`sh`/`tr` per regime: the shared fields (`Kwt`, `Kcu`, `s`, `d`) are the same
-quantities in both modules.
+The `sh` and `tr` contract: the fields of a shipment `sh` and of a truck `tr`, which the transport and the
+routing functions share. The value lists the fields of each, `shtr.sh` and `shtr.tr`; this docstring is the
+contract, and `?Logjam.shtr` shows it.
 
-# Row versus table
+`sh` is one shipment, a `NamedTuple` or a `DataFrameRow`, or a table of shipments, a `DataFrame` with one row for
+each shipment; `tr` is one truck, a `NamedTuple` (or a `DataFrameRow`). They are one abstraction across the two
+modules: a routing `sh` may carry only `b` and `e`, a transport `sh` the economic fields, and a row with all of
+them works in both, because each function reads only its own fields (the cross-regime test `I5`). The fields
+both modules read (`Kwt`, `Kcu`, `s`, `d`) are the same quantities in both, so `sh` and `tr` are not renamed by
+module.
 
-- A function of **one shipment** takes `sh` as a row (a `NamedTuple` or a `DataFrameRow`):
-  `charge_tl(q, sh, tr)`, `charge_ltl(q, sh)`, `maxpayld(sh, tr)`, `totlogcost(q, c, sh)`, `minTLC(sh, tr)`.
-  Each also takes the fields as scalars.
-- A function of **a set of shipments** takes `sh` as the table, one row for each shipment:
-  `aggshmt(sh)` (the rows aggregated into one), and, in routing, `rteTC(rte, sh, C, tr)`, `rte2loc(rte, sh, tr)`,
-  `savings`, `pairwisesavings`, where a route is a vector of row numbers of `sh`.
+# Row, column or table
+
+- A function of **one shipment** takes `sh` as a row: `charge_tl(q, sh, tr)`, `charge_ltl(q, sh)`,
+  `rate_ltl(q, sh)`, `maxpayld(sh, tr)`, `totlogcost(q, c, sh)` and `minTLC(sh, tr, ppi_ltl)`, each of which
+  also takes the fields as scalars. Two of them also take the table, or its column, with one result for each
+  row: `maxpayld(sh, tr)`, or `maxpayld(sh.s, tr)` on the densities alone, returns the vector of maximum
+  payloads, and `minTLC(sh, tr, ppi_ltl)` returns the table with `qᵒ`, `TLCᵒ` and `isLTL` added.
+  `charge_tl(d, tr)` and `mincharge_tl(tr)` take the truck alone.
+- A function of **a set of shipments** takes `sh` as the table, one row for each shipment: `aggshmt(sh)`, which
+  aggregates the rows into one, and, in routing, `rteTC(rte, sh, C, tr)`, `rte2loc(rte, sh, tr)`,
+  `pairwisesavings(h, sh)`, `savings(h, sh)` and `sh2rte(sh, R)`, where a route is a vector of row numbers of
+  `sh`.
 
 # Read when present
 
-A field the function reads is used when `sh` or `tr` has it. Where the function documents a default for an
-absent field, that default is used (for example, `tr` without `Kwt`, `Kcu` or `maxTC` is an uncapacitated truck, and
-a plain `rteTC` returns the sum of the segment costs); a field with no default is required, and its absence is an
-error from the function that reads it. A field a function does not read is ignored, so one row or table can be
-passed through the transport and the routing calls without projection.
+A field a function reads is used when `sh` or `tr` has it. An absent field takes the default the function
+documents, the scalar method's or Matlog's: a `tr` without `Kwt`, `Kcu` or `maxTC` is an uncapacitated truck to
+`rteTC`, which then returns the sum of the segment costs, and `charge_tl(d, tr)` derives `r` from `ppi` as the
+scalar `charge_tl` does. A field with no default is required, and its absence is an error from the function
+that reads it. A field a function does not read is ignored, so one row or table passes through the transport
+and the routing calls without projection. Each method's docstring names the fields it reads.
 
-# Per-shipment row (`sh`), canonical superset
+# Fields of `sh`
 
-| Field | Meaning | Type | Read by | Notes |
-|-------|---------|------|---------|-------|
-| `b`     | Begin/pickup node index                    | Int    | routing | `rte2loc`, `rteTC` |
-| `e`     | End/delivery node index                    | Int    | routing | `rte2loc`, `rteTC` |
-| `f`     | Annual demand (tons/year)                  | Number | transport | |
-| `q`     | Single-shipment weight (ton)               | Number | transport; routing capacity | aggregation weight when `f` absent; the load weight `rteTC` checks against `Kwt` |
-| `s`     | Shipment density (lb/ft³)                  | Number | both | shared quantity; with `q` the cube `rteTC` checks against `Kcu` |
-| `a`     | Avg origin+destination inventory fraction  | Number | transport | ASCII; math notation `α` in prose |
-| `v`     | Unit value (\\\$/ton)                         | Number | transport | |
-| `h`     | Holding cost rate (1/yr)                   | Number | transport | |
-| `d`     | Distance (mi)                              | Number | both (transport) | shared quantity |
-| `tL`, `tU` | Time to load, to unload                 | Number | routing, `rteTC(...; full = true)` | not read by a plain `rteTC` |
-| `tbmin`, `tbmax`, `temin`, `temax` | Time windows        | Number | routing, `rteTC(...; full = true)` | also fields of `tr` |
-| `avh`   | Demand-weighted mean of `a·v·h`            | Number | transport | attached by `aggshmt`; used by `totlogcost` and `minTLC` when present |
-| `qmax`  | Max payload (ton)                          | Number | none | attached by `maxpayld` |
-| `qᵒ`    | Optimal shipment size (ton)                | Number | none | attached by `minTLC` |
-| `TLCᵒ`  | Optimal total logistics cost (\\\$/yr)        | Number | none | attached by `minTLC` |
-| `isLTL` | LTL chosen?                                | Bool   | none | attached by `minTLC` |
+| Field | Meaning | Read by |
+|:--|:--|:--|
+| `b`, `e` | begin (pickup) and end (delivery) location index | routing: `rte2loc`, `rteTC` |
+| `f` | annual demand (ton/yr) | transport |
+| `q` | shipment weight (ton) | `aggshmt` when there is no `f`; `rteTC`, against `Kwt` |
+| `s` | density (lb/ft³) | transport; with `q`, `rteTC` against `Kcu` |
+| `a` | inventory fraction, origin and destination (`α` in the lectures' prose) | transport |
+| `v` | unit value (\\\$/ton) | transport |
+| `h` | holding cost rate (1/yr) | transport |
+| `d` | distance (mi) | transport |
+| `tL`, `tU` | time to load, to unload | `rteTC(...; full = true)` |
+| `tbmin`, `tbmax`, `temin`, `temax` | time windows of the pickup and the delivery | `rteTC(...; full = true)` |
+| `avh` | demand-weighted mean of `a·v·h`, attached by `aggshmt` | `totlogcost`, `minTLC`, when present |
+| `qmax` | maximum payload (ton), the column `maxpayld(sh, tr)` fills | none |
+| `qᵒ`, `TLCᵒ`, `isLTL` | minimum-TLC size (ton), its TLC (\\\$/yr), whether LTL is selected, attached by `minTLC` | none |
 
-# Per-carrier (`tr`), canonical superset
+# Fields of `tr`
 
-| Field | Meaning | Read by | Notes |
-|-------|---------|---------|-------|
-| `b`   | Depot start node(s)                        | routing | `rte2loc`, `rteTC` (default route ends) |
-| `e`   | Depot end node(s)                          | routing | `rte2loc`, `rteTC` |
-| `Kwt` | Weight capacity (ton)                      | transport, routing | `maxpayld`; `rteTC` checks each load mix against it |
-| `Kcu` | Cube capacity (ft³)                        | transport, routing | `maxpayld`; `rteTC` checks each load mix against it |
-| `maxTC` | Maximum cost of a route                  | routing | `rteTC` returns `Inf` for a dearer route |
-| `r`   | TL per-mile rate (\\\$/mi), PPI-adjusted     | transport | |
-| `ppi` | TL Producer Price Index at the rate date  | transport | used by `mincharge_tl` PPI-scaling |
-| `tbmin`, `tbmax`, `temin`, `temax` | Time windows at the depot | routing | read only by `rteTC(...; full = true)` |
+| Field | Meaning | Read by |
+|:--|:--|:--|
+| `b`, `e` | depot begin and end location (default route ends) | routing: `rte2loc`, `rteTC` |
+| `Kwt` | weight capacity (ton) | `maxpayld`, `charge_tl(q, sh, tr)`; `rteTC` checks each load mix |
+| `Kcu` | cube capacity (ft³) | `maxpayld`, `charge_tl(q, sh, tr)`; `rteTC` checks each load mix |
+| `maxTC` | maximum cost of a route | `rteTC`, which returns `Inf` for a dearer route |
+| `r` | TL rate per loaded mile (\\\$/mi), at the index `ppi` | transport |
+| `ppi` | TL Producer Price Index at the rate's date | `mincharge_tl(tr)` and the functions that call it |
+| `tbmin`, `tbmax`, `temin`, `temax` | time windows at the depot | `rteTC(...; full = true)` |
 
-# Field-subset reads
+The LTL index is a separate scalar at the call site (`ppi_ltl`, or `ppi =` in `charge_ltl`), since LTL and TL
+are different carriers.
 
-- **Routing** reads `sh.b`, `sh.e`, `tr.b`, `tr.e`; `rteTC` also reads `tr.Kwt`, `tr.Kcu` (with `sh.q`, `sh.s`) and
-  `tr.maxTC` when they are present, and, with `full = true`, `sh.tL`, `sh.tU` and the time windows.
-- **Transport** reads `sh.{f,q,s,a,v,h,d}` (and `sh.avh` when present) and `tr.{r,Kwt,Kcu,ppi}`.
-- **Shared** across both: `tr.Kwt`, `tr.Kcu`, `sh.s`, `sh.d`.
+# Example
 
-LTL PPI is a separate scalar passed at the call site (LTL and TL are
-conceptually different carriers, so LTL PPI is not bundled into `tr`).
+The fields of a truck, and one truck used by both modules: Lecture 3.3's carrier, priced over 532 mi by the
+transport functions and given a weight capacity that `rteTC` would check:
 
-Each struct-form overload's docstring lists exactly which `sh`/`tr` fields it
-consumes; not every overload reads every field.
+```jldoctest
+tr = (r = 2.00*131.0/102.7, Kwt = 25, Kcu = 2750, ppi = 131.0)
+(Logjam.shtr.tr, round(charge_tl(532, tr); digits = 2), maxpayld((s = 40/9,), tr))
+
+# output
+
+((:b, :e, :Kwt, :Kcu, :maxTC, :r, :ppi, :tbmin, :tbmax, :temin, :temax), 1357.2, 6.111111111111112)
+```
 """
+const shtr = (sh = (:b, :e, :f, :q, :s, :a, :v, :h, :d, :tL, :tU, :tbmin, :tbmax, :temin, :temax, :avh,
+                    :qmax, :qᵒ, :TLCᵒ, :isLTL),
+              tr = (:b, :e, :Kwt, :Kcu, :maxTC, :r, :ppi, :tbmin, :tbmax, :temin, :temax))
 
 # =============================================================================
 # Rate Estimation
 # =============================================================================
+
+# B10: the domain of the LTL estimate (Kay & Warsing 2009; Freight Transport, Sec. 1.5.2), named once. `rate_ltl`
+# clamps a weight and a distance up to the minimums and is Inf beyond the maximums or the cube; `qmax_ltl` is the
+# smaller of the weight and cube bounds at a density; `mincharge_ltl` is undefined beyond the distance; `minTLC`
+# searches LTL sizes from the minimum weight to `qmax_ltl`. Each keeps its literal's value and type (5.0 is a
+# Float64, as `qmax_ltl` returned it; 37, 650 and 3354 are integers), so no result moves.
+const _LTL_MIN_WEIGHT = 150/2000    # ton (150 lb)
+const _LTL_MAX_WEIGHT = 5.0         # ton (10,000 lb)
+const _LTL_MAX_CUBE = 650           # ft³, the cube-out limit
+const _LTL_MIN_DIST = 37            # mi
+const _LTL_MAX_DIST = 3354          # mi
 
 """
     rate_ltl(q, s, d; ppi=104.2) -> Float64 or Vector{Float64}
@@ -127,8 +146,8 @@ rate_ltl([0.5, 1.0], [8.0, 10.0], [250.0, 500.0])  # Vectorized
 """
 function rate_ltl(q, s, d; ppi=104.2)
     # Clamp to valid ranges
-    q_safe = max.(q, 150/2000)
-    d_safe = max.(d, 37)
+    q_safe = max.(q, _LTL_MIN_WEIGHT)
+    d_safe = max.(d, _LTL_MIN_DIST)
 
     # Formula: r_LTL = ppi × [(s²/8 + 14) / ((q^1/7 × d^15/29 - 7/2)(s² + 2s + 14))]
     numerator = ppi .* (s.^2 ./ 8 .+ 14)
@@ -137,7 +156,7 @@ function rate_ltl(q, s, d; ppi=104.2)
     rate = numerator ./ denominator
 
     # Mark out-of-bounds as Inf
-    invalid = (denominator .< eps()) .| (q .> 5) .| (d .> 3354) .| (2000 .* q ./ s .> 650)
+    invalid = (denominator .< eps()) .| (q .> _LTL_MAX_WEIGHT) .| (d .> _LTL_MAX_DIST) .| (2000 .* q ./ s .> _LTL_MAX_CUBE)
     rate = ifelse.(invalid, Inf, rate)
 
     return rate
@@ -174,7 +193,7 @@ dense product (40 lb/ft³) is held to the 5-ton ceiling:
 (1.44, 5.0)
 ```
 """
-qmax_ltl(s) = min.(5.0, 650 .* s ./ 2000)
+qmax_ltl(s) = min.(_LTL_MAX_WEIGHT, _LTL_MAX_CUBE .* s ./ 2000)
 
 """
     mincharge_tl(; ppi=102.7) -> Float64
@@ -258,7 +277,7 @@ mincharge_ltl(500.0)  # 500 miles → ≈50.84
   Int. J. Logistics Research and Applications, 12(3):165–193
 """
 function mincharge_ltl(d::Real; ppi=104.2)
-    d > 3354 && error("LTL minimum charge not defined for d > 3354 miles")
+    d > _LTL_MAX_DIST && error("LTL minimum charge not defined for d > $(_LTL_MAX_DIST) miles")
     d <= 0 && return 0.0
     return (ppi / 104.2) * (45 + d^(28/19) / 1625)
 end
@@ -375,7 +394,7 @@ from its supplier pays no minimum charge, a shipment of `9e-5` ton is charged no
 function charge_tl(q, s, d; r=nothing, Kwt=25.0, Kcu=2750.0, ppi=102.7)
     # nothing to ship (within 1e-4 ton, TRN3), or nowhere to ship it (N4, CR 15)
     (_is0(q) || d == 0) && return 0.0
-    rate = r === nothing ? 2.00 * ppi / 102.7 : r     # derived from ppi only when r is not passed (D5)
+    rate = _tlrate(r, ppi)                            # derived from ppi only when r is not passed (D5)
     q_max = min(Kwt, s * Kcu / 2000)
     num_trucks = ceil(Int, q / q_max)
     mc = _is0(d) ? 0.0 : mincharge_tl(; ppi=ppi)      # no minimum within 1e-4 mi (TRN3, Matlog's mincharge)
@@ -392,6 +411,52 @@ Struct-form overload of [`charge_tl`](@ref). Unpacks `sh.s, sh.d` and
 overload independent of the scalar positional order.
 """
 charge_tl(q, sh::Union{NamedTuple, DataFrames.DataFrameRow}, tr) = charge_tl(q, sh.s, sh.d; r=tr.r, Kwt=tr.Kwt, Kcu=tr.Kcu, ppi=tr.ppi)
+
+# the TL rate per loaded mile: `r` as given, or, when it is not, the $2.00 of the 102.7 baseline escalated with the
+# index (D5); one expression for both `charge_tl` methods that derive it
+_tlrate(r, ppi) = r === nothing ? 2.00 * ppi / 102.7 : r
+
+"""
+    charge_tl(d::Real, tr) -> Float64
+
+The charge for one truckload over `d` miles, `max(r·d, MC_TL)`: the loaded miles at the truck's rate, or the TL
+minimum charge if that is more (B9). It is the charge of a single truck, whatever it carries, which is what a
+route's charge is in Lecture 5.2 (`max(2.00 d, MC_TL)` over the route's miles) and what `minTLC`'s TL branch
+charges a shipment of at most one truckload. Reads `tr.r` and `tr.ppi`; when `tr` has no `r` (or `r = nothing`),
+the rate is derived from `tr.ppi` as `2.00 * ppi / 102.7`, as in the shipment form below (D5). The minimum is
+[`mincharge_tl`](@ref)`(tr)`, so `tr.ppi` is required.
+
+The shipment form `charge_tl(q, s, d; ...)` on the same truck is the same charge whenever its `q`, at least
+`1e-4` ton, fills at most one truck and `d` is at least `1e-4` mi. This form has no zero rule, so at `d = 0` it is
+the minimum charge, as `max(r·d, MC_TL)` is, where the shipment form charges nothing (N4, TRN3).
+
+# Example
+Lecture 5.2, Ex. 9: at the base index, \\\$2.00 per loaded mile with the minimum charge of \\\$45, a truck sent
+100 mi and one sent 10 mi; the same truck with its rate derived from the index:
+
+```jldoctest
+tr = (r = 2.00, ppi = 102.7)
+(charge_tl(100.0, tr), charge_tl(10.0, tr), charge_tl(100.0, (ppi = 102.7,)))
+
+# output
+
+(200.0, 45.0, 200.0)
+```
+
+Lecture 3.3's truck from Raleigh to Gainesville, 532 mi at the January 2018 TL index of 131.0, is the charge of
+a full truckload (Lecture 4.3's `cTL`, the shipment form at `q = qmax`):
+
+```jldoctest
+tr = (r = 2.00*131.0/102.7, Kwt = 25, Kcu = 2750, ppi = 131.0)
+c = charge_tl(532, tr)
+(round(c; digits = 2), c == charge_tl(maxpayld(40/9; Kwt = 25, Kcu = 2750), 40/9, 532; r = tr.r, ppi = 131.0))
+
+# output
+
+(1357.2, true)
+```
+"""
+charge_tl(d::Real, tr) = max(_tlrate(hasproperty(tr, :r) ? tr.r : nothing, tr.ppi) * d, mincharge_tl(tr))
 
 """
     charge_ltl(q, s, d; ppi=104.2) -> Float64
@@ -500,6 +565,53 @@ or `DataFrameRow`.
 """
 maxpayld(sh::Union{NamedTuple, DataFrames.DataFrameRow}, tr) = maxpayld(sh.s; Kwt=tr.Kwt, Kcu=tr.Kcu)
 
+"""
+    maxpayld(s::AbstractVector, tr) -> Vector
+    maxpayld(sh::AbstractDataFrame, tr) -> Vector
+
+The maximum payload of each shipment on the truck `tr`, from a vector of densities `s` (lb/ft³) or from the
+table `sh`, whose column `s` it reads (B6): element `i` is `maxpayld(s[i]; Kwt = tr.Kwt, Kcu = tr.Kcu)`, so the
+table form equals `[maxpayld(row, tr) for row in eachrow(sh)]`, the row form applied to each row. Reads `tr.Kwt`
+and `tr.Kcu`, both required, as the row form does. Each element is the scalar rule computed on its own density,
+so a range of densities gives the scalar rule's value at each one (the keyword form `maxpayld(s; Kwt, Kcu)` on a
+range does the range's own arithmetic, which can differ in the last place).
+
+# Example
+Lecture 3.4, Ex. 1 (Code block 2): the two suppliers' products and the aggregate shipped to the three
+customers, on a truck of 25 ton and 2,750 ft³:
+
+```jldoctest
+using DataFrames
+tr = (r = 2, Kwt = 25, Kcu = 2750)
+shS = DataFrame(f = [100, 380], s = [30, 120] ./ [10, 4])
+sh = vcat(shS, DataFrame(f = sum(shS.f)*[20, 30, 50]/100, s = sum(shS.f)./sum(shS.f./shS.s)))
+sh.qmax = maxpayld(sh, tr)
+(round.(sh.qmax; digits = 4), sh.qmax == [maxpayld(row, tr) for row in eachrow(sh)])
+
+# output
+
+([4.125, 25.0, 14.3478, 14.3478, 14.3478], true)
+```
+
+On densities alone, the cube limits a truck below 18.18 lb/ft³ and the weight above it:
+
+```jldoctest
+maxpayld([8.0, 15.0, 25.0], (Kwt = 25, Kcu = 2750))
+
+# output
+
+3-element Vector{Float64}:
+ 11.0
+ 20.625
+ 25.0
+```
+"""
+function maxpayld(s::AbstractVector, tr)
+    Kwt, Kcu = tr.Kwt, tr.Kcu
+    return [maxpayld(x; Kwt = Kwt, Kcu = Kcu) for x in s]   # the scalar rule at each density: a range broadcast as a range differs in the last place
+end
+maxpayld(sh::AbstractDataFrame, tr) = maxpayld(sh.s, tr)
+
 # =============================================================================
 # Total Logistics Cost
 # =============================================================================
@@ -572,11 +684,11 @@ function totlogcost(q, c, f, a, v, h)
 end
 
 # CR 14: an aggregate carries its own inventory coefficient `avh`; a missing `avh` (a column
-# filled by `vcat(...; cols = :union)`) falls back to a·v·h
+# filled by `vcat(...; cols = :union)`) falls back to a·v·h. B10: the row's own `avh` is `_avh`'s; without one the
+# six-argument form multiplies q·a·v·h left to right, as it always has, rather than q·(a·v·h), which `_avh`'s
+# product would give and which can differ in the last place
 function totlogcost(q, c, p)
-    if hasproperty(p, :avh) && !ismissing(p.avh)
-        return _transportcost(q, c, p.f) .+ max.(q, 0) .* p.avh
-    end
+    _hasavh(p) && return _transportcost(q, c, p.f) .+ max.(q, 0) .* _avh(p)
     return totlogcost(q, c, p.f, p.a, p.v, p.h)
 end
 
@@ -586,14 +698,10 @@ end
 _transportcost(q, c, f) =
     ifelse.((abs.(c) .< eps()) .| iszero.(c .* f), 0.0, ifelse.(q .<= 0, Inf, c .* f ./ q))
 
-# the inventory coefficient of a shipment row: a·v·h, or the aggregate's own `avh` (CR 14)
-function _avh(p)
-    if hasproperty(p, :avh)
-        x = getproperty(p, :avh)
-        ismissing(x) || return x
-    end
-    return p.a * p.v * p.h
-end
+# the inventory coefficient of a shipment row: a·v·h, or the aggregate's own `avh` when the row has one that is not
+# missing (CR 14)
+_hasavh(p) = hasproperty(p, :avh) && !ismissing(getproperty(p, :avh))
+_avh(p) = _hasavh(p) ? getproperty(p, :avh) : p.a * p.v * p.h
 
 """
     aggshmt(df::DataFrame) -> NamedTuple
@@ -806,12 +914,7 @@ minTLC(sh; ppi_ltl = 177.4)
 ```
 """
 function minTLC(sh, tr_pos=nothing, ppi_pos=nothing; tr=nothing, ppi_ltl=nothing)
-    (tr_pos !== nothing && tr !== nothing) &&
-        throw(ArgumentError("minTLC: the carrier is given both positionally and as `tr =`"))
-    (ppi_pos !== nothing && ppi_ltl !== nothing) &&
-        throw(ArgumentError("minTLC: the LTL PPI is given both positionally and as `ppi_ltl =`"))
-    tr = tr === nothing ? tr_pos : tr
-    ppi = ppi_ltl === nothing ? ppi_pos : ppi_ltl
+    tr, ppi = _mintlc_modes(tr_pos, ppi_pos, tr, ppi_ltl)
     qᵒ, TLCᵒ, isLTL = nothing, Inf, false
     # CR 15, TRN3: a shipment over zero distance (within 1e-4 mi) costs nothing, so it is sized 0 and its TLC is 0
     (tr !== nothing || ppi !== nothing) && _is0(sh.d) && return (qᵒ = 0.0, TLCᵒ = 0.0, isLTL = false)
@@ -821,13 +924,61 @@ function minTLC(sh, tr_pos=nothing, ppi_pos=nothing; tr=nothing, ppi_ltl=nothing
         TLCtl = totlogcost(qTL, charge_tl(qTL, sh, tr), sh)
         qᵒ, TLCᵒ = qTL, TLCtl
     end
-    if ppi !== nothing && 150/2000 < qmax_ltl(sh.s)      # bracket guard: below 0.231 lb/ft³ there is no LTL size
+    if ppi !== nothing && _LTL_MIN_WEIGHT < qmax_ltl(sh.s)      # bracket guard: below 0.231 lb/ft³ there is no LTL size
         qLTL = optimize(q -> totlogcost(q, charge_ltl(q, sh; ppi=ppi), sh),
-                        150/2000, qmax_ltl(sh.s)).minimizer
+                        _LTL_MIN_WEIGHT, qmax_ltl(sh.s)).minimizer
         TLCltl = totlogcost(qLTL, charge_ltl(qLTL, sh; ppi=ppi), sh)
         if TLCltl < TLCᵒ
             qᵒ, TLCᵒ, isLTL = qLTL, TLCltl, true
         end
     end
     return (qᵒ = qᵒ, TLCᵒ = TLCᵒ, isLTL = isLTL)
+end
+
+# the carrier and the LTL index of a minTLC call, given positionally or by keyword but not both (S6)
+function _mintlc_modes(tr_pos, ppi_pos, tr, ppi_ltl)
+    (tr_pos !== nothing && tr !== nothing) &&
+        throw(ArgumentError("minTLC: the carrier is given both positionally and as `tr =`"))
+    (ppi_pos !== nothing && ppi_ltl !== nothing) &&
+        throw(ArgumentError("minTLC: the LTL PPI is given both positionally and as `ppi_ltl =`"))
+    return (tr === nothing ? tr_pos : tr), (ppi_ltl === nothing ? ppi_pos : ppi_ltl)
+end
+
+"""
+    minTLC(sh::AbstractDataFrame, tr, ppi_ltl) -> DataFrame
+    minTLC(sh::AbstractDataFrame; tr = nothing, ppi_ltl = nothing) -> DataFrame
+
+The minimum-TLC shipment of every row of the table `sh` (B6): a new table, `sh`'s columns unchanged and in their
+order, with the columns `qᵒ`, `TLCᵒ` and `isLTL` added, each row's values those of the row form
+`minTLC(row, tr, ppi_ltl)` above. It is what a lecture writes as
+`transform!(sh, AsTable(:) => ByRow(row -> minTLC(row, tr, ppi_ltl)) => AsTable)`, with `sh` itself left as it
+was. The call modes are the row form's (TL only, LTL only, both; positional or keyword), and each row reads the
+fields the row form reads. A `qᵒ`, `TLCᵒ` or `isLTL` column already in `sh`, from an earlier call, is replaced
+in its place, as `transform!` replaces it.
+
+# Example
+Lecture 3.3, Ex. 1(l) (Code block 13): the \\\$85,000 product of Ex. 1(k) and a second product, 80 ton/yr of
+Class 60 material (32.16 lb/ft³) worth \\\$5,000/ton, both shipped 532 mi at the January 2018 PPIs; the first is
+selected LTL, the second TL:
+
+```jldoctest
+using DataFrames
+tr = (r = 2.00*131.0/102.7, Kwt = 25, Kcu = 2750, ppi = 131.0)
+sh = DataFrame(f = [20, 80], s = [40/9, 32.16], a = 1, v = [85_000, 5000], h = 0.3, d = 532)
+res = minTLC(sh, tr, 177.4)
+(names(res), round.(res.qᵒ; digits = 4), round.(res.TLCᵒ; digits = 2), res.isLTL)
+
+# output
+
+(["f", "s", "a", "v", "h", "d", "qᵒ", "TLCᵒ", "isLTL"], [0.2735, 8.5079], [47801.01, 25523.6], Bool[1, 0])
+```
+"""
+function minTLC(sh::AbstractDataFrame, tr_pos = nothing, ppi_pos = nothing; tr = nothing, ppi_ltl = nothing)
+    tr, ppi = _mintlc_modes(tr_pos, ppi_pos, tr, ppi_ltl)
+    res = [minTLC(row, tr, ppi) for row in eachrow(sh)]
+    out = DataFrame(sh; copycols = true)
+    out.qᵒ = [x.qᵒ for x in res]
+    out.TLCᵒ = [x.TLCᵒ for x in res]
+    out.isLTL = [x.isLTL for x in res]
+    return out
 end

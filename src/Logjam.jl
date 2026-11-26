@@ -9,7 +9,8 @@ and their names:
 
 - **Facility location:** `ufladd`, `ufldrop`, `uflxchg`, `ufl`, `pmedian`, `ala`, `wcentroid`, `randX`.
 - **Transportation economics:** `rate_ltl`, `charge_tl`, `charge_ltl`, `mincharge_tl`, `mincharge_ltl`,
-  `maxpayld`, `qmax_ltl`, `totlogcost`, `aggshmt`, `minTLC`.
+  `maxpayld`, `qmax_ltl`, `totlogcost`, `aggshmt`, `minTLC`; the fields of a shipment `sh` and a truck `tr`,
+  which the routing functions share, are `?Logjam.shtr`.
 - **Distances:** `dgc`, `dgca`, `d1`, `d2`, `dists`.
 - **Road networks:** `thin`, `addconnectors`, `links2graph`, `shortestpaths`, `tracepath`, `pathroads`,
   `x2ln`, `cropnetwork`, `prune_reindex`, and `osm_roads` for OpenStreetMap (a download needs LightOSM), which
@@ -23,7 +24,8 @@ and their names:
   and the constants `WORLD_LIMITS`, `US_LIMITS`, `CUS_LIMITS`.
 - **Display:** `prt`, `snapvals`, `thousands`.
 - **Public, not exported** (called as `Logjam.name`, so a script's own function of the name does not collide):
-  `scanTW`, `usstates`, and the inventory measures `poissoncdf`, `pi0`, `qbar` and `poissarr`.
+  `scanTW`, `usstates`, the inventory measures `poissoncdf`, `pi0`, `qbar` and `poissarr`, and `shtr`, the `sh` and
+  `tr` contract.
 
 ## Dependencies
 
@@ -109,6 +111,7 @@ export rte2idx, sh2rte        # the shipments of a route; a route of its own for
 public scanTW    # Lecture 5.3's time-window scan (routetools.jl), the implementation rung of a model; not exported, so the lecture's own `scanTW` does not collide (CR 42, D10)
 public usstates    # the state borders as NaN-separated polylines (maptools.jl); Lecture 5.1 and four Lecture 2.2 generators call it qualified (C12, V6); not exported, so it does not collide with `usstate`
 public _osm_cache_path, _osm_snap_bbox    # the tile files and the tile of a box (osmtools.jl); Lecture 4.2's data generator reports its boxes' tiles with them, so they are public (S18)
+public shtr    # the sh and tr contract (transtools.jl): its docstring is the contract, so ?Logjam.shtr shows it, and its value lists the fields (B11; the name provisional, D7)
 public poissoncdf, pi0, qbar, poissarr    # the inventory measures (invtools.jl): Lectures 6.2's and 6.3's definitions, `pi0` and `qbar` with 6.2's reorder-point forms as three-argument methods; not exported, since each body is a lecture's lesson and the lectures define the names (E1, D10)
 
 # Include component files
