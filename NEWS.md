@@ -57,7 +57,7 @@ missed.
   collapses every interchange, not only the 754 Interstate junctions of the lecture's script, so its lower-48
   Interstates thin to 1,488 nodes and 2,109 links where the lecture's files thin to 600 and 989. **No migration.**
 - **`joinroads(N, L, Nosm, Losm, bb; radius = 0.5, verbose = false)`: an OpenStreetMap network joined to the U.S.
-  road network (CR 19, RD3; the name is provisional, for the interface review).** For a route that starts or ends
+  road network (CR 19, RD3; the name kept in the interface review, RN36).** For a route that starts or ends
   on a city's streets and runs far beyond them, as v0.2.8's `stitchnetworks` did: inside the box `bb` (the box
   given to `osm_roads`, required) the OpenStreetMap streets replace the national roads; each national link that
   crosses the box edge is joined at its node outside the box by a connector to the OpenStreetMap node nearest the

@@ -10,7 +10,7 @@ using Logjam
 using DataFrames
 using Graphs, SimpleWeightedGraphs
 
-const _JR = joinroads                   # the name is provisional (his interface review, N5): the one place the tests name it
+const _JR = joinroads                   # the one place the tests name it (the name kept in his interface review, RN36)
 
 # A network built road by road in longitude and latitude; a node is made the first time a road names its point.
 struct _JRNet

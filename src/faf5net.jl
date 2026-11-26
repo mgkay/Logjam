@@ -1151,8 +1151,10 @@ The first eight are `osm_roads`' columns, in its order, so the two tables can be
 - `DIST`: miles. A divided road's is its shorter carriageway's; a link whose end was moved to its junction's node adds
   the straight-line distance moved.
 - `SPEED`: FAF5's posted speed limit (mph).
-- `FCLASS`: FAF5's functional class (1 Interstate, 2 other freeway or expressway, 3 other principal arterial, and so
-  on), the lower of a divided road's two carriageways.
+- `FCLASS`: the FHWA functional class as FAF5 gives it (1 Interstate, 2 other freeway or expressway, 3 other
+  principal arterial, 4 minor arterial, 5 major collector, 6 minor collector, 7 local), the lower of a divided road's
+  two carriageways. FAF5 also writes two codes that are no FHWA class: 0, and 10 on one link (US 183 in Lampasas
+  County, Texas).
 - `DIR`: 0 two-way, 1 one-way from `SRC` to `DST`, -1 one-way from `DST` to `SRC`.
 - `NAME`: FAF5's road name (`missing` where it has none).
 - `SOURCE`: `"FAF5"`.

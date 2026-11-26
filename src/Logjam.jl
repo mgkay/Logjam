@@ -96,7 +96,7 @@ export links2graph, x2ln, cropnetwork, shortestpaths, tracepath, pathroads
 
 # Export OSM functions (a download requires the LightOSM extension)
 export osm_roads
-export joinroads    # an OpenStreetMap network joined to the U.S. road network at its box's edge (CR 19, RD3; the name is provisional, for his interface review)
+export joinroads    # an OpenStreetMap network joined to the U.S. road network at its box's edge (CR 19, RD3; the name kept in his interface review, RN36)
 
 # Export routing functions
 export segcost, rteTC, isorigin, rte2loc
