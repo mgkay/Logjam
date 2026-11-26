@@ -70,18 +70,23 @@ missed.
   served:** Lecture 4.2's OpenStreetMap networks; no lecture calls it yet, and `test/test_joinroads.jl` joins
   4.2's committed Raleigh tile to the network and routes from inside it to Greensboro (leaving on I-40) and to
   Winston-Salem. **No migration.**
-- **`Logjam.poissoncdf(j, μ)`, `Logjam.qbar(qmax, μ)` and `Logjam.qbar(qo, qmin, μ)`: the Poisson inventory
-  measures of Lecture 6.2, public and not exported (E1, D10).** `poissoncdf` is ``F(j; μ)``, the probability of
-  `j` or fewer demands during a lead time when that demand is Poisson with mean `μ`, summed one term at a time,
-  each probability from the one before it; `qbar(qmax, μ)` is a base-stock system's average on hand, the sum of
-  ``F(j; μ)`` for `j` from 0 to `qmax - 1`; and `qbar(qo, qmin, μ)`, 6.2's `qbarrp` as a method of the same name,
-  is a reorder-point system's, base stock's averaged over the levels `qmin + 1` to `qmin + qo`. Each body is the
-  lecture's definition in its order of operations, so each returns exactly what the lecture's does. Specification:
-  the ISE 453 F25 spreadsheet `Inventory.xlsx`, whose [BS Pois] and [RP Pois] cells they reproduce to a relative
-  1e-12 (the reorder-point sheet tabulates the cycle form, safety stock plus half an order, which 6.2's model
-  replaces by the average; its safety stock is `qbar(qmin, μ)`) (`test/test_invtools.jl`). **Lectures served:**
-  6.2 and 6.3, which define them inline today (6.3 repeating 6.2's) and may call Logjam's at the re-pin; not
-  exported, so a lecture's own definitions, made after `using Logjam`, do not collide. **No migration.**
+- **`Logjam.poissoncdf(j, μ)`, `Logjam.pi0` and `Logjam.qbar` with two methods each, and
+  `Logjam.poissarr(lmb, n = 1; rng)`: the Poisson inventory measures of Lecture 6.2 and the arrival process of
+  Lecture 6.3, public and not exported (E1, D10).** `poissoncdf` is ``F(j; μ)``, the probability of `j` or fewer
+  demands during a lead time when that demand is Poisson with mean `μ`, summed one term at a time, each probability
+  from the one before it. `pi0(qmax, μ)` and `qbar(qmax, μ)` are a base-stock system's fraction of demand out of
+  stock, ``1 - F(q_{\max} - 1; μ)``, and average on hand, the sum of ``F(j; μ)`` for `j` from 0 to `qmax - 1`;
+  `pi0(qo, qmin, μ)` and `qbar(qo, qmin, μ)`, 6.2's `pi0rp` and `qbarrp` as methods of the same names, are a
+  reorder-point system's, base stock's averaged over the levels `qmin + 1` to `qmin + qo`. `poissarr` returns
+  the arrival times of a Poisson process whose rate `lmb[i]` may differ from period to period, generated at the
+  peak rate and thinned, every draw taken from `rng` (the global stream by default). Each body is the lecture's
+  definition in its order of operations, so each returns exactly what the lecture's does, `poissarr` after the same
+  seed. Specification: the ISE 453 F25 spreadsheet `Inventory.xlsx`, whose [BS Pois] and [RP Pois] cells the
+  measures reproduce to a relative 1e-12 (the reorder-point sheet tabulates the cycle forms, which 6.2's model
+  replaces by the averages), and the MATLAB `poissarr.m`, whose arrivals `poissarr` reproduces on the same draws
+  (`test/test_invtools.jl`, `tools/v0_3_1/make_oracles_v031.m`). **Lectures served:** 6.2 and 6.3, which define
+  them inline today (6.3 repeating 6.2's measures) and may call Logjam's at the re-pin; not exported, so a
+  lecture's own definitions, made after `using Logjam`, do not collide. **No migration.**
 
 ### Changed
 

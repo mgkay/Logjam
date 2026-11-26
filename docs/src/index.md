@@ -239,13 +239,15 @@ twoopt
 
 ## Inventory Functions
 
-The Poisson measures of Lecture 6.2's base-stock and reorder-point models, each the lecture's own definition. They
-are public but not exported, so they are called as `Logjam.poissoncdf` and `Logjam.qbar`, and a lecture's own
-definition of the name does not collide with them.
+The Poisson measures of Lecture 6.2's base-stock and reorder-point models and Lecture 6.3's arrival process, each
+the lecture's own definition. They are public but not exported, so they are called as `Logjam.pi0` and so on, and
+a lecture's own definition of the name does not collide with them.
 
 ```@docs
 poissoncdf
+pi0
 qbar
+poissarr
 ```
 
 ## Data Functions
