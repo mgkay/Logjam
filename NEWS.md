@@ -150,6 +150,23 @@ missed.
   view such as `view(usplace(), mask, :)` works where a `DataFrame` was required, with the answer of the table it
   shows; `loc2lonlat` returns a new `DataFrame` either way (`prt` already took one). **Lectures served:** 2.2's Code
   block 32, 2.5's Code blocks 5 and 32 and 2.6's Code blocks 3 and 12, which pass `usplace()`. **No migration.**
+- **`loc2lonlat(df; street_col, city_col, state_col, postalcode_col, county_col)`: the DataFrame method's column
+  keywords end in `_col` (A6; the names provisional, D7).** They name the columns that hold each part of an address,
+  as `lonlat2loc`'s and the road functions' `*_col` keywords do, by default `STREET`, `CITY`, `STATE`, `POSTALCODE`
+  and `COUNTY`, and a string names a column as a `Symbol` does. **Deprecated:** the old names `street`, `city`,
+  `state`, `postalcode` and `county` still work, with the same result, and call `Base.depwarn` naming the new one,
+  which prints only when Julia runs with `--depwarn=yes` (as `Pkg.test` does), so a script's output is unchanged;
+  passing a keyword by both names is an `ArgumentError`. They were renamed because `state` named a column here and is
+  a state in the string and vector methods. **A state column that is named and is not in the table is now an
+  `ArgumentError`** that says so and points to `state_col`: `loc2lonlat(DataFrame(CITY = ["Athens", "Portland",
+  "Jacksonville"]); state = :GA)` read `:GA` as a column and returned `FAIL` for every row, with no warning (review
+  A's measurement). No call in `src/`, the lectures or the released HW 1 to 5 keys passes `state` to the DataFrame
+  method (all of theirs pass it to the string or vector method, whose `state` is unchanged), and a table with no
+  state column and no `state` keyword geocodes as before. **Lecture served:** none calls the DataFrame method with
+  these keywords; the names align the geocoder with the package's other column keywords. **No migration.**
+- **`loc2lonlat(v)` takes any vector of strings (A4).** A view, a vector of `SubString`s or a column read from a file
+  that is not a `Vector`, where a `Vector` was required (a `MethodError` otherwise); the result is the table the
+  `Vector` of the same strings gives, its `INPUT` column a `Vector`. **No migration.**
 
 ### Changed
 
@@ -243,6 +260,14 @@ missed.
   of three, 1.12.6): Euclidean 0.38 s and 755 MiB to 0.022 s and 69 MiB (the result itself), rectilinear 0.24 s to
   0.024 s, Chebychev 0.23 s to 0.024 s, l₃ 0.71 s and 1.4 GiB to 0.15 s, great circle 0.58 s and 481 MiB to 0.28 s
   (reported, not asserted).
+- **One batch driver behind `loc2lonlat`'s vector and DataFrame methods (A4).** `Logjam._geocode_batch!` holds what
+  the two methods wrote twice: the five result columns, the progress line every 50 rows, the cache read once and
+  flushed once in `try`/`finally`, and the columns appended to the result. A geocoded row is written once, as
+  `_FAIL` (not found) or `_row(result, status)` (a census-table answer), in place of eight hand-written named
+  tuples. (The one tier ladder of review A's A4 was built in v0.3.0's K14.) No value moves:
+  `test/test_geodata_v031.jl` runs v0.3.0's geocoder, copied as text, beside the new one on the same inputs (cities,
+  ZIP codes, addresses with the address tier stood in for, bad states, empty and 60-row inputs, views) and compares
+  the tables column for column, the log records and the cache files written.
 
 ## v0.3.0
 

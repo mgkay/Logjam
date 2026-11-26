@@ -321,6 +321,14 @@ basis and is 1.2 times larger.
 """
 _uncertainty(aland) = _mean_zone_distance(aland)
 
+# One geocoded row, the shape every method returns (A4): the five fields named once, here. `_FAIL` is the row of a
+# place that was not found; `_row(result, status)` is the row of a census-table answer, `result` being what a
+# `_resolve_*` tier returns (`lon`, `lat`, `aland`, `source`), its uncertainty taken from its land area.
+const _FAIL = (LON = missing, LAT = missing, GC_SOURCE = "", GC_UNCERT = missing, GC_STATUS = "FAIL")
+
+_row(result, status::AbstractString) = (LON = result.lon, LAT = result.lat, GC_SOURCE = result.source,
+                                        GC_UNCERT = _uncertainty(result.aland), GC_STATUS = status)
+
 """
     _resolve_place(name, state) -> NamedTuple or missing
 """
@@ -481,7 +489,7 @@ function _batch_row(f, i::Integer, what)
     catch e
         e isa ArgumentError && startswith(e.msg, "Unknown state") || rethrow()
         @warn "loc2lonlat: row $i (\"$what\"): $(e.msg); no location returned (status FAIL)."
-        return (LON=missing, LAT=missing, GC_SOURCE="", GC_UNCERT=missing, GC_STATUS="FAIL")
+        return _FAIL
     end
 end
 
@@ -541,8 +549,7 @@ function _resolve_row(street, city, state, postalcode, county,
         result = _resolve_place(addr.city, st_sym)
         if !ismissing(result)
             status = isempty(addr.street) || addr.is_pobox ? "OK" : "PARTIAL"
-            return _fallback(note, addr, (LON=result.lon, LAT=result.lat, GC_SOURCE=result.source,
-                    GC_UNCERT=_uncertainty(result.aland), GC_STATUS=status))
+            return _fallback(note, addr, _row(result, status))
         end
     end
 
@@ -552,8 +559,7 @@ function _resolve_row(street, city, state, postalcode, county,
         result = _resolve_postalcode(pc)
         if !ismissing(result)
             status = isempty(addr.street) ? "OK" : "PARTIAL"
-            return _fallback(note, addr, (LON=result.lon, LAT=result.lat, GC_SOURCE=result.source,
-                    GC_UNCERT=_uncertainty(result.aland), GC_STATUS=status))
+            return _fallback(note, addr, _row(result, status))
         end
     end
 
@@ -562,8 +568,7 @@ function _resolve_row(street, city, state, postalcode, county,
     if !isempty(county_str) && !isnothing(st_sym)
         result = _resolve_county(county_str, st_sym)
         if !ismissing(result)
-            return _fallback(note, addr, (LON=result.lon, LAT=result.lat, GC_SOURCE=result.source,
-                    GC_UNCERT=_uncertainty(result.aland), GC_STATUS="PARTIAL"))
+            return _fallback(note, addr, _row(result, "PARTIAL"))
         end
     end
 
@@ -571,8 +576,7 @@ function _resolve_row(street, city, state, postalcode, county,
     if !isnothing(st_sym)
         result = _resolve_state(st_sym)
         if !ismissing(result)
-            return _fallback(note, addr, (LON=result.lon, LAT=result.lat, GC_SOURCE=result.source,
-                    GC_UNCERT=_uncertainty(result.aland), GC_STATUS="PARTIAL"))
+            return _fallback(note, addr, _row(result, "PARTIAL"))
         end
     end
 
@@ -580,12 +584,11 @@ function _resolve_row(street, city, state, postalcode, county,
     if !isempty(addr.city) && isnothing(st_sym)
         result = _resolve_place(addr.city, nothing)
         if !ismissing(result)
-            return _fallback(note, addr, (LON=result.lon, LAT=result.lat, GC_SOURCE=result.source,
-                    GC_UNCERT=_uncertainty(result.aland), GC_STATUS="OK"))
+            return _fallback(note, addr, _row(result, "OK"))
         end
     end
 
-    return _fallback(note, addr, (LON=missing, LAT=missing, GC_SOURCE="", GC_UNCERT=missing, GC_STATUS="FAIL"))
+    return _fallback(note, addr, _FAIL)
 end
 
 # The source name of a cached failed lookup, and its entry (no position, no uncertainty).
@@ -741,7 +744,7 @@ end
 function _loc2lonlat_one(s::AbstractString, state, gc::_GeocodeCache,
                          force_download::Bool)
     s = strip(s)
-    isempty(s) && return (LON=missing, LAT=missing, GC_SOURCE="", GC_UNCERT=missing, GC_STATUS="FAIL")
+    isempty(s) && return _FAIL
 
     # Detect if it looks like an address (has commas or numbers)
     if !_is_postalcode(s) && occursin(r"[,\d]", s)
@@ -758,12 +761,48 @@ function _loc2lonlat_one(s::AbstractString, state, gc::_GeocodeCache,
         _resolve_row("", s, state, "", missing, gc, force_download)
 end
 
+# The one row-collecting loop behind the vector and DataFrame methods (A4): the five result columns, a progress line
+# every 50 rows, the cache read once and flushed once (also when a row stops the call), and the columns appended to
+# `result`, which is returned. `row(i, gc)` geocodes row `i` against the call's cache `gc` and returns its row.
+function _geocode_batch!(row, result::DataFrame, n::Integer, cache, cache_dir)
+    lons = Vector{Union{Float64,Missing}}(missing, n)
+    lats = Vector{Union{Float64,Missing}}(missing, n)
+    sources = fill("", n)
+    uncerts = Vector{Union{Float64,Missing}}(missing, n)
+    statuses = fill("", n)
+
+    gc = _load_cache(_cache_file(cache, cache_dir))
+    try
+        for i in 1:n
+            if i % 50 == 0
+                @info "Geocoding progress: $i / $n"
+            end
+            r = row(i, gc)
+            lons[i] = r.LON
+            lats[i] = r.LAT
+            sources[i] = r.GC_SOURCE
+            uncerts[i] = r.GC_UNCERT
+            statuses[i] = r.GC_STATUS
+        end
+    finally
+        _flush!(gc)
+    end
+
+    result.LON = _tighten(lons)
+    result.LAT = _tighten(lats)
+    result.GC_SOURCE = sources
+    result.GC_UNCERT = _tighten(uncerts)
+    result.GC_STATUS = statuses
+    return result
+end
+
 """
-    loc2lonlat(v::Vector{<:AbstractString}; state=nothing, cache=nothing, force_download=false)
+    loc2lonlat(v::AbstractVector{<:AbstractString}; state=nothing, cache=nothing, force_download=false)
 
-Geocode a vector of location strings. Auto-detects postal codes vs place names.
+Geocode a vector of location strings. Auto-detects postal codes vs place names. Any vector of strings is
+taken (a view, or a column of a table read from a file), not only a `Vector` (v0.3.1, A4).
 
-Returns a DataFrame with LON, LAT, GC_SOURCE, GC_UNCERT, GC_STATUS columns (the field names
+Returns a DataFrame with INPUT, LON, LAT, GC_SOURCE, GC_UNCERT, GC_STATUS columns (the field names
 of the single-string method's result too).
 
 `state` is one state for every string, or a vector of states, one per string (R7/S14): the
@@ -783,7 +822,7 @@ loc2lonlat(["27601", "27708", "27514"])
 loc2lonlat(["Raleigh", "Athens", "Asheville"]; state = [:NC, :GA, :NC])   # one state each
 ```
 """
-function loc2lonlat(v::Vector{<:AbstractString}; state=nothing,
+function loc2lonlat(v::AbstractVector{<:AbstractString}; state=nothing,
                     cache::Union{Nothing,AbstractString}=nothing,
                     cache_dir::Union{Nothing,AbstractString}=nothing,
                     force_download::Bool=false)
@@ -793,55 +832,89 @@ function loc2lonlat(v::Vector{<:AbstractString}; state=nothing,
                             "pass one state or one per location."))
     end
     state_of(i) = state isa AbstractVector ? (ismissing(state[i]) ? nothing : state[i]) : state
-    lons = Vector{Union{Float64,Missing}}(missing, n)
-    lats = Vector{Union{Float64,Missing}}(missing, n)
-    sources = Vector{String}(undef, n)
-    uncerts = Vector{Union{Float64,Missing}}(missing, n)
-    statuses = Vector{String}(undef, n)
-
-    gc = _load_cache(_cache_file(cache, cache_dir))
-    try
-        for i in 1:n
-            if i % 50 == 0
-                @info "Geocoding progress: $i / $n"
-            end
-            r = _batch_row(i, v[i]) do
-                _loc2lonlat_one(v[i], state_of(i), gc, force_download)
-            end
-            lons[i] = r.LON
-            lats[i] = r.LAT
-            sources[i] = r.GC_SOURCE
-            uncerts[i] = r.GC_UNCERT
-            statuses[i] = r.GC_STATUS
+    w = v isa Vector ? v : collect(v)          # a view or another vector of strings, as a Vector (A4)
+    return _geocode_batch!(DataFrame(INPUT = w), n, cache, cache_dir) do i, gc
+        _batch_row(i, w[i]) do
+            _loc2lonlat_one(w[i], state_of(i), gc, force_download)
         end
-    finally
-        _flush!(gc)
     end
+end
 
-    return DataFrame(
-        INPUT = v,
-        LON = _tighten(lons),
-        LAT = _tighten(lats),
-        GC_SOURCE = sources,
-        GC_UNCERT = _tighten(uncerts),
-        GC_STATUS = statuses
-    )
+# A column keyword's value: a column name, or `nothing` for none given.
+const _ColName = Union{Nothing, Symbol, AbstractString}
+
+# The DataFrame method's column keywords (A6): each `*_col`, its old name (deprecated) and its default column.
+const _GEOCODE_COLKW = ((:street_col, :street, :STREET), (:city_col, :city, :CITY), (:state_col, :state, :STATE),
+                        (:postalcode_col, :postalcode, :POSTALCODE), (:county_col, :county, :COUNTY))
+
+# The five columns a DataFrame-method call reads, from its `*_col` keywords `new` and their old names `old`. An old
+# name gives the same column its `*_col` would and is deprecated (one `Base.depwarn` naming each one passed, silent
+# unless Julia runs with --depwarn=yes). A state column that is named and is not in the table is an error (A6): the
+# other methods' `state` is a state, and `loc2lonlat(df; state = :GA)` silently returned FAIL for every row.
+function _geocode_cols(df::AbstractDataFrame, new::NamedTuple, old::NamedTuple)
+    cols = Symbol[]
+    was, use = String[], String[]
+    for (knew, kold, default) in _GEOCODE_COLKW
+        vnew, vold = new[knew], old[kold]
+        vnew === nothing || vold === nothing || throw(ArgumentError(
+            "loc2lonlat: pass `$knew` or its deprecated name `$kold`, not both."))
+        col = Symbol(something(vnew, vold, default))
+        if vold !== nothing
+            push!(was, "`$kold = $(repr(col))`")
+            push!(use, "`$knew = $(repr(col))`")
+        end
+        push!(cols, col)
+    end
+    st = cols[3]
+    if (new.state_col !== nothing || old.state !== nothing) && !hasproperty(df, st)
+        kw = new.state_col !== nothing ? "state_col" : "state"
+        have = names(df)
+        list = isempty(have) ? "it has none" :
+               "its columns are " * join(first(have, 10), ", ") * (length(have) > 10 ? ", ..." : "")
+        isstate = try
+            _normalize_state(st)
+            true
+        catch
+            false
+        end
+        hint = isstate ? " To geocode every row in the state $st, add the column: " *
+                         "`df.STATE = fill($(repr(st)), nrow(df))`." : ""
+        throw(ArgumentError("loc2lonlat: `$kw = $(repr(st))` names no column of the table ($list). In the " *
+                            "DataFrame method `state_col` names the column that holds each row's state " *
+                            "(`state` is its deprecated name), not a state." * hint))
+    end
+    isempty(was) || Base.depwarn("loc2lonlat: the DataFrame method's column keywords end in `_col`; " *
+                                 join(was, ", ") * (length(was) == 1 ? " is" : " are") * " deprecated, use " *
+                                 join(use, ", ") * ".", :loc2lonlat)
+    return (street = cols[1], city = cols[2], state = cols[3], postalcode = cols[4], county = cols[5])
 end
 
 """
-    loc2lonlat(df::AbstractDataFrame; street=:STREET, city=:CITY, state=:STATE,
-               postalcode=:POSTALCODE, county=:COUNTY,
+    loc2lonlat(df::AbstractDataFrame; street_col=:STREET, city_col=:CITY, state_col=:STATE,
+               postalcode_col=:POSTALCODE, county_col=:COUNTY,
                cache=nothing, force_download=false)
 
 Geocode a DataFrame of addresses. Inspects which columns exist to determine
 resolution tier per row. A view of a table (`view(df, rows, :)`, a `SubDataFrame`) is geocoded
 as its rows are, and the result is a new `DataFrame` (v0.3.1, A8).
 
-The `postalcode` column may be text or numeric: a ZIP read from a CSV file as an integer
+The postal-code column may be text or numeric: a ZIP read from a CSV file as an integer
 (`2139`) is zero-padded to `"02139"` inside the geocoder (N7, N8). The census tables keep their
 integer `ZCTA5` and `ZCTA3` codes.
 
 Returns the input DataFrame with LON, LAT, GC_SOURCE, GC_UNCERT, GC_STATUS appended.
+
+# Columns
+`street_col`, `city_col`, `state_col`, `postalcode_col` and `county_col` name the columns that hold each part of
+an address (a `Symbol` or a string), by default `STREET`, `CITY`, `STATE`, `POSTALCODE` and `COUNTY`. A row is
+geocoded from the columns the table has; a column that is not there is a part of the address that is not given.
+
+Before v0.3.1 these keywords were `street`, `city`, `state`, `postalcode` and `county` (A6). The old names still
+work, with the same result, and are deprecated: they call `Base.depwarn`, which prints a warning only when Julia
+runs with `--depwarn=yes` (as `Pkg.test` does). They were renamed because `state` names a column here but is a
+state in the string and vector methods, and `loc2lonlat(df; state = :GA)` read `:GA` as a column that is not there
+and returned `FAIL` for every row. A `state_col` (or `state`) that names no column of the table is now an
+`ArgumentError` that says so; to geocode every row in one state, add the state as a column.
 
 `cache` and `force_download` behave as in the single-string method: the cache file, if
 one is named, is read once and the call's new address entries are appended once, at the
@@ -853,62 +926,49 @@ df = DataFrame(CITY=["Raleigh", "Durham"], STATE=[:NC, :NC])
 loc2lonlat(df)   # => input df with LON, LAT, GC_SOURCE, GC_UNCERT, GC_STATUS appended
 
 df2 = DataFrame(addr=["123 Main St"], town=["Raleigh"], st=["NC"])
-loc2lonlat(df2; street=:addr, city=:town, state=:st)
+loc2lonlat(df2; street_col=:addr, city_col=:town, state_col=:st)
+```
+
+A table whose columns have other names, located at the `PLACE` tier:
+
+```jldoctest
+using DataFrames
+df = DataFrame(town = ["Raleigh", "Durham"], st = [:NC, :NC])
+r = loc2lonlat(df; city_col = :town, state_col = :st)
+(r.GC_SOURCE, r.GC_STATUS)
+
+# output
+
+(["PLACE", "PLACE"], ["OK", "OK"])
 ```
 """
-function loc2lonlat(df::AbstractDataFrame; street::Symbol=:STREET, city::Symbol=:CITY,
-                    state::Symbol=:STATE, postalcode::Symbol=:POSTALCODE,
-                    county::Symbol=:COUNTY,
+function loc2lonlat(df::AbstractDataFrame;
+                    street_col::_ColName=nothing, city_col::_ColName=nothing, state_col::_ColName=nothing,
+                    postalcode_col::_ColName=nothing, county_col::_ColName=nothing,
+                    street::_ColName=nothing, city::_ColName=nothing, state::_ColName=nothing,
+                    postalcode::_ColName=nothing, county::_ColName=nothing,
                     cache::Union{Nothing,AbstractString}=nothing,
                     cache_dir::Union{Nothing,AbstractString}=nothing,
                     force_download::Bool=false)
-    n = nrow(df)
-    lons = Vector{Union{Float64,Missing}}(missing, n)
-    lats = Vector{Union{Float64,Missing}}(missing, n)
-    sources = fill("", n)
-    uncerts = Vector{Union{Float64,Missing}}(missing, n)
-    statuses = fill("", n)
+    col = _geocode_cols(df, (; street_col, city_col, state_col, postalcode_col, county_col),
+                        (; street, city, state, postalcode, county))
+    has_street = hasproperty(df, col.street)
+    has_city = hasproperty(df, col.city)
+    has_state = hasproperty(df, col.state)
+    has_pc = hasproperty(df, col.postalcode)
+    has_county = hasproperty(df, col.county)
 
-    has_street = hasproperty(df, street)
-    has_city = hasproperty(df, city)
-    has_state = hasproperty(df, state)
-    has_pc = hasproperty(df, postalcode)
-    has_county = hasproperty(df, county)
+    return _geocode_batch!(copy(df), nrow(df), cache, cache_dir) do i, gc
+        s = has_street ? df[i, col.street] : missing
+        c = has_city ? df[i, col.city] : missing
+        st = has_state ? df[i, col.state] : missing
+        pc = has_pc ? df[i, col.postalcode] : missing
+        co = has_county ? df[i, col.county] : missing
 
-    gc = _load_cache(_cache_file(cache, cache_dir))
-    try
-        for i in 1:n
-            if i % 50 == 0
-                @info "Geocoding progress: $i / $n"
-            end
-
-            s = has_street ? df[i, street] : missing
-            c = has_city ? df[i, city] : missing
-            st = has_state ? df[i, state] : missing
-            pc = has_pc ? df[i, postalcode] : missing
-            co = has_county ? df[i, county] : missing
-
-            r = _batch_row(i, "$(s), $(c), $(st) $(pc)") do
-                _resolve_row(s, c, st, pc, co, gc, force_download)
-            end
-
-            lons[i] = r.LON
-            lats[i] = r.LAT
-            sources[i] = r.GC_SOURCE
-            uncerts[i] = r.GC_UNCERT
-            statuses[i] = r.GC_STATUS
+        _batch_row(i, "$(s), $(c), $(st) $(pc)") do
+            _resolve_row(s, c, st, pc, co, gc, force_download)
         end
-    finally
-        _flush!(gc)
     end
-
-    result = copy(df)
-    result.LON = _tighten(lons)
-    result.LAT = _tighten(lats)
-    result.GC_SOURCE = sources
-    result.GC_UNCERT = _tighten(uncerts)
-    result.GC_STATUS = statuses
-    return result
 end
 
 # A five-digit ZIP as the string the geocoder works in, from an integer: a ZIP that lost its leading zeros (what
