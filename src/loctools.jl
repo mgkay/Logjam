@@ -294,8 +294,9 @@ Use [`ufladd`](@ref) or [`pmedian`](@ref) to choose a single site.
 - `k`: Fixed cost. Scalar (same cost at every NF site) or length-`n` vector (see [`ufladd`](@ref)).
 - `C`: `n`×`m` variable-cost matrix over `n` candidate NF sites and `m` existing facilities
   (EFs); `C[i,j]` = cost of serving EF `j` from an NF at site `i`.
-- `y`: indices of the starting open NF sites (required — exchange improves *this* set). The
-  caller's vector is never changed.
+- `y`: indices of the starting open NF sites (required — exchange improves *this* set), any
+  vector of integers: a range such as `2:3`, or `Int32` indices, as [`ufladd`](@ref) and
+  [`ufldrop`](@ref) take theirs (v0.3.1, A8). The caller's vector is never changed.
 
 # Returns
 - `(y, TC, W)`: indices of the improved open NF sites, **sorted**; total cost
@@ -326,12 +327,30 @@ y, TC, W = uflxchg(k, C, y0)
 ([2, 6], [3, 6], 31.0)
 ```
 
+The starting set may be a range, here sites 1 to 2 (TC 37), improved to the same `[3, 6]`:
+
+```jldoctest
+k = [8, 8, 10, 8, 9, 8]
+C = [ 0  3  7 10  6  4
+      3  0  4  7  6  7
+      7  4  0  3  6  8
+     10  7  3  0  7  8
+      6  6  6  7  0  2
+      4  7  8  8  2  0]
+y, TC, W = uflxchg(k, C, 1:2)
+(y, TC)
+
+# output
+
+([3, 6], 31.0)
+```
+
 # References
 - R.L. Francis, L.F. McGinnis, J.A. White, *Facility Layout and Location: An Analytical
   Approach*, 2nd ed., Ex. 8.8; M.S. Daskin, *Network and Discrete Location*, 1995,
   Fig. 7.5. Ported from Matlog `uflxchg`.
 """
-function uflxchg(k, C, y::Vector{Int})
+function uflxchg(k, C, y::AbstractVector{<:Integer})
     n, m = size(C)
     k = _ufl_k(:uflxchg, k, n)
     y = _ufl_y(:uflxchg, y, n)                 # a copy: the caller's `y` is never changed
@@ -535,19 +554,20 @@ end
 # Alternating Location–Allocation
 # =============================================================================
 
-# Point-to-point distance for a single (LON,LAT) pair under the `ala` metric.
-function _aladist(x, y, dist)
-    if dist isa Symbol
-        return dgc(x, y; unit=dist)
-    elseif dist == 1
-        return d1(x, y)
-    elseif dist == 2
-        return d2(x, y)
-    elseif dist == Inf
-        return float(maximum(abs.(x .- y)))          # Chebyshev, as `dists(X, Y, Inf)` (N31)
-    else
-        error("ala: `dist` must be :mi, :km, :rad, 1, 2, or Inf (got $(repr(dist))).")
-    end
+# The metric kernel of `ala`'s locate step (A5), resolved once per call: the great circle for a unit, d1's
+# arithmetic at `dist == 1` and d2's at `dist == 2` (also for the real 1.0 and 2.0, which `dists`, and so the
+# allocate step, reads as the general metric: v0.3.0's `_aladist` did the same), the Chebychev distance at Inf
+# (N31), and any other p ≥ 1 the general lₚ metric as `dists` computes it (new in v0.3.1; it was an error).
+function _alakernel(dist)
+    bad() = error("ala: `dist` must be :mi, :km, :rad or a real p ≥ 1 (got $(repr(dist))).")
+    dist isa Symbol && return dist in (:mi, :km, :rad) ? _GC(dist) : bad()
+    dist isa Real || bad()
+    dist == 1 && return _L1()
+    dist == 2 && return _L2()
+    dist == Inf && return _Linf()
+    p = dist isa Integer ? float(dist) : dist      # as `_dists` reads an integer p (N19)
+    p >= 1 || bad()
+    return _Lp(p)
 end
 
 # A draw from the caller's `rng`, or from the global stream exactly as v0.2.8 drew it (S5).
@@ -586,15 +606,15 @@ function _ala_alloc(X, w, P, dist, rng, repair)
 end
 
 # Default locate: per-NF continuous minisum. For each NF, minimise the weighted sum of
-# distances to its allocated EFs via `Optim.optimize`.
-function _ala_locate(W, X, dist, P)
+# distances to its allocated EFs via `Optim.optimize`. `k` is the resolved metric (`_alakernel`).
+function _ala_locate(W, X, k, P)
     Xnew = copy(X)
     for i in axes(W, 1)
         J = findall(!iszero, @view W[i, :])
         isempty(J) && continue
         wi = [W[i, j] for j in J]
         x0 = Vector{Float64}(@view X[i, :])
-        f(x) = sum(wi[k] * _aladist(x, @view(P[J[k], :]), dist) for k in eachindex(J))
+        f(x) = sum(wi[t] * _pointdist(x, @view(P[J[t], :]), k) for t in eachindex(J))
         Xnew[i, :] = optimize(f, x0).minimizer
     end
     return Xnew
@@ -624,10 +644,24 @@ function _ala_run(X, alloc_fn, locate_fn, loc_cost, verbose)
 end
 
 """
-    ala(X0, w, P; dist=:mi, alloc=<default>, locate=<default>, nruns=1, verbose=true, rng=nothing) -> (X, TC, W)
+    ala(X0, w, P; dist=:mi, unit, alloc=<default>, locate=<default>, nruns=1, verbose=true, rng=nothing) -> (X, TC, W)
+    ala(X0, alloc::Function, P; dist=:mi, unit, locate, nruns, verbose, rng) -> (X, TC, W)
+    ala(n::Integer, w, P; nruns, rng, ...) -> (X, TC, W)
+    ala(x::AbstractVector, w, P; ...) -> (X, TC, W)
 
 Alternating location–allocation: locate `n` new facilities (NFs) to serve `m` weighted
 existing facilities (EFs).
+
+Three more call forms (A7), each the first form on other arguments:
+- `ala(X0, alloc, P)`: a caller's allocate function in the place of `w`, as Matlog's
+  `ala(X0, alloc_h, P, p)`; it is `ala(X0, w, P; alloc)`, whose `w` the default allocate alone
+  reads.
+- `ala(n, w, P)`: `n` NFs from a random start, `ala(randX(P, n; rng), w, P; rng)`, so the
+  generator (or, with none, the global stream) draws the start and then the restarts and the
+  repair, exactly as the course's `ala(randX(P, n), w, P)` does after the same seed.
+- `ala(x, w, P)`: one NF from the point `x`, a vector, as `ala(reshape(x, 1, :), w, P)`; a
+  vector is one point here, as in [`dists`](@ref) (S15).
+`ala(n, alloc, P)` and `ala(x, alloc, P)` combine them.
 
 Starting from `n` NF locations `X0`, alternate two steps until the total cost `TC` stops
 decreasing: **allocate** each EF to its nearest NF, then **locate** each NF at the continuous
@@ -661,7 +695,10 @@ is used. The distance ``d`` defaults to the great-circle distance ``d_{gc}`` (`d
 - `w`: length-m weight vector (`w_j ≥ 0`).
 - `P`: m×2 matrix of EF locations (LON, LAT).
 - `dist`: distance metric — `:mi` (default), `:km`, `:rad` (great-circle), or `1`/`2`/`Inf`
-  (rectilinear/Euclidean/Chebyshev).
+  (rectilinear/Euclidean/Chebyshev), or any real `p ≥ 1` (the lₚ metric, as [`dists`](@ref)
+  computes it; v0.3.1, A5): what `dists` accepts.
+- `unit`: a synonym for `dist` when it is a great-circle unit, as in `dists` (S15); passing both
+  is an error.
 - `alloc`: allocate handle `X -> (W, TC)` overriding the default nearest-NF allocation
   (e.g. for forced/constrained partitions).
 - `locate`: locate handle `(W, X) -> X` overriding the default per-NF minisum.
@@ -715,6 +752,30 @@ Locate: 1340.0
 ([190.0, 295.0], 1340.0)
 ```
 
+The other call forms on the same corridor. A caller's allocation in the place of `w`, here a
+contract that has the first five towns served by NF 1 and the last two by NF 2 (`W` carries the
+weights, and only the locate step moves the NFs), costs more than the 1,340 above; one NF from
+the point 200; and two NFs from a random start, which is the course's `randX` idiom drawn from
+the same generator:
+
+```jldoctest
+using Random, SparseArrays
+P = [50 150 190 220 270 295 420]'          # I-40 mile markers
+w = collect(1:7)
+Wc = sparse([1, 1, 1, 1, 1, 2, 2], 1:7, float(w), 2, 7)
+contract(X) = (Wc, sum(Wc .* dists(X, P, 1)))
+X, TC, W = ala([0.0; 200.0;;], contract, P; dist = 1, verbose = false)
+x1, TC1, _ = ala([200.0], float(w), float(P); dist = 1, verbose = false)
+r1, r2 = Xoshiro(1), Xoshiro(1)
+a = ala(2, float(w), float(P); dist = 1, rng = r1, verbose = false)
+b = ala(randX(P, 2; rng = r2), float(w), float(P); dist = 1, rng = r2, verbose = false)
+(round.(vec(X)), round(TC), round.(vec(x1)), round(TC1), a == b)
+
+# output
+
+([220.0, 420.0], 1400.0, [270.0], 2100.0, true)
+```
+
 Locate three NFs to serve six North Carolina cities. With `nruns=2` restarts the runs land in
 different local optima, so the minimum-`TC` result is returned. Each run prints its `Alloc` and
 `Locate` steps as above and then a line of its own; pass `rng` for a reproducible run (exact
@@ -738,23 +799,50 @@ round(TC; digits=1)                 # => 39093.4
 - M.G. Kay, *Facility Location* (course notes), NC State University, Lecture 2.3 (the I-40
   example); Matlog `ala` and `default_alloc`.
 """
-function ala(X0, w, P; dist=:mi, alloc=nothing, locate=nothing, nruns::Int=1, verbose::Bool=true,
-             rng::Union{Nothing,AbstractRNG}=nothing)
+function ala(X0, w, P; dist=nothing, unit=nothing, alloc=nothing, locate=nothing, nruns::Int=1,
+             verbose::Bool=true, rng::Union{Nothing,AbstractRNG}=nothing)
+    return _ala(X0, w, P, dist, unit, alloc, locate, nruns, verbose, rng)
+end
+
+# A7 (v0.3.1): a caller's allocate in the place of `w` (Matlog's `ala(X0, alloc_h, P, p)`), a random start of
+# `n` NFs, and one NF from a point; and the two combinations, which also keep the forms unambiguous.
+function ala(X0, alloc::Function, P; dist=nothing, unit=nothing, locate=nothing, nruns::Int=1,
+             verbose::Bool=true, rng::Union{Nothing,AbstractRNG}=nothing)
+    return _ala(X0, nothing, P, dist, unit, alloc, locate, nruns, verbose, rng)
+end
+
+ala(n::Integer, w, P; rng::Union{Nothing,AbstractRNG}=nothing, kwargs...) =
+    ala(randX(P, Int(n); rng), w, P; rng, kwargs...)
+ala(n::Integer, alloc::Function, P; rng::Union{Nothing,AbstractRNG}=nothing, kwargs...) =
+    ala(randX(P, Int(n); rng), alloc, P; rng, kwargs...)
+ala(x::AbstractVector, w, P; kwargs...) = ala(reshape(x, 1, :), w, P; kwargs...)
+ala(x::AbstractVector, alloc::Function, P; kwargs...) = ala(reshape(x, 1, :), alloc, P; kwargs...)
+
+# The body of every form; `w` is `nothing` when the allocate step is the caller's.
+function _ala(X0, w, P, dist, unit, alloc, locate, nruns, verbose, rng)
     size(X0, 2) == size(P, 2) || error("ala: X0 and P must have the same number of columns.")
-    length(w) == size(P, 1) || error("ala: length(w) must equal the number of rows in P.")
+    w === nothing || length(w) == size(P, 1) || error("ala: length(w) must equal the number of rows in P.")
     n = size(X0, 1)
     n <= size(P, 1) || error("ala: number of NFs (n=$n) cannot exceed number of EFs (m=$(size(P, 1))).")
     nruns >= 1 || error("ala: nruns must be ≥ 1.")
+    # the metric as `dists` reads it (A5): `dist` or its synonym `unit`, the great circle in miles by default
+    metric = dist === nothing && unit === nothing ? :mi : _metric(dist, unit; fn = :ala, pname = :dist)
 
     if alloc === nothing
         repair = locate === nothing
-        alloc_fn = X -> _ala_alloc(X, w, P, dist, rng, repair)
-        loc_cost = (W, X) -> sum(W .* dists(X, P, dist))
+        alloc_fn = X -> _ala_alloc(X, w, P, metric, rng, repair)
+        loc_cost = (W, X) -> sum(W .* dists(X, P, metric))
     else
         alloc_fn = X -> (r = alloc(X); (r[1], r[2], X))
         loc_cost = nothing
     end
-    locate_fn = locate === nothing ? ((W, X) -> _ala_locate(W, X, dist, P)) : locate
+    if locate === nothing
+        k = _alakernel(metric)                      # resolved and checked once per call
+        k isa _GC && size(P, 2) != 2 && error("Inputs must have length 2.")
+        locate_fn = (W, X) -> _ala_locate(W, X, k, P)
+    else
+        locate_fn = locate
+    end
 
     bestX = bestW = nothing
     bestTC = Inf
@@ -832,9 +920,12 @@ end
 
 """
     wcentroid(LON, LAT, w) -> (LON, LAT)
+    wcentroid(P::AbstractMatrix, w) -> (LON, LAT)
 
 Weighted geographic centroid of points `(LON, LAT)` with weights `w`, corrected for
-longitude convergence toward the poles by a `cos(lat)` factor.
+longitude convergence toward the poles by a `cos(lat)` factor. The points may also be given
+as the n×2 matrix `P` the distance and location functions take, `wcentroid(P, w)` being
+`wcentroid(P[:, 1], P[:, 2], w)` (v0.3.1, A8).
 
 # Formulation
 Given points ``\\{(\\text{lon}_i, \\text{lat}_i)\\}_{i=1}^N`` with weights ``w_i \\ge 0``
@@ -855,6 +946,7 @@ down-weighted in the longitude average. Domain: ``\\sum_i w_i > 0`` and
 # Arguments
 - `LON`: vector of longitudes (degrees).
 - `LAT`: vector of latitudes (degrees, in ``(-90, 90)``).
+- `P`: in place of `LON` and `LAT`, an n×2 matrix of points (LON, LAT).
 - `w`: vector of nonnegative weights with ``\\sum_i w_i > 0``.
 
 # Returns
@@ -868,6 +960,19 @@ doctest — the raw `Float64`s carry full precision):
 
 ```jldoctest
 r = wcentroid([-78.64, -80.84, -79.79, -77.94], [35.78, 35.23, 36.07, 34.23], [469.0, 897.0, 299.0, 123.0])
+round.((r.LON, r.LAT); digits=4)
+
+# output
+
+(-79.8886, 35.4459)
+```
+
+The same centroid from the matrix of points, the form of Lecture 2.2's and 2.6's
+`c0 = wcentroid(P[:, 1], P[:, 2], wTL)`:
+
+```jldoctest
+P = [-78.64 35.78; -80.84 35.23; -79.79 36.07; -77.94 34.23]
+r = wcentroid(P, [469.0, 897.0, 299.0, 123.0])
 round.((r.LON, r.LAT); digits=4)
 
 # output
@@ -898,4 +1003,9 @@ function wcentroid(LON, LAT, w)
     scw > 0 || error("wcentroid: sum of cos(lat)-weights must be positive (check lat range).")
     LONbar = sum(cw .* LON) / scw
     return (LON=LONbar, LAT=LATbar)
+end
+
+function wcentroid(P::AbstractMatrix, w)
+    size(P, 2) == 2 || throw(ArgumentError("wcentroid: P must have two columns, LON and LAT (got $(size(P, 2)))."))
+    return wcentroid(P[:, 1], P[:, 2], w)
 end

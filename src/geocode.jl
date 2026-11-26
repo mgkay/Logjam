@@ -829,12 +829,13 @@ function loc2lonlat(v::Vector{<:AbstractString}; state=nothing,
 end
 
 """
-    loc2lonlat(df::DataFrame; street=:STREET, city=:CITY, state=:STATE,
+    loc2lonlat(df::AbstractDataFrame; street=:STREET, city=:CITY, state=:STATE,
                postalcode=:POSTALCODE, county=:COUNTY,
                cache=nothing, force_download=false)
 
 Geocode a DataFrame of addresses. Inspects which columns exist to determine
-resolution tier per row.
+resolution tier per row. A view of a table (`view(df, rows, :)`, a `SubDataFrame`) is geocoded
+as its rows are, and the result is a new `DataFrame` (v0.3.1, A8).
 
 The `postalcode` column may be text or numeric: a ZIP read from a CSV file as an integer
 (`2139`) is zero-padded to `"02139"` inside the geocoder (N7, N8). The census tables keep their
@@ -855,7 +856,7 @@ df2 = DataFrame(addr=["123 Main St"], town=["Raleigh"], st=["NC"])
 loc2lonlat(df2; street=:addr, city=:town, state=:st)
 ```
 """
-function loc2lonlat(df::DataFrame; street::Symbol=:STREET, city::Symbol=:CITY,
+function loc2lonlat(df::AbstractDataFrame; street::Symbol=:STREET, city::Symbol=:CITY,
                     state::Symbol=:STATE, postalcode::Symbol=:POSTALCODE,
                     county::Symbol=:COUNTY,
                     cache::Union{Nothing,AbstractString}=nothing,
@@ -1051,24 +1052,35 @@ Compute "in" radius in miles: sqrt(ALAND / π).
 _in_radius(aland) = sqrt(aland / π)
 
 """
-    lonlat2loc(xy::AbstractVector, df::DataFrame; threshold=nothing)
+    lonlat2loc(xy::AbstractVector, df::AbstractDataFrame; threshold=nothing)
+    lonlat2loc(xy::AbstractVector; df=usplace(), threshold=nothing)
 
 Find nearest place to a [LON, LAT] coordinate (reverse geocoding).
 
 Uses area-based "in" radius by default: if within √(ALAND/π) of centroid,
 reported as "in City"; otherwise "X mi DIR of City".
 
+The places `df` are any table with `NAME`, `ST`, `LON` and `LAT` columns (and `ALAND` for the
+"in" radius), a `DataFrame` or a view of one; given no table, they are [`usplace`](@ref)`()`, the
+table the course passes at most of its calls (v0.3.1, A8).
+
 Returns a named tuple with fields: NAME, ST, dist, bearing, dir, desc.
 Geographic fields are UPPERCASE (`NAME`, `ST`; `ST isa Symbol`); metadata lowercase.
 
 # Example
-```julia
-cities = usplace()
-lonlat2loc([-78.6382, 35.7796], cities)
-# => (NAME="Raleigh", ST=:NC, dist, bearing, dir, desc="in Raleigh, NC")
+Lecture 2.2 names its optimum with `lonlat2loc(xᵒ, usplace()).desc`; with no table the call is
+the same:
+
+```jldoctest
+xy = [-78.6382, 35.7796]
+(lonlat2loc(xy).desc, lonlat2loc(xy) == lonlat2loc(xy, usplace()))
+
+# output
+
+("in Raleigh, NC", true)
 ```
 """
-function lonlat2loc(xy::AbstractVector, df::DataFrame; threshold=nothing)
+function lonlat2loc(xy::AbstractVector, df::AbstractDataFrame; threshold=nothing)
     length(xy) == 2 || throw(ArgumentError("xy must have length 2 [LON, LAT]"))
     XY = reshape(xy, 1, 2)
     result = lonlat2loc(XY, df; threshold=threshold)
@@ -1076,14 +1088,19 @@ function lonlat2loc(xy::AbstractVector, df::DataFrame; threshold=nothing)
             bearing=result.bearing[1], dir=result.dir[1], desc=result.desc[1])
 end
 
-"""
-    lonlat2loc(XY::AbstractMatrix, df::DataFrame; threshold=nothing)
+lonlat2loc(xy::AbstractVector; df::AbstractDataFrame=usplace(), threshold=nothing) =
+    lonlat2loc(xy, df; threshold=threshold)
 
-Find nearest places to n×2 matrix of [LON LAT] coordinates.
+"""
+    lonlat2loc(XY::AbstractMatrix, df::AbstractDataFrame; threshold=nothing)
+    lonlat2loc(XY::AbstractMatrix; df=usplace(), threshold=nothing)
+
+Find nearest places to n×2 matrix of [LON LAT] coordinates, among the places `df` (by default
+[`usplace`](@ref)`()`).
 
 Returns DataFrame with columns: idx, NAME, ST, dist, bearing, dir, desc (`ST isa Symbol`).
 """
-function lonlat2loc(XY::AbstractMatrix, df::DataFrame; threshold=nothing)
+function lonlat2loc(XY::AbstractMatrix, df::AbstractDataFrame; threshold=nothing)
     size(XY, 2) == 2 || throw(ArgumentError("XY must have 2 columns [LON, LAT]"))
 
     city_coords = hcat(df.LON, df.LAT)
@@ -1136,3 +1153,6 @@ function lonlat2loc(XY::AbstractMatrix, df::DataFrame; threshold=nothing)
 
     return results
 end
+
+lonlat2loc(XY::AbstractMatrix; df::AbstractDataFrame=usplace(), threshold=nothing) =
+    lonlat2loc(XY, df; threshold=threshold)

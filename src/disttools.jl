@@ -38,13 +38,20 @@ round(dgc((-78.6382, 35.7796), (-80.8431, 35.2271)); digits=1)
 """
 function dgc(xy1, xy2; unit=:mi)
     length(xy1) == length(xy2) == 2 || error("Inputs must have length 2.")
-    unit in [:mi, :km, :rad] || error("Unit must be :mi, :km, or :rad")
+    unit in (:mi, :km, :rad) || error("Unit must be :mi, :km, or :rad")   # a tuple: no allocation per call (A5)
+    return _gcunit(_haversine(xy1, xy2), unit)
+end
 
+# The great-circle arc in radians between two (lon, lat) points, by the haversine formula; `dgc` and the metric
+# kernel's great circle share it, so the two are the same arithmetic.
+@inline function _haversine(xy1, xy2)
     dx, dy = xy2[1] - xy1[1], xy2[2] - xy1[2]
     a = sind(dy / 2)^2 + cosd(xy1[2]) * cosd(xy2[2]) * sind(dx / 2)^2
-    dist_rad = 2 * asin(min(sqrt(a), 1.0))
+    return 2 * asin(min(sqrt(a), 1.0))
+end
 
-    # Convert to requested unit
+# An arc in radians in the requested unit, on the sphere of 3958.75 mi or 6371.00 km.
+@inline function _gcunit(dist_rad, unit)
     if unit == :rad
         return dist_rad
     elseif unit == :mi
@@ -210,14 +217,127 @@ function dists(x::AbstractVector, X2::AbstractMatrix, p=nothing; unit=nothing)
     return vec(_dists(reshape(x, 1, :), X2, _metric(p, unit)))
 end
 
-# The metric from `p` and its synonym `unit` (default: Euclidean).
-function _metric(p, unit)
+# The metric from `p` and its synonym `unit` (default: Euclidean). `fn` and `pname` name the caller and its
+# metric argument in the messages (`ala` passes its own, A5).
+function _metric(p, unit; fn = :dists, pname = :p)
     p === nothing || unit === nothing ||
-        throw(ArgumentError("dists: pass the metric as `p` or as `unit`, not both."))
+        throw(ArgumentError("$fn: pass the metric as `$pname` or as `unit`, not both."))
     unit === nothing && return p === nothing ? 2 : p
     unit isa Symbol ||
-        throw(ArgumentError("dists: `unit` must be :mi, :km or :rad (got $(repr(unit)))."))
+        throw(ArgumentError("$fn: `unit` must be :mi, :km or :rad (got $(repr(unit)))."))
     return unit
+end
+
+# =============================================================================
+# The metric kernel (A5): the distance between two points under a metric resolved once per call. `dists`
+# (through `_dists`), `ala`'s locate step and, through `dists`, `dgca` and `lonlat2loc` use it. The metric is a
+# type, so each call's loop is compiled for its metric; the per-pair function checks nothing and allocates
+# nothing, and the caller checks the shapes once (`_checkshape`). Each metric's arithmetic is the one it had
+# before, operation for operation, so every distance is bit-identical (`===`) to v0.3.0's
+# (`tools/v0_3_1/kernel_identity.jl`): d1's and d2's per-pair `sum` and `dists`' `maximum` and lₚ sums reduce an
+# array shorter than 16 left to right (Base's `_mapreduce`), which the loops below repeat with `sum`'s own
+# operators; a point of 16 or more coordinates, or none, takes the old array expression itself.
+# =============================================================================
+
+struct _L1 end                                  # rectilinear: d1's arithmetic
+struct _L2 end                                  # Euclidean: d2's arithmetic
+struct _Linf end                                # Chebychev: `dists`' maximum(abs, Δ)
+struct _Lp{T<:Real,S}                           # general lₚ: `dists`' (Σ|Δ|ᵖ)^(1/p)
+    p::T
+    invp::S                                     # 1 / p, the value each pair computed
+end
+_Lp(p::Real) = _Lp(p, 1 / p)
+struct _GC                                      # great circle: dgc's arithmetic, in `unit`
+    unit::Symbol
+end
+
+const _SHORT = 16                               # Base reduces an array shorter than this left to right
+
+@inline function _pointdist(x, y, ::_L1)
+    n = length(x)
+    if 0 < n < _SHORT
+        @inbounds begin
+            i, j = firstindex(x), firstindex(y)
+            a = abs(x[i] - y[j])
+            n == 1 && return float(Base.reduce_first(Base.add_sum, a))
+            s = Base.add_sum(a, abs(x[i + 1] - y[j + 1]))
+            for t in 2:(n - 1)
+                s = Base.add_sum(s, abs(x[i + t] - y[j + t]))
+            end
+            return float(s)
+        end
+    end
+    return float(sum(abs.(x .- y)))
+end
+
+@inline function _pointdist(x, y, ::_L2)
+    n = length(x)
+    if 0 < n < _SHORT
+        @inbounds begin
+            i, j = firstindex(x), firstindex(y)
+            a = (x[i] - y[j])^2
+            n == 1 && return sqrt(Base.reduce_first(Base.add_sum, a))
+            s = Base.add_sum(a, (x[i + 1] - y[j + 1])^2)
+            for t in 2:(n - 1)
+                s = Base.add_sum(s, (x[i + t] - y[j + t])^2)
+            end
+            return sqrt(s)
+        end
+    end
+    return sqrt(sum((x .- y).^2))
+end
+
+@inline function _pointdist(x, y, k::_Lp)
+    n, p = length(x), k.p
+    if 0 < n < _SHORT
+        @inbounds begin
+            i, j = firstindex(x), firstindex(y)
+            a = abs(x[i] - y[j])^p
+            n == 1 && return Base.reduce_first(Base.add_sum, a)^k.invp
+            s = Base.add_sum(a, abs(x[i + 1] - y[j + 1])^p)
+            for t in 2:(n - 1)
+                s = Base.add_sum(s, abs(x[i + t] - y[j + t])^p)
+            end
+            return s^k.invp
+        end
+    end
+    return sum(abs.(x .- y) .^ p)^k.invp
+end
+
+@inline function _pointdist(x, y, ::_Linf)
+    n = length(x)
+    if 0 < n < _SHORT
+        @inbounds begin
+            i, j = firstindex(x), firstindex(y)
+            a = abs(x[i] - y[j])
+            n == 1 && return Base.reduce_first(max, a)
+            s = max(a, abs(x[i + 1] - y[j + 1]))
+            for t in 2:(n - 1)
+                s = max(s, abs(x[i + t] - y[j + t]))
+            end
+            return s
+        end
+    end
+    return maximum(abs, x .- y)
+end
+
+@inline _pointdist(x, y, k::_GC) = _gcunit(_haversine(x, y), k.unit)
+
+# The shape check, once per call, with the error the first pair raised before (d1's and d2's own, dgc's).
+_checkshape(x, y, ::_L1) = _samepoint(x, y, :d1)
+_checkshape(x, y, ::_L2) = _samepoint(x, y, :d2)
+_checkshape(x, y, ::_GC) = (length(x) == length(y) == 2 || error("Inputs must have length 2."); nothing)
+_checkshape(x, y, ::Union{_Lp,_Linf}) = nothing  # equal lengths: `_dists` sends any other pair to `_dists_broadcast`
+
+# The distance matrix of the rows of X1 against those of X2 under the resolved metric `k`.
+function _distmatrix(X1::AbstractMatrix, X2::AbstractMatrix, k)
+    D = Matrix{Float64}(undef, size(X1, 1), size(X2, 1))
+    isempty(D) && return D
+    _checkshape(@view(X1[first(axes(X1, 1)), :]), @view(X2[first(axes(X2, 1)), :]), k)
+    @inbounds for j in axes(X2, 1), i in axes(X1, 1)
+        D[i, j] = _pointdist(@view(X1[i, :]), @view(X2[j, :]), k)
+    end
+    return D
 end
 
 # Euclidean, the default
@@ -226,17 +346,9 @@ _dists(X1::AbstractMatrix, X2::AbstractMatrix, ::Nothing) = _dists(X1, X2, 2)
 # Integer p: Manhattan (p=1), Euclidean (p=2), any other integer the general lₚ metric (N19)
 function _dists(X1::AbstractMatrix, X2::AbstractMatrix, p::Integer)
     if p == 1
-        D = Matrix{Float64}(undef, size(X1, 1), size(X2, 1))
-        @inbounds for j in axes(X2, 1), i in axes(X1, 1)
-            D[i, j] = d1(@view(X1[i, :]), @view(X2[j, :]))
-        end
-        return D
+        return _distmatrix(X1, X2, _L1())
     elseif p == 2
-        D = Matrix{Float64}(undef, size(X1, 1), size(X2, 1))
-        @inbounds for j in axes(X2, 1), i in axes(X1, 1)
-            D[i, j] = d2(@view(X1[i, :]), @view(X2[j, :]))
-        end
-        return D
+        return _distmatrix(X1, X2, _L2())
     else
         return _dists(X1, X2, float(p))
     end
@@ -244,12 +356,8 @@ end
 
 # Symbol p: Geographic distance
 function _dists(X1::AbstractMatrix, X2::AbstractMatrix, p::Symbol)
-    p ∈ [:mi, :km, :rad] || error("Geographic distance requires p ∈ [:mi, :km, :rad]")
-    D = Matrix{Float64}(undef, size(X1, 1), size(X2, 1))
-    @inbounds for j in axes(X2, 1), i in axes(X1, 1)
-        D[i, j] = dgc(@view(X1[i, :]), @view(X2[j, :]); unit=p)
-    end
-    return D
+    p ∈ (:mi, :km, :rad) || error("Geographic distance requires p ∈ [:mi, :km, :rad]")
+    return _distmatrix(X1, X2, _GC(p))
 end
 
 # Real p (incl. Inf): general lₚ metric. p=Inf → Chebychev; finite p ≥ 1 → (Σ|Δ|ᵖ)^(1/p).
@@ -257,6 +365,14 @@ end
 # type, so this method never captures the geographic cases — dispatch stays unambiguous.
 function _dists(X1::AbstractMatrix, X2::AbstractMatrix, p::Real)
     p >= 1 || error("dists: lₚ metric requires p ≥ 1 (got $p); p<1 is not a metric.")
+    size(X1, 2) == size(X2, 2) || return _dists_broadcast(X1, X2, p)
+    return _distmatrix(X1, X2, isinf(p) ? _Linf() : _Lp(p))
+end
+
+# Point sets of different dimensions under the general metric: each pair's difference is broadcast, as before
+# the kernel, so a 1-column set against a k-column one still gives what it gave and any other pair of shapes
+# raises broadcasting's DimensionMismatch.
+function _dists_broadcast(X1::AbstractMatrix, X2::AbstractMatrix, p::Real)
     D = Matrix{Float64}(undef, size(X1, 1), size(X2, 1))
     if isinf(p)
         @inbounds for j in axes(X2, 1), i in axes(X1, 1)
@@ -278,10 +394,12 @@ _mean_zone_distance(a) = (2 / 3) * sqrt(a / π)
 
 """
     dgca(X, Xa, a; unit=:mi) -> Matrix{Float64}
+    dgca(x, Xa, a; unit=:mi) -> Vector{Float64}
 
 Area-adjusted great-circle distance matrix between new-facility/point set `X` and
 demand-point set `Xa`, floored by the mean centroid-to-random-point distance of a
-disk of area `aⱼ`.
+disk of area `aⱼ`. For a single point `x`, a vector `[lon, lat]`, the length-m vector of its
+area-adjusted distances to the rows of `Xa`: the row `dgca(reshape(x, 1, :), Xa, a)` (A5).
 
 # Formulation
 For points ``X = \\{X_i\\}_{i=1}^n`` and demand points ``Xa = \\{Xa_j\\}_{j=1}^m`` with
@@ -331,6 +449,21 @@ round.(dgca(X, Xa, a); digits=1)      # 2×2 raw distances (no circuity); Durham
  82.7  121.0
 ```
 
+One point at a time, as Lecture 2.6 measures each ZIP code's distance from the plant that serves it,
+which it writes `dgca(XDC[i:i, :], XZ[j:j, :], [a])[1]`: Raleigh's distances to the same two demand
+points are the first row above.
+
+```jldoctest
+Xa = [-79.79 36.07; -78.90 35.99]     # Greensboro, Durham
+round.(dgca([-78.64, 35.78], Xa, [0.0, 5000.0]); digits=1)
+
+# output
+
+2-element Vector{Float64}:
+ 67.4
+ 26.6
+```
+
 See also: [`dgc`](@ref), [`dists`](@ref)
 """
 function dgca(X::AbstractMatrix, Xa::AbstractMatrix, a::AbstractVector; unit=:mi)
@@ -340,3 +473,7 @@ function dgca(X::AbstractMatrix, Xa::AbstractMatrix, a::AbstractVector; unit=:mi
     floors = _mean_zone_distance.(a)             # length-m floor per demand point
     return max.(D, reshape(floors, 1, :))
 end
+
+# A5: one point against the demand points, a vector of distances (as `dists(x, X2)` is, S15).
+dgca(x::AbstractVector, Xa::AbstractMatrix, a::AbstractVector; unit=:mi) =
+    vec(dgca(reshape(x, 1, :), Xa, a; unit=unit))

@@ -51,6 +51,7 @@ include("test_packaging.jl")   # loads HTTP + JSON3 (Nominatim ext.): keep after
 include("test_extensions_c5.jl")   # the three extensions, every extension function declared in core, the hint, fresh processes (PCV K11c, MAP, C5); needs all three loaded
 include("test_invtools.jl")        # WP1 (v0.3.1, E1): poissoncdf, pi0, qbar, poissarr against Lectures 6.2 and 6.3, the ISE 453 spreadsheet and MATLAB's poissarr.m
 include("test_transtools_v031.jl") # WP4 (v0.3.1, B6, B9, B10, B11): maxpayld and minTLC on a table, charge_tl(d, tr), the LTL constants against v0.3.0's bodies, the sh/tr contract
+include("test_location_v031.jl")   # WP3 (v0.3.1, A5, A7, A8): the metric kernel against v0.3.0's bodies, ala's call forms and metric, wcentroid(P, w), uflxchg on ranges, lonlat2loc(xy), views of tables, dgca for one point
 
 if haskey(ENV, "LOGJAM_NETWORK_TESTS")
     include("test_osm_network.jl")

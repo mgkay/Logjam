@@ -113,6 +113,43 @@ missed.
   mincharge_tl())` and `max(2.00 * rteTC(rte, shL, D30), mincharge_tl())` (Code blocks 50 and 52), and 4.3 Code
   block 31, which charges one truck with `charge_tl(qmax, s, d; r, Kwt, Kcu, ppi)`; 3.3 keeps the formula, since
   there it is the lesson. **No migration.**
+- **`ala(X0, alloc, P)`, `ala(n, w, P)` and `ala(x, w, P)`: `ala`'s call forms (A7).** A caller's allocate function
+  in the place of `w`, as Matlog's `ala(X0, alloc_h, P, p)` takes it, is `ala(X0, w, P; alloc)`, whose `w` only the
+  default allocate reads. An integer `n` for the start is `ala(randX(P, n; rng), w, P; rng)`: the generator, or with
+  none the global stream, draws the start and then the restarts and the repair, so after the same seed it returns
+  exactly what the course's `ala(randX(P, n), w, P)` returns, and an `rng` is passed once. A vector `x` is one NF from
+  that point, `ala(reshape(x, 1, :), w, P)`. `ala(n, alloc, P)` and `ala(x, alloc, P)` combine them. Each was an
+  error before (a function has no `length`; a number or a vector is not a matrix), no existing call changes method,
+  and `Test.detect_ambiguities` finds none. **Lectures served:** 2.3's Code block 16, which passes `w` beside
+  `alloc36`, a function that already holds it, and 3.4's Code block 30, which passes `ones(size(P3, 1))` beside
+  `alloc_h`: `ala(randX(P, 2), alloc36, P; nruns = 5)`, and `ala(n, alloc_h, P3; nruns = 5)`, since `P3` is `CXY3`
+  twice and so has its box; 2.3's Code blocks 14 and 19, 2.4's Code block 24 and the HW 1 key's Q6(b), which write
+  `ala(randX(P, n), w, P; ...)`; the HW 1 key's Q6(a), `ala(reshape(xyRR, 1, 2), w, P)`. Each is `==` to the call
+  as written, on its own inputs (`test/test_location_v031.jl`). **No migration.**
+- **`ala(...; dist = p)` for any real `p ≥ 1`, and `ala(...; unit)` (A5).** `ala` reads its metric as `dists` does:
+  any metric `dists` accepts, where its locate step took only 1, 2, Inf and the great-circle units (`dist = 3` was
+  an error), and `unit` as the synonym of `dist` for a great-circle unit (S15; both at once is an error). Every
+  metric that worked locates exactly as before, the real 1.0 and 2.0 included (their allocate step is `dists`'
+  general metric and their locate step d1's and d2's arithmetic, as at v0.3.0). **Lecture served:** none calls it;
+  it makes `ala` take what `dists` takes. **No migration.**
+- **`dgca(x, Xa, a)`: the area-adjusted distances of one point (A5).** For a vector `x` it returns the vector of
+  the matrix method's row, `vec(dgca(reshape(x, 1, :), Xa, a))`, as `dists(x, X2)` does (S15). **Lecture served:**
+  2.6's Code block 17, which measures each ZIP code from its plant with `dgca(XDC[i:i, :], XZ[j:j, :], [a])[1]`, can
+  write `XDC[i, :]`. **No migration.**
+- **`wcentroid(P, w)`: the weighted centroid of an n×2 matrix of points (A8).** It is `wcentroid(P[:, 1], P[:, 2],
+  w)`, the form the distance and location functions take their points in. **Lectures served:** 2.2's Code block 32
+  and 2.6's Code block 3, `c0 = wcentroid(P[:, 1], P[:, 2], wTL)`. **No migration.**
+- **`uflxchg(k, C, y)` takes any vector of integers (A8).** A range (`1:3`), `Int32` or a view, as `ufladd` and
+  `ufldrop` take their `y`; `uflxchg(k, C, 2:3)` was a `MethodError`. The signature is widened in place, so a
+  `Vector{Int}` runs the same method as before. **Lecture served:** none passes a range today (2.4's Code block 11
+  passes ADD's set); it aligns `uflxchg` with its two siblings, which a set written as `1:3` reached and it did not.
+  **No migration.**
+- **`lonlat2loc(xy)` names a point against `usplace()`, and `lonlat2loc` and `loc2lonlat` take any table (A8).**
+  With no table `lonlat2loc(xy)` and `lonlat2loc(XY)` read `usplace()` (also as the keyword `df`), returning what
+  `lonlat2loc(xy, usplace())` returns. `lonlat2loc(xy, df)` and `loc2lonlat(df)` take an `AbstractDataFrame`, so a
+  view such as `view(usplace(), mask, :)` works where a `DataFrame` was required, with the answer of the table it
+  shows; `loc2lonlat` returns a new `DataFrame` either way (`prt` already took one). **Lectures served:** 2.2's Code
+  block 32, 2.5's Code blocks 5 and 32 and 2.6's Code blocks 3 and 12, which pass `usplace()`. **No migration.**
 
 ### Changed
 
@@ -188,6 +225,24 @@ missed.
   that a field a function reads is used when present, an absent one takes the default the function documents (the
   scalar method's or Matlog's), and one with no default is required. The manual's section shows the docstring in
   place of its own copy of the tables.
+- **One metric kernel for `dists`, `ala`'s locate step and `dgca` (A5).** `Logjam._pointdist(x, y, metric)` is the
+  distance between two points under a metric resolved once per call (`_L1`, `_L2`, `_Lp`, `_Linf`, `_GC`), with
+  no check and no allocation per pair; the caller checks the shapes once, raising the error the first pair raised
+  before. `_dists` uses it, `ala`'s locate step uses it in place of `_aladist` (retired), and `dgca` and
+  `lonlat2loc` reach it through `dists`; `dgc` shares its great-circle arithmetic (`_haversine`) and its unit
+  check no longer builds a vector. Each metric keeps its arithmetic operation for operation (d1's and d2's per-pair
+  `sum` and the lₚ and Chebychev reductions run left to right below 16 coordinates, as Base's `sum` and `maximum`
+  do there, and from 16 the old expression itself runs), and a point set against one of another dimension still
+  broadcasts under the general metric as before. **Bit-identical:** `tools/v0_3_1/kernel_identity.jl` saved the
+  outputs of `dists` (every metric: 1, 2, integer 3, the real 1.0, 2.0, 1.5 and 3.0, Inf, `:mi`, `:km`, `:rad`, and
+  `unit`), `dgc`, `dgca` and `ala` (a fixed allocation, so every step after the first is the locate step, and the
+  default allocate on seeded starts, under every metric it took) at 9b72994, on the distance pins' and the Matlog
+  oracles' inputs, Lecture 2.3's I-40 and Carolinas examples, and seeded sets up to 3000 points; after the kernel,
+  all 333 cases, 40,784,366 elements, are `===` on Julia 1.12.6 and on 1.13.4, and `test/test_location_v031.jl`
+  compares v0.3.0's bodies, copied as text, bit for bit. **Time** of `dists` on 3000 points against 3000 (fastest
+  of three, 1.12.6): Euclidean 0.38 s and 755 MiB to 0.022 s and 69 MiB (the result itself), rectilinear 0.24 s to
+  0.024 s, Chebychev 0.23 s to 0.024 s, l₃ 0.71 s and 1.4 GiB to 0.15 s, great circle 0.58 s and 481 MiB to 0.28 s
+  (reported, not asserted).
 
 ## v0.3.0
 
