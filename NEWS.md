@@ -203,6 +203,9 @@ missed.
   shapes pinned in `test/test_map_k11c_pins.jl` (Lectures 2.2, 2.3 and its High Point to Goldsboro generator, 2.6,
   2.7, 4.2, 5.1 to 5.3); and, only where FAF5 has ramps the name rule missed, a map 150 miles across or less (of the
   course's, Lecture 2.7's clinics map is the one at that scale with the default road layer). **No migration.**
+- **The ZIP tables' docstrings say which territories they hold (X6).** `uszcta5()` and `uszcta3()` said they held no
+  U.S. territory; they hold Puerto Rico's 40 ZCTA5s whose codes begin with 009 (`ZCTA5` 901 to 987) and its ZCTA3
+  `9`, with `ISCUS = false`, and none of its 006xx and 007xx ZCTA5s. The docstrings now say so; no data changed.
 
 ### Internal
 
@@ -268,6 +271,22 @@ missed.
   `test/test_geodata_v031.jl` runs v0.3.0's geocoder, copied as text, beside the new one on the same inputs (cities,
   ZIP codes, addresses with the address tier stood in for, bad states, empty and 60-row inputs, views) and compares
   the tables column for column, the log records and the cache files written.
+- **One memoized loader for the census tables, and a name index for the geocoder (A10).** `Logjam._table(name)`
+  reads each census table's `.jls` once per session and keeps it; `usplace()`, `uscounty()`, `uscentract()`,
+  `uscenblkgrp()`, `uszcta5()`, `uszcta3()`, `uscbsa()` and `uscsa()` return a copy of it, as `usstate()` and the
+  FAF5 loaders already did, so a caller may change what it gets and the next call is not changed (each docstring
+  says so). The geocoder's place, ZIP code, county and state tiers read the kept table itself, and the place and
+  county tiers look a name up in `Logjam._NameIndex`, the table's names normalized once with their rows by name and
+  by state: the same exact, prefix and substring phases over the same rows in the same order, so the same row or the
+  same error as v0.3.0's scan, which re-read `usplace()` and re-normalized its 31,617 names on every row.
+  `test/test_geodata_v031.jl` checks every name of `usplace()` and `uscounty()`, with its state and with none, and
+  200 variants (case, accents, spacing, designators, prefixes, parts, wrong states) against that scan, and that a
+  changed copy does not reach the next call. **Time per lookup** (fastest of five, Julia 1.12.6, reported, not
+  asserted): `_resolve_place("Raleigh", :NC)` 59.6 ms to 0.002 ms, a name not found in its state 64.8 ms to 0.046
+  ms, an ambiguous name with no state 57.6 ms to 0.011 ms, `_resolve_county("Wake", :NC)` 3.7 ms to 0.001 ms,
+  `loc2lonlat` of 20 North Carolina cities 61 ms to 0.005 ms a row, `usplace()` 9.0 ms to 0.74 ms (a copy, not a
+  read); the first place lookup in a session reads the table (about 0.13 s) and builds its index (about 0.25 s,
+  with compilation).
 
 ## v0.3.0
 

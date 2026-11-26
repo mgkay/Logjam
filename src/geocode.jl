@@ -127,6 +127,78 @@ function _match_name(query::AbstractString, df::DataFrame, name_col::Symbol;
     throw(ArgumentError("No match for '$query'$state_msg"))
 end
 
+# A table's names normalized once, for the geocoder's place and county lookups (A10). `names[i]` is row i's
+# `_normalize_name` of its `NAME`, `st[i]` its `ST`; `exact` takes a normalized name to its rows and `bystate` a state
+# to its rows, each in row order. So a lookup visits the rows `_match_name`'s scan of the whole table visits, in the
+# same order, and finds the same row or raises the same error, without normalizing the table's names in every call.
+struct _NameIndex
+    names::Vector{String}
+    st::Vector{Symbol}
+    exact::Dict{String, Vector{Int}}
+    bystate::Dict{Symbol, Vector{Int}}
+end
+
+function _NameIndex(df::AbstractDataFrame)
+    names = [_normalize_name(String(x)) for x in df.NAME]
+    st = Vector{Symbol}(df.ST)
+    exact = Dict{String, Vector{Int}}()
+    bystate = Dict{Symbol, Vector{Int}}()
+    for i in eachindex(names, st)
+        push!(get!(exact, names[i], Int[]), i)
+        push!(get!(bystate, st[i], Int[]), i)
+    end
+    return _NameIndex(names, st, exact, bystate)
+end
+
+# The index of one of the census tables (`usplace`, `uscounty`), built on its first lookup in a session and kept
+const _NAME_INDEXES = Dict{String, _NameIndex}()
+_name_index(name::AbstractString) =
+    lock(() -> get!(() -> _NameIndex(_table(name)), _NAME_INDEXES, name), _TABLES_LOCK)
+
+"""
+    _match_name(query, ix::_NameIndex, df, name_col; st=nothing, st_col=:ST) -> Int
+
+`_match_name(query, df, name_col; st, st_col)` on a table `df` whose name index is `ix` (its `NAME` and `ST`
+columns): the same phases, exact, prefix and substring, over the same rows in the same order, so the same row or the
+same error, with the table's names normalized once rather than in every call (A10).
+"""
+function _match_name(query::AbstractString, ix::_NameIndex, df::AbstractDataFrame, name_col::Symbol;
+                     st=nothing, st_col::Symbol=:ST)
+    (name_col === :NAME && st_col === :ST) || throw(ArgumentError("a name index is built on NAME and ST"))
+    q = _normalize_name(query)
+    isempty(q) && throw(ArgumentError("Empty query string"))
+
+    st_sym = _normalize_state(st)
+
+    # The candidate rows, in row order: those of the state, if one is given
+    pool = isnothing(st_sym) ? eachindex(ix.names) : get(ix.bystate, st_sym, Int[])
+
+    # Phase 1: Exact match
+    exact = [i for i in get(ix.exact, q, Int[]) if isnothing(st_sym) || ix.st[i] == st_sym]
+    length(exact) == 1 && return exact[1]
+    if length(exact) > 1
+        _throw_ambiguous(q, exact, df, name_col, st_col)
+    end
+
+    # Phase 2: Prefix match
+    prefix = [i for i in pool if startswith(ix.names[i], q)]
+    length(prefix) == 1 && return prefix[1]
+    if length(prefix) > 1
+        _throw_ambiguous(q, prefix, df, name_col, st_col)
+    end
+
+    # Phase 3: Substring match
+    sub = [i for i in pool if occursin(q, ix.names[i])]
+    length(sub) == 1 && return sub[1]
+    if length(sub) > 1
+        _throw_ambiguous(q, sub, df, name_col, st_col)
+    end
+
+    # No match
+    state_msg = isnothing(st_sym) ? "" : " in state $st_sym"
+    throw(ArgumentError("No match for '$query'$state_msg"))
+end
+
 function _throw_ambiguous(q, indices, df, name_col, st_col)
     n = min(length(indices), 10)
     candidates = if hasproperty(df, st_col)
@@ -334,9 +406,9 @@ _row(result, status::AbstractString) = (LON = result.lon, LAT = result.lat, GC_S
 """
 function _resolve_place(name::AbstractString, state)
     isempty(strip(name)) && return missing
-    df = usplace()
+    df = _table("usplace")                                   # read only: the table itself, not a copy (A10)
     try
-        idx = _match_name(name, df, :NAME; st=state, st_col=:ST)
+        idx = _match_name(name, _name_index("usplace"), df, :NAME; st=state, st_col=:ST)
         return (lon=df[idx, :LON], lat=df[idx, :LAT],
                 aland=df[idx, :ALAND], source="PLACE")
     catch
@@ -351,7 +423,7 @@ function _resolve_postalcode(code::AbstractString)
     pc = strip(code)
     # Must be 5-digit numeric
     occursin(r"^\d{5}$", pc) || return missing
-    df = uszcta5()
+    df = _table("uszcta5")                                   # read only (A10)
     # the table's ZCTA5 is an integer (S36), so "02139" is 2139 (N7)
     idx = eltype(df.ZCTA5) <: Integer ? findfirst(==(parse(Int, pc)), df.ZCTA5) :
                                          findfirst(==(pc), string.(df.ZCTA5))
@@ -365,9 +437,9 @@ end
 """
 function _resolve_county(name::AbstractString, state)
     isempty(strip(name)) && return missing
-    df = uscounty()
+    df = _table("uscounty")                                  # read only (A10)
     try
-        idx = _match_name(name, df, :NAME; st=state, st_col=:ST)
+        idx = _match_name(name, _name_index("uscounty"), df, :NAME; st=state, st_col=:ST)
         return (lon=df[idx, :LON], lat=df[idx, :LAT],
                 aland=df[idx, :ALAND], source="COUNTY")
     catch
@@ -385,7 +457,7 @@ function _resolve_state(name)
     catch
         return missing
     end
-    df = uscounty()
+    df = _table("uscounty")                                  # read only (A10)
     mask = df.ST .== st_sym
     !any(mask) && return missing
     sub = df[mask, :]

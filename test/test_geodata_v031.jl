@@ -1,4 +1,4 @@
-# test_geodata_v031.jl -- added by PCV WP5 of Logjam v0.3.1 (GC rest: review A's A4 and A6). Test spec Sec. 5.
+# test_geodata_v031.jl -- added by PCV WP5 of Logjam v0.3.1 (GC rest: review A's A4, A6 and A10; X6). Test spec Sec. 5.
 # Equality is `==` (or `isequal`, where a column may hold `missing`) on every element, with the element types compared
 # as well; no tolerance is used anywhere in this file. The evidence:
 #   1. the batch driver (A4): v0.3.0's geocoder, its vector and DataFrame methods and the row resolver they call,
@@ -8,7 +8,11 @@
 #   2. the column keywords (A6): each `*_col` gives what its old name gives; each old name is deprecated
 #      (`@test_deprecated`) and, in a fresh process run with --depwarn=no, prints nothing; a state column that is
 #      named and is not in the table is an `ArgumentError`, where v0.3.0 returned FAIL for every row; the literal
-#      `state = ...` calls of src/geocode.jl's docstrings give v0.3.0's values.
+#      `state = ...` calls of src/geocode.jl's docstrings give v0.3.0's values;
+#   3. the loader and the name index (A10): every census loader returns a copy that can be changed without reaching
+#      the next call; the index finds the row (or raises the error) v0.3.0's scan of the whole table finds, for every
+#      name of `usplace()` and `uscounty()`, with its state and with none, and for 200 variants of them, the scan
+#      itself checked against v0.3.0's text on a sample; the Puerto Rico rows the ZIP docstrings now name (X6).
 
 using Test
 using Logjam
@@ -606,4 +610,108 @@ end
                                            street = :addr, city = :town, state = :st),
                    () -> loc2lonlat(DataFrame(addr = ["123 Main St"], town = ["Raleigh"], st = ["NC"]);
                                     street_col = :addr, city_col = :town, state_col = :st))
+end
+
+# ---- 3. one memoized loader and the name index (A10) ------------------------------------------------------------------
+@testset "[WP5 A10] every census loader returns a copy: a changed table does not reach the next call" begin
+    for f in (usplace, uscounty, uscentract, uscenblkgrp, uszcta5, uszcta3, uscbsa, uscsa, usstate)
+        a, b = f(), f()
+        @test a !== b && isequal(a, b) && all(c -> c[1] !== c[2], zip(eachcol(a), eachcol(b)))
+        n, cols = nrow(b), names(b)
+        a.LON .= 0.0                          # a column changed in place
+        a[1, :POP] = -1                       # a cell
+        a.NEWCOL = collect(1:n)               # a column added
+        deleteat!(a, 1)                       # a row removed
+        c = f()
+        @test isequal(c, b) && names(c) == cols && nrow(c) == n && c.LON == b.LON
+    end
+    # the memoized table is the file's: read once, kept unchanged by the copies and by the geocoder's lookups
+    loc2lonlat(["Raleigh", "Durham"]; state = :NC)
+    for name in ("usplace", "uscounty", "uszcta5")
+        @test isequal(Logjam._table(name), open(Logjam.deserialize, joinpath(pkgdir(Logjam), "data", name * ".jls")))
+        @test Logjam._table(name) === Logjam._table(name)
+    end
+end
+
+# v0.3.0's scan (GcV030._match_name) with its normalization of the table's names done once, outside the call: the
+# same phases over the same rows in the same order, so the same row or the same error
+function _gd_scan(query, df, ref_names, stv, st)
+    q = Logjam._normalize_name(query)
+    isempty(q) && throw(ArgumentError("Empty query string"))
+    st_sym = Logjam._normalize_state(st)
+    mask = isnothing(st_sym) ? trues(nrow(df)) : stv .== st_sym
+    for keep in ((i -> ref_names[i] == q), (i -> startswith(ref_names[i], q)), (i -> occursin(q, ref_names[i])))
+        hits = [i for i in 1:nrow(df) if mask[i] && keep(i)]
+        length(hits) == 1 && return hits[1]
+        length(hits) > 1 && Logjam._throw_ambiguous(q, hits, df, :NAME, :ST)
+    end
+    state_msg = isnothing(st_sym) ? "" : " in state $st_sym"
+    throw(ArgumentError("No match for '$query'$state_msg"))
+end
+
+_gd_outcome(f) = try
+    (:row, f())
+catch e
+    (:error, typeof(e), e isa ArgumentError ? e.msg : "")
+end
+
+# 200 variants of the names: case, accents, spacing, designators, prefixes and parts, states right and wrong
+function _gd_variants(df)
+    rng = Logjam.Xoshiro(20261126)
+    accented = [i for i in 1:nrow(df) if any(c -> !isascii(c), df.NAME[i])]
+    sts = [:NC, :CA, :TX, :NY, nothing]
+    out = Tuple{String, Any}[]
+    strip_accents(s) = Base.Unicode.normalize(s; stripmark = true)
+    for k in 1:200
+        i = k <= 20 && !isempty(accented) ? accented[mod1(k, length(accented))] : rand(rng, 1:nrow(df))
+        n, st = df.NAME[i], df.ST[i]
+        v = (uppercase(n), lowercase(n), titlecase(n), strip_accents(n), "  " * n * "  ", replace(n, " " => "  "),
+             n * " city", n * " CDP", first(n, min(4, length(n))), n[nextind(n, 0, min(2, length(n))):end],
+             replace(n, r"(?i) (city|town|village|cdp)$" => ""), n * "x")[mod1(k, 12)]
+        push!(out, (v, k % 3 == 0 ? rand(rng, sts) : k % 3 == 1 ? st : nothing))
+    end
+    append!(out, [("", :NC), ("   ", nothing), ("Springfield", nothing), ("Springfield", :IL), ("Zzyzx", :CA),
+                  ("ral", :NC), ("Raleigh", "XX"), ("Raleigh", "north carolina")])
+    return out
+end
+
+@testset "[WP5 A10] the name index finds the rows v0.3.0's scan finds" begin
+    for (name, df) in (("usplace", usplace()), ("uscounty", uscounty()))
+        ix = Logjam._name_index(name)
+        ref = [Logjam._normalize_name(String(x)) for x in df.NAME]
+        @test ix.names == ref
+        stv = df.ST
+        same(q, st) = _gd_outcome(() -> Logjam._match_name(q, ix, df, :NAME; st = st, st_col = :ST)) ==
+                      _gd_outcome(() -> _gd_scan(q, df, ref, stv, st))
+        # every name of the table, with its state and with none
+        @test all(same(df.NAME[i], df.ST[i]) for i in 1:nrow(df))
+        @test all(same(df.NAME[i], nothing) for i in 1:nrow(df))
+        # 200 variants
+        vs = _gd_variants(df)
+        @test length(vs) >= 200
+        @test all(same(q, st) for (q, st) in vs)
+        # and the scan above is v0.3.0's own on a sample (its normalization repeated in every call: about 25 ms)
+        smp = vcat([(df.NAME[i], df.ST[i]) for i in 1:max(1, nrow(df) ÷ 100):nrow(df)], vs[1:40])
+        @test all(_gd_outcome(() -> GcV030._match_name(q, df, :NAME; st = st, st_col = :ST)) ==
+                  _gd_outcome(() -> _gd_scan(q, df, ref, stv, st)) for (q, st) in smp)
+    end
+    # the lookups the geocoder makes through the index give v0.3.0's answers
+    for (q, st) in (("Raleigh", :NC), ("Springfield", nothing), ("Zzyzx", :CA), ("ral", :NC), ("Wake", :NC))
+        @test isequal(Logjam._resolve_place(q, st), GcV030._resolve_place(q, st))
+        @test isequal(Logjam._resolve_county(q, st), GcV030._resolve_county(q, st))
+    end
+    @test isequal(Logjam._resolve_postalcode("27601"), GcV030._resolve_postalcode("27601"))
+    @test isequal(Logjam._resolve_state(:NC), GcV030._resolve_state(:NC))
+end
+
+@testset "[WP5 X6] the ZIP tables hold Puerto Rico's 40 ZCTA5s that begin with 009, and their docstrings say so" begin
+    z5, z3 = uszcta5(), uszcta3()
+    pr = z5[z5.ZCTA5 .< 1000, :]
+    @test nrow(pr) == 40 && extrema(pr.ZCTA5) == (901, 987) && !any(pr.ISCUS)
+    @test z3.ZCTA3[z3.ZCTA3 .< 10] == [9] && !only(z3.ISCUS[z3.ZCTA3 .== 9])
+    @test only(z3.POP[z3.ZCTA3 .== 9]) == sum(pr.POP)
+    for f in (uszcta5, uszcta3)
+        d = string(Docs.doc(f))
+        @test occursin("Puerto Rico", d) && occursin("ISCUS = false", d) && !occursin("Does not include U.S. territories", d)
+    end
 end

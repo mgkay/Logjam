@@ -19,12 +19,21 @@ function loaddata(fn)
     end
 end
 
+# The census tables, each read from its file once per session and kept here (A10). `_table(name)` is the table itself,
+# for Logjam's own lookups, which only read it (the geocoder's place, ZIP code, county and state tiers); every public
+# loader returns a copy of it, so a caller may change what it gets (add a column, filter in place) without changing
+# what the next call gets. The lock is for tasks that call at once.
+const _TABLES = Dict{String, DataFrame}()
+const _TABLES_LOCK = ReentrantLock()
+
+_table(name::AbstractString) = lock(() -> get!(() -> loaddata(name), _TABLES, name), _TABLES_LOCK)
+
 """
     usplace() -> DataFrame
 
 Returns DataFrame containing U.S. place data.
 
-Geographic and population data for each place in the U.S., where each place is a city, town, or census-designated place (CDP). The latitude-longitude of each place represents a central location interior to the place and not its center of population.  Does not include U.S. territories.
+Geographic and population data for each place in the U.S., where each place is a city, town, or census-designated place (CDP). The latitude-longitude of each place represents a central location interior to the place and not its center of population.  Does not include U.S. territories. The file is read once per session and each call returns a copy, so the table may be changed freely.
 
 # Columns
 - `STFIP`: Integer representing state FIPS (Federal Information Processing Standards) code.
@@ -58,7 +67,7 @@ filter(r -> r.ST == :NC, df)    # => 776 places in North Carolina
 ```
 """
 function usplace()
-    return loaddata("usplace")
+    return copy(_table("usplace"))
 end
 
 """
@@ -66,7 +75,7 @@ end
 
 Returns DataFrame containing U.S. county-level data.
 
-Geographic and population data for each U.S. county, including latitude-longitude coordinates representing the center of population of the county. Does not include U.S. territories.
+Geographic and population data for each U.S. county, including latitude-longitude coordinates representing the center of population of the county. Does not include U.S. territories. The file is read once per session and each call returns a copy, so the table may be changed freely.
 
 # Columns
 - `STFIP`: Integer representing state FIPS (Federal Information Processing Standards) code.
@@ -98,7 +107,7 @@ first(df, 5)  # LON precedes LAT
 ```
 """
 function uscounty()
-    return loaddata("uscounty")
+    return copy(_table("uscounty"))
 end
 
 # The state table is aggregated from `uscounty()` once per session and kept here; each call returns a copy.
@@ -106,7 +115,7 @@ const _usstate_cache = Ref{Union{Nothing, DataFrame}}(nothing)
 const _usstate_lock = ReentrantLock()
 
 function _build_usstate()
-    c = uscounty()
+    c = _table("uscounty")
     g = groupby(c, :STFIP; sort = true)
     # a state's name from the geocoder's table of lowercase names ("district of columbia" -> "District of Columbia")
     nm = Dict(v => join([w == "of" ? w : uppercasefirst(w) for w in split(k)], " ") for (k, v) in _state_names)
@@ -178,7 +187,7 @@ end
 
 Returns DataFrame containing U.S. census tract-level data.
 
-Geographic and population data for each U.S. census tract, including latitude-longitude coordinates representing the center of population of the tract. Does not include U.S. territories.
+Geographic and population data for each U.S. census tract, including latitude-longitude coordinates representing the center of population of the tract. Does not include U.S. territories. The file is read once per session and each call returns a copy, so the table may be changed freely.
 
 # Columns
 - `STFIP`: Integer representing state FIPS (Federal Information Processing Standards) code.
@@ -207,7 +216,7 @@ filter(r -> r.ST == :NC, df)    # => 2655 census tracts in North Carolina (ST is
 ```
 """
 function uscentract()
-    return loaddata("uscentract")
+    return copy(_table("uscentract"))
 end
 
 """
@@ -215,7 +224,7 @@ end
 
 Returns DataFrame containing U.S. census block group-level data.
 
-Geographic and population data for each U.S. census block group, including latitude-longitude coordinates representing the center of population of the block group.  Does not include U.S. territories.
+Geographic and population data for each U.S. census block group, including latitude-longitude coordinates representing the center of population of the block group.  Does not include U.S. territories. The file is read once per session and each call returns a copy, so the table may be changed freely.
 
 Unlike the other census loaders, block groups carry no `NAME` or `ST` column: block groups have no common name, and are identified solely by their numeric FIPS codes. Recover the state from `STFIP` via [`fips2st`](@ref) if needed.
 
@@ -247,7 +256,7 @@ first(df, 5)                    # LON precedes LAT
 ```
 """
 function uscenblkgrp()
-    return loaddata("uscenblkgrp")
+    return copy(_table("uscenblkgrp"))
 end
 
 """
@@ -255,7 +264,7 @@ end
 
 Returns DataFrame containing U.S. 5-digit ZIP Code Tabulation Area (ZCTA5) data.
 
-Geographic and population data for each U.S. 5-digit ZIP Code Tabulation Area (ZCTA5). The latitude-longitude of each ZCTA5 represents a central location within the ZCTA5 and not its center of population. Does not include U.S. territories.
+Geographic and population data for each U.S. 5-digit ZIP Code Tabulation Area (ZCTA5). The latitude-longitude of each ZCTA5 represents a central location within the ZCTA5 and not its center of population. The table covers the 50 states and the District of Columbia and, of the territories, only the 40 Puerto Rico ZCTA5s whose codes begin with 009 (`ZCTA5` 901 to 987), each with `ISCUS = false`; Puerto Rico's other ZCTA5s (006xx and 007xx) are not included (X6; until v0.3.1 this said that no territory was included). The file is read once per session and each call returns a copy, so the table may be changed freely.
 
 # Columns
 - `ZCTA5`: Integer (<= 5 digits) representing the ZIP Code Tabulation Area (ZCTA5) code.
@@ -281,7 +290,7 @@ first(df, 5)  # LON precedes LAT
 ```
 """
 function uszcta5()
-    return loaddata("uszcta5")
+    return copy(_table("uszcta5"))
 end
 
 """
@@ -289,7 +298,7 @@ end
 
 Returns DataFrame containing U.S. 3-digit ZIP Code Tabulation Area (ZCTA3) data.
 
-Geographic and population data for each U.S. 3-digit ZIP Code Tabulation Area (ZCTA3). The latitude-longitude of each ZCTA3 represents its approximate center of population. ZCTA3s are approximated by aggregating ZCTA5s: summing population and areas, and approximating the center of population by calculating the population-weighted centroid of the ZCTA5s' interior locations. Does not include U.S. territories.
+Geographic and population data for each U.S. 3-digit ZIP Code Tabulation Area (ZCTA3). The latitude-longitude of each ZCTA3 represents its approximate center of population. ZCTA3s are approximated by aggregating ZCTA5s: summing population and areas, and approximating the center of population by calculating the population-weighted centroid of the ZCTA5s' interior locations. The table covers the 50 states and the District of Columbia and, of the territories, only Puerto Rico's ZCTA3 `9` (009), aggregated from the 40 ZCTA5s of [`uszcta5`](@ref) that begin with 009, with `ISCUS = false` (X6; until v0.3.1 this said that no territory was included). The file is read once per session and each call returns a copy, so the table may be changed freely.
 
 # Columns
 - `ZCTA3`: Integer (<= 3 digits) representing the 3-digit ZIP Code Tabulation Area (ZCTA3) code.
@@ -311,7 +320,7 @@ first(df, 5)  # LON precedes LAT
 ```
 """
 function uszcta3()
-    return loaddata("uszcta3")
+    return copy(_table("uszcta3"))
 end
 
 """
@@ -319,7 +328,7 @@ end
 
 Returns DataFrame containing U.S. Core-Based Statistical Area (CBSA) data.
 
-Geographic and population data for each U.S. CBSA. The latitude-longitude of each CBSA represents its center of population. CBSA geographic and populations are determiend by aggregating its constituent counties: summing population and areas, and determining the center of population by calculating the population-weighted centroid of the county centers of population. Does not include U.S. territories.
+Geographic and population data for each U.S. CBSA. The latitude-longitude of each CBSA represents its center of population. CBSA geographic and populations are determiend by aggregating its constituent counties: summing population and areas, and determining the center of population by calculating the population-weighted centroid of the county centers of population. Does not include U.S. territories. The file is read once per session and each call returns a copy, so the table may be changed freely.
 
 # Columns
 - `CBSA`: Integer representing Core-Based Statistical Area code.
@@ -346,7 +355,7 @@ filter(r -> r.IS_MSA, df)       # => 382 of 918 are Metropolitan Statistical Are
 ```
 """
 function uscbsa()
-    return loaddata("uscbsa")
+    return copy(_table("uscbsa"))
 end
 
 """
@@ -354,7 +363,7 @@ end
 
 Returns DataFrame containing U.S. Combined Statistical Area (CSA) data.
 
-Geographic and population data for each U.S. CSA. The latitude-longitude of each CSA represents its center of population. CSA geographic and populations are determined by aggregating its constituent CBSAs: summing population and areas, and determining the center of population by calculating the population-weighted centroid of the CBSA centers of population. Does not include U.S. territories.
+Geographic and population data for each U.S. CSA. The latitude-longitude of each CSA represents its center of population. CSA geographic and populations are determined by aggregating its constituent CBSAs: summing population and areas, and determining the center of population by calculating the population-weighted centroid of the CBSA centers of population. Does not include U.S. territories. The file is read once per session and each call returns a copy, so the table may be changed freely.
 
 # Columns
 - `CSA`: Integer representing Combined Statistical Area code.
@@ -379,7 +388,7 @@ first(df, 5)  # LON precedes LAT; NAME::String
 ```
 """
 function uscsa()
-    return loaddata("uscsa")
+    return copy(_table("uscsa"))
 end
 
 # Define the mapping of state symbols to FIPS codes (as integers)
