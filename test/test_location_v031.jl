@@ -478,8 +478,10 @@ end
     @test lonlat2loc(XY) == lonlat2loc(XY, up)
     @test all(lonlat2loc(XY[i, :]) == lonlat2loc(XY[i, :], up) for i in axes(XY, 1))
     big = filter(r -> r.POP > 50_000, usplace())
-    @test lonlat2loc(XY; df = big) == lonlat2loc(XY, big)
-    @test lonlat2loc(XY[4, :]; df = big, threshold = 1.0) == lonlat2loc(XY[4, :], big; threshold = 1.0)
+    @test lonlat2loc(XY[4, :]; threshold = 1.0) == lonlat2loc(XY[4, :], up; threshold = 1.0)
+    # the table is positional, as 3.4 passes `big`; there is no `df` keyword (ruling WP3-3)
+    @test_throws MethodError lonlat2loc(XY; df = big)
+    @test length(methods(lonlat2loc)) == 4
     # a view where a DataFrame was required: the same answer as the DataFrame it shows
     mask = up.POP .> 50_000
     @test lonlat2loc(XY, view(up, mask, :)) == lonlat2loc(XY, up[mask, :])

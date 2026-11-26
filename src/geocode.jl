@@ -1052,8 +1052,7 @@ Compute "in" radius in miles: sqrt(ALAND / π).
 _in_radius(aland) = sqrt(aland / π)
 
 """
-    lonlat2loc(xy::AbstractVector, df::AbstractDataFrame; threshold=nothing)
-    lonlat2loc(xy::AbstractVector; df=usplace(), threshold=nothing)
+    lonlat2loc(xy::AbstractVector, df::AbstractDataFrame = usplace(); threshold=nothing)
 
 Find nearest place to a [LON, LAT] coordinate (reverse geocoding).
 
@@ -1080,7 +1079,7 @@ xy = [-78.6382, 35.7796]
 ("in Raleigh, NC", true)
 ```
 """
-function lonlat2loc(xy::AbstractVector, df::AbstractDataFrame; threshold=nothing)
+function lonlat2loc(xy::AbstractVector, df::AbstractDataFrame = usplace(); threshold=nothing)
     length(xy) == 2 || throw(ArgumentError("xy must have length 2 [LON, LAT]"))
     XY = reshape(xy, 1, 2)
     result = lonlat2loc(XY, df; threshold=threshold)
@@ -1088,19 +1087,15 @@ function lonlat2loc(xy::AbstractVector, df::AbstractDataFrame; threshold=nothing
             bearing=result.bearing[1], dir=result.dir[1], desc=result.desc[1])
 end
 
-lonlat2loc(xy::AbstractVector; df::AbstractDataFrame=usplace(), threshold=nothing) =
-    lonlat2loc(xy, df; threshold=threshold)
-
 """
-    lonlat2loc(XY::AbstractMatrix, df::AbstractDataFrame; threshold=nothing)
-    lonlat2loc(XY::AbstractMatrix; df=usplace(), threshold=nothing)
+    lonlat2loc(XY::AbstractMatrix, df::AbstractDataFrame = usplace(); threshold=nothing)
 
 Find nearest places to n×2 matrix of [LON LAT] coordinates, among the places `df` (by default
 [`usplace`](@ref)`()`).
 
 Returns DataFrame with columns: idx, NAME, ST, dist, bearing, dir, desc (`ST isa Symbol`).
 """
-function lonlat2loc(XY::AbstractMatrix, df::AbstractDataFrame; threshold=nothing)
+function lonlat2loc(XY::AbstractMatrix, df::AbstractDataFrame = usplace(); threshold=nothing)
     size(XY, 2) == 2 || throw(ArgumentError("XY must have 2 columns [LON, LAT]"))
 
     city_coords = hcat(df.LON, df.LAT)
@@ -1153,6 +1148,3 @@ function lonlat2loc(XY::AbstractMatrix, df::AbstractDataFrame; threshold=nothing
 
     return results
 end
-
-lonlat2loc(XY::AbstractMatrix; df::AbstractDataFrame=usplace(), threshold=nothing) =
-    lonlat2loc(XY, df; threshold=threshold)

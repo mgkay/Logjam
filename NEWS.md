@@ -145,7 +145,7 @@ missed.
   passes ADD's set); it aligns `uflxchg` with its two siblings, which a set written as `1:3` reached and it did not.
   **No migration.**
 - **`lonlat2loc(xy)` names a point against `usplace()`, and `lonlat2loc` and `loc2lonlat` take any table (A8).**
-  With no table `lonlat2loc(xy)` and `lonlat2loc(XY)` read `usplace()` (also as the keyword `df`), returning what
+  With no table `lonlat2loc(xy)` and `lonlat2loc(XY)` read `usplace()`, a positional default (ruling WP3-3), returning what
   `lonlat2loc(xy, usplace())` returns. `lonlat2loc(xy, df)` and `loc2lonlat(df)` take an `AbstractDataFrame`, so a
   view such as `view(usplace(), mask, :)` works where a `DataFrame` was required, with the answer of the table it
   shows; `loc2lonlat` returns a new `DataFrame` either way (`prt` already took one). **Lectures served:** 2.2's Code
