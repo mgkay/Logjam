@@ -287,6 +287,11 @@ missed.
   `loc2lonlat` of 20 North Carolina cities 61 ms to 0.005 ms a row, `usplace()` 9.0 ms to 0.74 ms (a copy, not a
   read); the first place lookup in a session reads the table (about 0.13 s) and builds its index (about 0.25 s,
   with compilation).
+- **`src/datatools.jl` is split by content into three files (A10).** `datatools.jl` keeps the census and FAF5
+  tables, their loader and the FIPS codes; `displaytools.jl` takes the display functions (`prt`, `thousands`,
+  `snapvals` and their helpers); `geomtools.jl` takes the geometry for drawing (`alloclines`). Text moved, not
+  changed: the three files' code lines, in order, are the old file's, and the suite's count is the same before and
+  after.
 
 ## v0.3.0
 

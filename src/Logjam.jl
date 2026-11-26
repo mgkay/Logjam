@@ -117,7 +117,9 @@ public poissoncdf, pi0, qbar, poissarr    # the inventory measures (invtools.jl)
 # Include component files
 include("loctools.jl")
 include("transtools.jl")
-include("datatools.jl")
+include("datatools.jl")      # the census and FAF5 tables, the FIPS codes (split in v0.3.1, A10)
+include("displaytools.jl")   # prt, thousands, snapvals
+include("geomtools.jl")      # alloclines
 include("maptools.jl")
 include("disttools.jl")
 include("roadtools.jl")
