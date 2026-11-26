@@ -70,6 +70,18 @@ missed.
   served:** Lecture 4.2's OpenStreetMap networks; no lecture calls it yet, and `test/test_joinroads.jl` joins
   4.2's committed Raleigh tile to the network and routes from inside it to Greensboro (leaving on I-40) and to
   Winston-Salem. **No migration.**
+- **`Logjam.poissoncdf(j, μ)`, `Logjam.qbar(qmax, μ)` and `Logjam.qbar(qo, qmin, μ)`: the Poisson inventory
+  measures of Lecture 6.2, public and not exported (E1, D10).** `poissoncdf` is ``F(j; μ)``, the probability of
+  `j` or fewer demands during a lead time when that demand is Poisson with mean `μ`, summed one term at a time,
+  each probability from the one before it; `qbar(qmax, μ)` is a base-stock system's average on hand, the sum of
+  ``F(j; μ)`` for `j` from 0 to `qmax - 1`; and `qbar(qo, qmin, μ)`, 6.2's `qbarrp` as a method of the same name,
+  is a reorder-point system's, base stock's averaged over the levels `qmin + 1` to `qmin + qo`. Each body is the
+  lecture's definition in its order of operations, so each returns exactly what the lecture's does. Specification:
+  the ISE 453 F25 spreadsheet `Inventory.xlsx`, whose [BS Pois] and [RP Pois] cells they reproduce to a relative
+  1e-12 (the reorder-point sheet tabulates the cycle form, safety stock plus half an order, which 6.2's model
+  replaces by the average; its safety stock is `qbar(qmin, μ)`) (`test/test_invtools.jl`). **Lectures served:**
+  6.2 and 6.3, which define them inline today (6.3 repeating 6.2's) and may call Logjam's at the re-pin; not
+  exported, so a lecture's own definitions, made after `using Logjam`, do not collide. **No migration.**
 
 ### Changed
 

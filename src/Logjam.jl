@@ -23,7 +23,7 @@ and their names:
   and the constants `WORLD_LIMITS`, `US_LIMITS`, `CUS_LIMITS`.
 - **Display:** `prt`, `snapvals`, `thousands`.
 - **Public, not exported** (called as `Logjam.name`, so a script's own function of the name does not collide):
-  `scanTW`, `usstates`.
+  `scanTW`, `usstates`, and the inventory measures `poissoncdf` and `qbar`.
 
 ## Dependencies
 
@@ -109,6 +109,7 @@ export rte2idx, sh2rte        # the shipments of a route; a route of its own for
 public scanTW    # Lecture 5.3's time-window scan (routetools.jl), the implementation rung of a model; not exported, so the lecture's own `scanTW` does not collide (CR 42, D10)
 public usstates    # the state borders as NaN-separated polylines (maptools.jl); Lecture 5.1 and four Lecture 2.2 generators call it qualified (C12, V6); not exported, so it does not collide with `usstate`
 public _osm_cache_path, _osm_snap_bbox    # the tile files and the tile of a box (osmtools.jl); Lecture 4.2's data generator reports its boxes' tiles with them, so they are public (S18)
+public poissoncdf, qbar    # the inventory measures (invtools.jl): Lecture 6.2's definitions, `qbar` with 6.2's reorder-point form as a three-argument method; not exported, since each body is a lecture's lesson and the lectures define the names (E1, D10)
 
 # Include component files
 include("loctools.jl")
@@ -121,6 +122,7 @@ include("faf5net.jl")      # the derived FAF5 road network (CR 19): its derivati
 include("routetools.jl")
 include("osmtools.jl")
 include("geocode.jl")
+include("invtools.jl")     # the inventory measures of Lecture 6.2 (E1)
 
 """
     dcf()

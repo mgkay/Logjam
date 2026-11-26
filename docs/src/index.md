@@ -14,7 +14,7 @@ Logjam is a Julia package for logistics engineering, providing tools for:
 - **Distance Metrics**: Unified distance calculation utilities supporting Rectilinear (*L*₁), Euclidean (*L*₂), and Great Circle (Haversine) metrics.
 - **Mapping**: Geographic visualization with GeoMakie, including FCLASS-based road network rendering with OSM Carto-inspired styling, route overlays, and facility location plots.
 
-The sections below follow the order of the course: location, transportation, distances, road networks, routing, data and geocoding, maps, and display. Each opens with what its functions are for, and where an example can run offline when the manual is built, it is run and its output shown.
+The sections below follow the order of the course: location, transportation, distances, road networks, routing, inventory, data and geocoding, maps, and display. Each opens with what its functions are for, and where an example can run offline when the manual is built, it is run and its output shown.
 
 ## Extensions
 
@@ -235,6 +235,17 @@ mincostinsert
 pairwisesavings
 savings
 twoopt
+```
+
+## Inventory Functions
+
+The Poisson measures of Lecture 6.2's base-stock and reorder-point models, each the lecture's own definition. They
+are public but not exported, so they are called as `Logjam.poissoncdf` and `Logjam.qbar`, and a lecture's own
+definition of the name does not collide with them.
+
+```@docs
+poissoncdf
+qbar
 ```
 
 ## Data Functions
