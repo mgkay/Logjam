@@ -31,7 +31,7 @@ LogjamOSMExt = "LightOSM"
 
 [compat]
 Artifacts = "1"
-CSV = "0.10"
+CSV = "0.10, 1"
 CairoMakie = "0.12 - 0.15.15"
 DataFrames = "1.6 - 1"
 DelaunayTriangulation = "1.1 - 1"
