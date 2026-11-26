@@ -16,8 +16,9 @@ const _NOMEXT = Base.get_extension(Logjam, :LogjamNominatimExt)
         @test _MAPEXT !== nothing && _OSMEXT !== nothing && _NOMEXT !== nothing
         @test Base.get_extension(Logjam, :LogjamCairoMakieExt) === nothing
         @test !isfile(joinpath(pkgdir(Logjam), "ext", "LogjamCairoMakieExt.jl"))
+        # v0.3.1 adds two (X2): LogjamJuMPExt (JuMP and HiGHS) and LogjamMakieExt (Makie); the three of C5 are unchanged
         @test sort!([f for f in readdir(joinpath(pkgdir(Logjam), "ext")) if endswith(f, ".jl")]) ==
-              ["LogjamMapExt.jl", "LogjamNominatimExt.jl", "LogjamOSMExt.jl"]
+              ["LogjamJuMPExt.jl", "LogjamMakieExt.jl", "LogjamMapExt.jl", "LogjamNominatimExt.jl", "LogjamOSMExt.jl"]
     end
 
     @testset "the methods are the extension's; core holds none of them" begin

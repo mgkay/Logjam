@@ -125,6 +125,11 @@ missed.
   Raleigh and the network the derivation makes of it (`tools/v0_3_1/make_faf5net_fixture.jl`); the suite derives
   it again and compares the three files byte for byte. `.gitattributes` checks them out with LF endings.
 - **The version reads `0.3.1-DEV`** until the release.
+- **Dependencies (X2).** PrecompileTools is a dependency (the precompile workloads). JuMP and HiGHS together, and
+  Makie, are weak dependencies, each loading an extension (`LogjamJuMPExt`, `LogjamMakieExt`) only when a script
+  loads them; a script that loads none of them gets nothing new. All four are already in the course's environment
+  (JuMP 1.31, HiGHS 1.25, Makie 0.24, PrecompileTools 1.3), and the compat bounds admit those versions, so the re-pin
+  brings no new package.
 
 ## v0.3.0
 
