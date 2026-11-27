@@ -14,9 +14,10 @@
 %
 % Sections:
 %   1. poissarr on a recorded stream (WP1, E1; MakePlan D10, test spec Sec. 2)
+%   2. dagg on given distances (WP10, X8; MakePlan D8, test spec Sec. 6)
 
 clear; close all; clc
-clear global PA_E PA_U PA_IE PA_IU
+clear global PA_E PA_U PA_IE PA_IU DA_D DA_N
 set(0, 'DefaultFigureVisible', 'off');
 
 root = getenv('KMAT_ROOT');     % the kmat folder: set KMAT_ROOT=<path to kmat> first
@@ -100,6 +101,63 @@ fclose(fid);
 rmpath(scratch);
 rmdir(scratch, 's');
 clear global PA_E PA_U PA_IE PA_IU
+
+%% ======================================================================================
+%% 2. dagg on given distances (WP10, X8)
+%% ======================================================================================
+% <kmat>/ise754/dagg.m, the two-branch form of Lecture 2.5's @eq-daemp (MakePlan D8), is copied unchanged into a
+% scratch folder whose private/ subfolder holds one stub, dists, returning the distance matrix given here: so dagg's
+% first statement, D = dists(XY,XYagg,'mi'), takes that matrix in place of Matlog's great-circle distances, whose
+% earth radius differs from Logjam's sphere, and the formula is compared on identical distances. The stub asserts
+% that it is called once, as dagg calls it (an N-by-2 and an m-by-2 matrix of points, and 'mi'); the points are
+% dummies, since only the stub sees them.
+% The areas are Lecture 2.5's own: the land areas (ALAND, mi^2) of the three-digit ZIP codes of its Examples 4 and
+% 5, North Carolina's 270 to 289 with people (Code block 15) and EMCA's 290 to 299 (Code block 19), read from
+% Logjam's data/uszcta3.csv. The distances are d = t*r for each area's radius r = sqrt(a/pi), t from 0 to 4 in steps
+% of 0.05 across the branch boundary at t = 1, and then r - eps(r) and r + eps(r), a double on either side of it:
+% D = [t*R; R - eps(R); R + eps(R)], R = sqrt(a'/pi) as dagg.m computes it.
+src = fullfile(root, 'ise754', 'dagg.m');
+assert(isfile(src), 'dagg.m not found under KMAT_ROOT/ise754');
+T = readtable(fullfile(here, '..', '..', 'data', 'uszcta3.csv'));
+z = T.ZCTA3;
+keep = (z >= 270 & z <= 289 & T.POP > 0) | (z >= 290 & z <= 299);
+zk = z(keep); ak = T.ALAND(keep);
+[zk, o] = sort(zk); ak = ak(o);
+R = sqrt(ak(:)'/pi);
+t = (0:0.05:4)';
+D = [t*R; R - eps(R); R + eps(R)];
+scratch = tempname;
+mkdir(scratch); mkdir(fullfile(scratch, 'private'));
+copyfile(src, fullfile(scratch, 'dagg.m'));
+writelines({ ...
+    'function D = dists(X1, X2, unit)'
+    '% Scratch stub of make_oracles_v031.m: the distance matrix the oracle gives, in place of Matlog''s dists.'
+    'global DA_D DA_N'
+    'assert(isequal(size(X1), [size(DA_D, 1) 2]) && isequal(size(X2), [size(DA_D, 2) 2]) && strcmp(unit, ''mi''), ...'
+    '    ''dagg oracle: dists is not called as dagg calls it'');'
+    'D = DA_D;'
+    'DA_N = DA_N + 1;'
+    'end'}, fullfile(scratch, 'private', 'dists.m'));
+addpath(scratch);
+rehash;
+assert(strcmp(which('dagg'), fullfile(scratch, 'dagg.m')), 'the scratch dagg.m is not the one on the path');
+global DA_D DA_N
+DA_D = D; DA_N = 0;
+Da = dagg(zeros(size(D, 1), 2), zeros(size(D, 2), 2), ak);
+assert(DA_N == 1, 'dagg oracle: dists was not called once');
+assert(isequal(size(Da), size(D)), 'dagg oracle: the result is not the size of D');
+fid = oc(outdir, 'dagg_matlab', ...
+    'ise754/dagg.m, run unchanged as a scratch copy whose dists is a private stub returning D below, so that its', ...
+    'D = dists(XY,XYagg,''mi'') is D; on dummy points: Da = dagg(zeros(N,2), zeros(m,2), a). a: the land areas', ...
+    '(mi^2) of Lecture 2.5''s three-digit ZIP codes (Examples 4 and 5: North Carolina''s 270 to 289 with people,', ...
+    'EMCA''s 290 to 299), from data/uszcta3.csv, zcta3 their codes; R = sqrt(a''/pi); t = (0:0.05:4)'';', ...
+    'D = [t*R; R - eps(R); R + eps(R)] (mi).');
+w(fid, 'zcta3', zk); w(fid, 'a', ak); w(fid, 'R', R); w(fid, 't', t); w(fid, 'D', D); w(fid, 'Da', Da);
+fclose(fid);
+fprintf('dagg: %d areas, %d distances each\n', numel(ak), size(D, 1));
+rmpath(scratch);
+rmdir(scratch, 's');
+clear global DA_D DA_N
 
 %% ======================================================================================
 %% Helpers (local functions; later sections use them too)

@@ -1,6 +1,9 @@
-# test_boxes_v031.jl -- added by PCV WP10 of Logjam v0.3.1 (X7: a city's and a state's box, MakePlan D3). Test spec
-# Sec. 6. Equality is `===` (bit for bit) where marked and `==` elsewhere; the one tolerance is D3's: Raleigh's box
-# within 0.05 degrees of Nominatim's on every side. The evidence:
+# test_boxes_v031.jl -- added by PCV WP10 of Logjam v0.3.1 (X7: a city's and a state's box, MakePlan D3; X8: the
+# empirical aggregate distance, MakePlan D8). Test spec Sec. 6. Equality is `===` (bit for bit) where marked and `==`
+# elsewhere; the tolerances are D3's, Raleigh's box within 0.05 degrees of Nominatim's on every side, and test spec
+# Sec. 6's relative 1e-14 against MATLAB's dagg.m, also used for the two closed forms at the branch boundary (26r/23
+# and 546r/480, the formula's value at a point, equal to rounding), and one unit in the last place between the
+# empirical distance at d = 0, 2r/3 as 2.5's equation writes it, and the default's floor, (2/3)·r. The evidence:
 #   1. the place boxes (data/usplacebox, made by tools/v0_3_1/make_placebox.jl from the Census TIGER/Line 2020 place
 #      shapefiles): exactly `usplace()`'s keys, one row each, sorted; the CSV the script's output byte for byte (its
 #      SHA-256, printed on two runs) and the .jls that CSV read back; every box contains its place's `usplace()`
@@ -12,13 +15,21 @@
 #      the designator, an exact name preferred); every name two places share in a state is an error naming them;
 #      every place by its own name gives its own box; `xexpand` and `yexpand` act on a place's box as on a county's;
 #   3. `mapbbox(state)`: for every state of `usstate()`, the extent of its counties' boxes, each Lecture 4.2's Code
-#      block 3 run on the county's block groups (copied below as text), and so containing each of them.
+#      block 3 run on the county's block groups (copied below as text), and so containing each of them;
+#   4. `dgca(...; method = :empirical)`: `==` to 2.5's @eq-daemp copied as text on 2.5's Example 4 and 5 inputs, by
+#      both of dgca's methods and in another unit; against MATLAB's ise754/dagg.m run on the same distances
+#      (test/oracles/dagg_matlab.csv, tools/v0_3_1/make_oracles_v031.m), relative 1e-14 wherever dagg.m applies one
+#      case, and where it applies both (d/r from 0.8378 to 1: its second statement tests the matrix its first has
+#      changed) its value the second case applied to the first's, above 2.5's equation, which Logjam follows; the
+#      branch boundary as dagg.m draws it (26r/23 at d = r, 546r/480 the limit from below); d_a > d for d >= r;
+#      2r/3 at d = 0; a zero area; and the default method `===` to v0.3.0's body, copied as text.
 # A lecture's definition is copied here as text, with its .qmd file and lines; no companion script is run.
 
 using Test
 using Logjam
 using DataFrames
 using CSV
+using Random
 
 # SHA is in every environment Logjam is in but not a dependency of the test target (test_geodata_v031.jl, Sec. 4)
 const _BX_SHA = Base.require(Base.PkgId(Base.UUID("ea8e919c-243c-51af-8825-aaa63cd721ce"), "SHA"))
@@ -251,4 +262,152 @@ end
     @test mapbbox(:DC) == mapbbox("District of Columbia"; state = :DC)            # one county
     @test _bx_err(() -> mapbbox(:PR)) isa ArgumentError                            # a territory: no counties
     @test _bx_err(() -> mapbbox(:XX)) isa ArgumentError
+end
+
+# ---- 4. dgca(...; method = :empirical) (X8, MakePlan D8) ---------------------------------------------------------------
+# Lecture 2.5's @eq-daemp (2-location/2-loc-5.qmd:1307-1314), as text: r = √(a/π) (@eq-radius, 2.5 Sec. 5), d the
+# distance from the point to the region's centroid, d < r the first case and every other d the second
+_bx_daemp(d, r) = d < r ? 2r/3 + d/48 + 9d^2/(20r) : d + 3r^2/(23d)
+
+# v0.3.0's dgca, as text (the v0.3.0 tag fd0f1f3, src/disttools.jl:277 and :339-341), which 7e66734 left unchanged
+_bx_dgca_v030(X, Xa, a; unit = :mi) = max.(dists(X, Xa, unit), reshape((x -> (2 / 3) * sqrt(x / π)).(a), 1, :))
+_bx_bitsame(A, B) = size(A) == size(B) && all(x === y for (x, y) in zip(A, B))
+
+function _bx_readblocks(path)          # "@name,nrows,ncols" blocks, as test/oracle_helpers.jl reads them
+    d = Dict{String, Matrix{Float64}}()
+    lines = readlines(path)
+    i = 1
+    while i <= length(lines)
+        if startswith(lines[i], "@")
+            nm, r, c = split(lines[i][2:end], ',')
+            r, c = parse(Int, r), parse(Int, c)
+            M = Matrix{Float64}(undef, r, c)
+            for k in 1:r
+                M[k, :] = parse.(Float64, split(lines[i + k], ','))
+            end
+            d[String(nm)] = M
+            i += r + 1
+        else
+            i += 1
+        end
+    end
+    return d
+end
+
+# Lecture 2.5's inputs to dgca: Example 4's North Carolina three-digit ZIP codes (Code block 15, 2-loc-5.qmd:1497-1498)
+# and Example 5's EMCA ZIP centroids (Code block 19, 2-loc-5.qmd:1591-1601), each with its land areas
+function _bx_lecture25()
+    z = filter(r -> 270 <= r.ZCTA3 <= 289 && r.POP > 0, uszcta3())
+    P = hcat(z.LON, z.LAT)
+    zip = [270, 271, 272, 273, 274, 275, 276, 277, 278, 279, 280, 281, 282, 283,
+           284, 285, 286, 287, 290, 291, 292, 293, 294, 295, 296, 297, 298, 299]
+    zc = uszcta3()
+    iz = [findfirst(==(zi), zc.ZCTA3) for zi in zip]
+    Pz = hcat(zc.LON[iz], zc.LAT[iz])
+    return ((P, z.ALAND), (Pz, zc.ALAND[iz]))
+end
+
+@testset "[WP10 X8] dgca(...; method = :empirical) is 2.5's @eq-daemp on 2.5's inputs" begin
+    for (P, a) in _bx_lecture25()
+        r = sqrt.(a ./ π)
+        Dg = dists(P, P, :mi)
+        want = [_bx_daemp(Dg[i, j], r[j]) for i in axes(P, 1), j in axes(P, 1)]
+        De = dgca(P, P, a; method = :empirical)
+        @test De == want
+        @test De isa Matrix{Float64}
+        # both methods of dgca take the keyword: one point is the matrix method's row
+        @test all(dgca(P[i, :], P, a; method = :empirical) == De[i, :] for i in axes(P, 1))
+        # another unit: the same formula on that unit's distances (a in its square)
+        Dk = dists(P, P, :km)
+        @test dgca(P, P, a; unit = :km, method = :empirical) == [_bx_daemp(Dk[i, j], r[j]) for i in axes(P, 1), j in axes(P, 1)]
+        # every point is at d = 0 from itself, so the diagonal is 2r/3, (2/3)√(a/π) as the equation writes it, and the
+        # default method's floor, (2/3)·√(a/π), to the last bit or one unit in it
+        dg = [De[i, i] for i in axes(P, 1)]
+        @test all(Dg[i, i] == 0 for i in axes(P, 1))
+        @test dg == 2 .* sqrt.(a ./ π) ./ 3
+        @test all(abs.(dg .- Logjam._mean_zone_distance.(a)) .<= eps.(dg))
+        # the empirical distance is never below the default's: it adds to d outside the region and to 2r/3 inside it
+        @test all(De .>= dgca(P, P, a))
+    end
+end
+
+@testset "[WP10 X8] :empirical against MATLAB's ise754/dagg.m on the same distances (oracle)" begin
+    O = _bx_readblocks(joinpath(@__DIR__, "oracles", "dagg_matlab.csv"))
+    a, R, D, Da = vec(O["a"]), vec(O["R"]), O["D"], O["Da"]
+    zc = uszcta3()
+    # the oracle's areas are 2.5's as Logjam holds them, its radii Logjam's sqrt(a/π), bit for bit
+    zk = Int.(vec(O["zcta3"]))
+    @test a == [only(zc.ALAND[zc.ZCTA3 .== k]) for k in zk]
+    @test sort(zk) == sort(unique(vcat(filter(r -> 270 <= r.ZCTA3 <= 289 && r.POP > 0, zc).ZCTA3, 290:299)))
+    r = sqrt.(a ./ π)
+    @test r == R
+    @test size(D) == size(Da) == (83, length(a))
+    # Logjam's formula on the oracle's distances: the kernel dgca(...; method = :empirical) applies to dists' matrix
+    L = Logjam._daemp.(D, reshape(r, 1, :))
+    @test L == _bx_daemp.(D, reshape(r, 1, :))
+    # dagg.m's first statement replaces each d < r by the first case; its second then tests the matrix the first
+    # changed, D(D>=R), so a d whose first case is r or more (d/r from 0.8378 to 1) takes the second case on top
+    f1 = [D[i, j] < r[j] ? _bx_daemp(D[i, j], r[j]) : NaN for i in axes(D, 1), j in axes(D, 2)]
+    both = (D .< reshape(r, 1, :)) .& (f1 .>= reshape(r, 1, :))
+    one = .!both
+    @test all(isapprox.(L[one], Da[one]; rtol = 1e-14))
+    # where dagg.m applies both cases, its value is the second applied to the first, which 2.5's equation is not
+    g(d, r) = d + 3r^2/(23d)
+    @test all(isapprox(Da[i, j], g(f1[i, j], r[j]); rtol = 1e-14) for i in axes(D, 1), j in axes(D, 2) if both[i, j])
+    @test all(L[both] .< Da[both])
+    t = vec(O["t"])
+    @test count(both) == 4 * length(a)                         # t = 0.85, 0.9, 0.95 and r - eps(r), each area
+    @test all(0.8378 < D[i, j] / r[j] < 1 for i in axes(D, 1), j in axes(D, 2) if both[i, j])
+end
+
+@testset "[WP10 X8] :empirical's branch boundary is dagg.m's; d_a > d outside the region" begin
+    (P, a), (Pz, az) = _bx_lecture25()
+    for ar in vcat(a, az, [1.0, 656.0, 5000.0])
+        r = sqrt(ar / π)
+        # at d = r the second case: 26r/23
+        at = Logjam._daemp(r, r)
+        @test at == r + 3r^2/(23r)
+        @test isapprox(at, 26r / 23; rtol = 1e-14)
+        # just below r the first case, whose limit is 546r/480 = 1.1375r: a step of about 0.6% that belongs to the formula
+        d = prevfloat(r)
+        below = Logjam._daemp(d, r)
+        @test below == 2r/3 + d/48 + 9d^2/(20r)
+        @test isapprox(below, 546r / 480; rtol = 1e-14)
+        @test below > at
+        # outside the region it keeps d_a > d (2.5: "a facility beyond a region still pays something for its spread")
+        @test all(Logjam._daemp(t * r, r) > t * r for t in 1.0:0.01:100.0)
+        # at d = 0, 2r/3
+        @test Logjam._daemp(0.0, r) == 2r/3
+        # through dgca: a point at distance d from a demand point of area ar
+        x = [-78.64, 35.78]
+        y = [-78.64, 35.78 + 0.5]
+        dd = dgc(x, y)
+        @test dgca(x, reshape(y, 1, 2), [ar]; method = :empirical) == [_bx_daemp(dd, r)]
+    end
+    # a zero area (a point): the distance itself, and 0 at d = 0, where the second case is 0/0
+    @test Logjam._daemp(0.0, 0.0) === 0.0
+    @test Logjam._daemp(5.0, 0.0) === 5.0
+    X = [-78.64 35.78; -80.84 35.23]
+    @test dgca(X, X, [0.0, 0.0]; method = :empirical) == dists(X, X, :mi)
+end
+
+@testset "[WP10 X8] dgca's default method is unchanged, bit for bit" begin
+    (P, a), (Pz, az) = _bx_lecture25()
+    rng = Random.Xoshiro(10)
+    cases = Any[(P, P, a), (Pz, Pz, az), (P[1:5, :], Pz, az)]
+    for m in (1, 7, 200)
+        X = hcat(-125 .+ 58 .* rand(rng, m), 25 .+ 24 .* rand(rng, m))
+        Xa = hcat(-125 .+ 58 .* rand(rng, 50), 25 .+ 24 .* rand(rng, 50))
+        push!(cases, (X, Xa, 3000 .* rand(rng, 50) .* (rand(rng, 50) .> 0.2)))
+    end
+    for (X, Xa, aa) in cases, unit in (:mi, :km, :rad)
+        v030 = _bx_dgca_v030(X, Xa, aa; unit)
+        @test _bx_bitsame(dgca(X, Xa, aa; unit), v030)
+        @test _bx_bitsame(dgca(X, Xa, aa; unit, method = :max), v030)
+        @test _bx_bitsame(dgca(X[1, :], Xa, aa; unit, method = :max), vec(v030[1:1, :]))
+    end
+    @test_throws ArgumentError dgca(P, P, a; method = :exact)
+    @test_throws ArgumentError dgca(P[1, :], P, a; method = "empirical")
+    @test_throws ErrorException dgca(P, P, a[1:3]; method = :empirical)
+    @test_throws ErrorException dgca(P, P, -a; method = :empirical)
 end

@@ -203,6 +203,21 @@ missed.
   District of Columbia (a territory, which `usstate()` does not hold, is an `ArgumentError`). `xexpand` and `yexpand`
   as for any box. **Served:** a map of a state, `makemap(mapbbox(:NC))`; Lecture 4.2's Code block 3 notes that the box
   around a county or a state can be computed from the block groups, which this does for a state. **No migration.**
+- **`dgca(X, Xa, a; method = :empirical)`: Lecture 2.5's empirical average distance to a region (X8, MakePlan D8;
+  `method` and its values provisional, D7).** With `r = √(a/π)` and `d` the great-circle distance, `d < r` gives
+  `2r/3 + d/48 + 9d²/(20r)` and any other `d` gives `d + 3r²/(23d)`: 2.5's `@eq-daemp`, the average distance from a
+  point to the points of a region taken as a disk of its area, fitted by regression to simulated data. It is `2r/3`
+  at the region's centroid, as the default's floor is, and more than `d` outside the region. The branch test is
+  `d < r`, as MATLAB's `ise754/dagg.m` draws it, so at `d = r` the value is `26r/23`, a step of about 0.6% down from
+  its limit `546r/480 = 1.1375r` just below, which belongs to the fitted formula; a zero area gives `d`. The default,
+  `method = :max`, is 2.5's `@eq-da2dmax`, `max{d, (2/3)r}`, unchanged bit for bit; both of `dgca`'s methods (the
+  matrix one and the one-point one) take the keyword. Checked against 2.5's equation copied as text on its Example 4
+  and 5 inputs (`==`), and against `dagg.m` run in MATLAB R2025a on the same distances (`test/oracles/dagg_matlab.csv`,
+  `tools/v0_3_1/make_oracles_v031.m`; 30 of 2.5's areas, `d/r` from 0 to 4): equal bit for bit wherever `dagg.m`
+  applies one case. For `d/r` from 0.838 to 1 `dagg.m` applies both, because its second statement tests the matrix
+  its first has already changed, and returns 10% to 13% more; Logjam follows 2.5's equation there.
+  **Lecture served:** 2.5, which gives `@eq-daemp` "for the occasions that warrant it" and runs `@eq-da2dmax` with
+  `dgca` (Code blocks 17 and 20); `dgca(P, P, z.ALAND; method = :empirical)` runs the equation. **No migration.**
 
 ### Changed
 

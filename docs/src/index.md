@@ -149,6 +149,9 @@ using Logjam
 round(dgc((-78.6382, 35.7796), (-80.8431, 35.2271)); digits = 1)
 ```
 
+`dgca` adjusts a distance to a demand point that stands for a region of known area, by Lecture 2.5's floor
+(`method = :max`, the default) or its empirical average distance (`method = :empirical`).
+
 ```@docs
 dgc
 dgca

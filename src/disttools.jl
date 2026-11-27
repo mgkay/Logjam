@@ -392,18 +392,31 @@ end
 # `loc2lonlat`'s `GC_UNCERT` (R2/S3), in the units whose square is the unit of `a`.
 _mean_zone_distance(a) = (2 / 3) * sqrt(a / π)
 
+# Lecture 2.5's @eq-daemp (2-loc-5.qmd:1307-1314): the average distance from a point at distance `d` from the centroid
+# of a disk of radius `r` to the points of the disk, fitted by regression to simulated data. The branch test is
+# ise754/dagg.m's, `d < r` the first case and `d = r` the second, so the value steps from 546r/480 just below r to
+# 26r/23 at r (X8, MakePlan D8). A disk of no area is a point: the distance itself (the second case is 0/0 at d = 0).
+function _daemp(d::Real, r::Real)
+    d < r && return 2r/3 + d/48 + 9d^2/(20r)
+    r == 0 && return float(d)
+    return d + 3r^2/(23d)
+end
+
 """
-    dgca(X, Xa, a; unit=:mi) -> Matrix{Float64}
-    dgca(x, Xa, a; unit=:mi) -> Vector{Float64}
+    dgca(X, Xa, a; unit=:mi, method=:max) -> Matrix{Float64}
+    dgca(x, Xa, a; unit=:mi, method=:max) -> Vector{Float64}
 
 Area-adjusted great-circle distance matrix between new-facility/point set `X` and
-demand-point set `Xa`, floored by the mean centroid-to-random-point distance of a
-disk of area `aⱼ`. For a single point `x`, a vector `[lon, lat]`, the length-m vector of its
-area-adjusted distances to the rows of `Xa`: the row `dgca(reshape(x, 1, :), Xa, a)` (A5).
+demand-point set `Xa`, each demand point standing for a region of area `aⱼ` taken as a disk of the same area. With
+`method = :max`, the default, each distance is floored by the mean centroid-to-random-point distance of the disk
+(Lecture 2.5's `@eq-da2dmax`); with `method = :empirical` it is the empirical average distance to the disk's points
+(2.5's `@eq-daemp`). For a single point `x`, a vector `[lon, lat]`, the length-m vector of its
+area-adjusted distances to the rows of `Xa`: the row `dgca(reshape(x, 1, :), Xa, a)` (A5), by either method.
 
 # Formulation
 For points ``X = \\{X_i\\}_{i=1}^n`` and demand points ``Xa = \\{Xa_j\\}_{j=1}^m`` with
-land areas ``a_j \\ge 0``,
+land areas ``a_j \\ge 0``, radius ``r_j = \\sqrt{a_j/\\pi}`` and ``d_{ij} = d_{gc}(X_i, Xa_j)``, `method = :max`
+(Lecture 2.5's `@eq-da2dmax`) is
 
 ```math
 D^{aa}_{ij} \\;=\\; \\max\\!\\left\\{\\, d_{gc}(X_i, Xa_j),\\;\\; \\tfrac{2}{3}\\sqrt{a_j/\\pi}\\,\\right\\},
@@ -415,8 +428,24 @@ uniformly random point in a disk of area ``a_j`` (radius ``r_j=\\sqrt{a_j/\\pi}`
 centroid distance ``\\tfrac{2}{3}r_j``). It represents the intra-zone travel a demand
 point still incurs when a facility is placed at its geographic center.
 
+`method = :empirical` (Lecture 2.5's `@eq-daemp`, fitted by regression to simulated data; X8) is
+
+```math
+D^{aa}_{ij} \\;=\\;
+\\begin{cases}
+\\dfrac{2 r_j}{3} + \\dfrac{d_{ij}}{48} + \\dfrac{9 d_{ij}^{2}}{20 r_j}, & d_{ij} < r_j, \\\\[1ex]
+d_{ij} + \\dfrac{3 r_j^{2}}{23 d_{ij}}, & \\text{otherwise},
+\\end{cases}
+```
+
+the average distance from ``X_i`` to all the points of the disk: ``\\tfrac{2}{3} r_j`` at its centroid, as the floor
+is, and more than ``d_{ij}`` outside it, where a facility still pays for the region's spread. The branch test is the
+MATLAB `dagg.m`'s, ``d < r``, so at ``d = r`` the value is ``26r/23``, a step of about 0.6% down from its limit
+``546r/480 = 1.1375r`` just below, which belongs to the fitted formula. Lecture 2.5 runs `@eq-da2dmax`, since the disk
+that stands for the region is the binding approximation, and gives `@eq-daemp` for the occasions that warrant it.
+
 **No circuity:** the raw ``D^{aa}`` is returned; any circuity factor is applied by the
-caller. Degenerate ``a_j = 0`` gives floor ``0``, so ``D^{aa}_{ij} = d_{gc}``.
+caller. Degenerate ``a_j = 0`` gives floor ``0``, so ``D^{aa}_{ij} = d_{gc}``, by either method.
 
 # Arguments
 - `X`: n×2 matrix of points (LON, LAT).
@@ -424,9 +453,11 @@ caller. Degenerate ``a_j = 0`` gives floor ``0``, so ``D^{aa}_{ij} = d_{gc}``.
 - `a`: length-m vector of demand-point areas, in the areal unit whose square root matches
   `unit` (e.g. mi² for `unit=:mi`).
 - `unit`: distance/area unit — `:mi` (default), `:km`, or `:rad`.
+- `method`: `:max` (default) or `:empirical`, as above (X8; the keyword and its values provisional, D7).
 
 # Returns
-- `D`: n×m matrix where `D[i,j] = max(dgc(X[i,:], Xa[j,:]; unit), (2/3)√(a[j]/π))`.
+- `D`: n×m matrix where `D[i,j] = max(dgc(X[i,:], Xa[j,:]; unit), (2/3)√(a[j]/π))`, or with `method = :empirical`
+  `@eq-daemp` at that distance and `r = √(a[j]/π)`.
 
 # Example
 The call is Lecture 2.5's `Da = dgca(P, P, z.ALAND)`: points as (LON, LAT) rows and an area in mi² for each demand
@@ -464,16 +495,37 @@ round.(dgca([-78.64, 35.78], Xa, [0.0, 5000.0]); digits=1)
  26.6
 ```
 
+The empirical distance on the same points: Raleigh lies inside Durham's disk (radius ``\\sqrt{5000/\\pi} = 39.9``
+mi), so its 20.6 mi becomes the first case's 31.8 mi, and Charlotte, outside it, pays 1.7 mi more than its 121.0 mi
+for the disk's spread; Greensboro's area is zero, so its distances are unchanged:
+
+```jldoctest
+X  = [-78.64 35.78; -80.84 35.23]     # Raleigh, Charlotte
+Xa = [-79.79 36.07; -78.90 35.99]     # Greensboro, Durham
+round.(dgca(X, Xa, [0.0, 5000.0]; method = :empirical); digits=1)
+
+# output
+
+2×2 Matrix{Float64}:
+ 67.4   31.8
+ 82.7  122.7
+```
+
 See also: [`dgc`](@ref), [`dists`](@ref)
 """
-function dgca(X::AbstractMatrix, Xa::AbstractMatrix, a::AbstractVector; unit=:mi)
+function dgca(X::AbstractMatrix, Xa::AbstractMatrix, a::AbstractVector; unit=:mi, method=:max)
     size(Xa, 1) == length(a) || error("dgca: length(a) must equal the number of rows in Xa.")
     all(a .>= 0) || error("dgca: areas a must be nonnegative.")
+    (method === :max || method === :empirical) ||
+        throw(ArgumentError("dgca: `method` is :max (the default) or :empirical; got $(repr(method))"))
     D = dists(X, Xa, unit)                       # n×m great-circle distances
+    if method === :empirical                     # Lecture 2.5's @eq-daemp at each distance (X8)
+        return _daemp.(D, reshape(sqrt.(a ./ π), 1, :))
+    end
     floors = _mean_zone_distance.(a)             # length-m floor per demand point
     return max.(D, reshape(floors, 1, :))
 end
 
 # A5: one point against the demand points, a vector of distances (as `dists(x, X2)` is, S15).
-dgca(x::AbstractVector, Xa::AbstractMatrix, a::AbstractVector; unit=:mi) =
-    vec(dgca(reshape(x, 1, :), Xa, a; unit=unit))
+dgca(x::AbstractVector, Xa::AbstractMatrix, a::AbstractVector; unit=:mi, method=:max) =
+    vec(dgca(reshape(x, 1, :), Xa, a; unit=unit, method=method))
