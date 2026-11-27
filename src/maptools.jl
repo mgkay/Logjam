@@ -640,22 +640,39 @@ mapbbox(bb::Tuple{Tuple{Real,Real},Tuple{Real,Real}}; xexpand::Real=0.0, yexpand
     mapbbox(bb[1], bb[2]; xexpand=xexpand, yexpand=yexpand)
 
 """
-    mapbbox(county::AbstractString; state, xexpand::Real=0.0, yexpand::Real=0.0) -> Tuple
+    mapbbox(name::AbstractString; state, place::Bool = false, xexpand::Real = 0.0, yexpand::Real = 0.0) -> Tuple
 
-The box of a named county, in the form `mapbbox(x, y)` returns, `((xmin, xmax), (ymin, ymax))`, offline: the
-extent of the county's Census block groups, each widened by the radius of a disk of its land area
-(`sqrt(ALAND / π)`, converted to degrees of longitude and latitude at the block group's latitude), which reaches
-the county's edge where the block groups' points alone fall short of it. It is computed exactly as Lecture 4.2's
-Code block 3 computes Wake County's box, and is equal to its `bbW` (reordered), so `osm_roads` snaps it to the same
-tile. `state` is required, since county names repeat across states: a two-letter code, a `Symbol` or a full name. The
-county is matched by its name in [`uscounty`](@ref), ignoring case, with or without a trailing "County";
-an unknown county or state, or a name that matches two counties, is an `ArgumentError` naming it. `xexpand` and
-`yexpand` widen the box as they do a box given to `mapbbox`.
+The box of a named county or place (a city, town or census-designated place), in the form `mapbbox(x, y)` returns,
+`((xmin, xmax), (ymin, ymax))`, offline. `state` is required, since names repeat across states: a two-letter code, a
+`Symbol` or a full name. `xexpand` and `yexpand` widen the box, a county's or a place's, as they do a box given to
+`mapbbox`.
 
-Only counties are boxed: a city has no boundary in Logjam's tables (its box is `loc2lonlat`'s Nominatim
-`boundingbox`, not here).
+**Which box.** A name that matches a county of the state gives the county's box; a name that matches no county gives
+the box of the place of that name. So a county comes first: `"Durham"` in North Carolina is Durham County, and
+`place = true` asks for the place instead, the city of Durham, even where a county has the name (MakePlan D3, X7).
 
-# Example
+**A county's box** is the extent of the county's Census block groups, each widened by the radius of a disk of its
+land area (`sqrt(ALAND / π)`, converted to degrees of longitude and latitude at the block group's latitude), which
+reaches the county's edge where the block groups' points alone fall short of it. It is computed exactly as Lecture
+4.2's Code block 3 computes Wake County's box, and is equal to its `bbW` (reordered), so `osm_roads` snaps it to the
+same tile. The county is matched by its name in [`uscounty`](@ref), ignoring case, with or without a trailing
+"County".
+
+**A place's box** is the extent of the place's Census 2020 polygon, the bounding box the U.S. Census Bureau's
+TIGER/Line 2020 place shapefile records for it, kept in `data/usplacebox.jls` for every place of
+[`usplace`](@ref) (made by `tools/v0_3_1/make_placebox.jl`). It contains the place's `usplace()` point. The place is
+matched by its name as `usplace()` writes it, ignoring case: a city's or a town's name alone (`"Raleigh"`), any other
+place's with its designator (`"Durham CDP"`, `"Oakwood village"`). If no place has that name, the name is matched
+without its designator: a trailing "city", "town", "CDP", "village", "borough" or "municipality" (any case) is
+dropped from the name given, and "CDP", "village", "borough" or "municipality" from the place's, so `"Raleigh city"`
+is Raleigh and `"Durham"` in California is Durham CDP; a capitalized word that is part of a name stays (`"Kansas
+City"`). An exact name is always preferred to one matched without its designator.
+
+**Errors.** An unknown state, a name that matches no county and no place (with `place = true`, no place), a name
+that matches two counties (as `"Baltimore"` in Maryland does: the county and the independent city), or a name that
+matches two places in the state, is an `ArgumentError` naming them.
+
+# Examples
 Lecture 4.2's Code block 3, Wake County, North Carolina, whose box is about 39 miles wide:
 
 ```jldoctest
@@ -666,29 +683,142 @@ bb = mapbbox("Wake"; state = :NC)
 
 ((-78.975, -78.274), (35.523, 36.08))
 ```
+
+Raleigh is no county, so its name gives the city's box; "Durham" gives Durham County, and the city of Durham with
+`place = true`:
+
+```jldoctest
+r3(bb) = (round.(bb[1], digits = 3), round.(bb[2], digits = 3))
+r3(mapbbox("Raleigh"; state = :NC)), r3(mapbbox("Durham"; state = :NC)), r3(mapbbox("Durham"; state = :NC, place = true))
+
+# output
+
+(((-78.819, -78.471), (35.708, 35.971)), ((-79.023, -78.707), (35.864, 36.258)), ((-79.007, -78.76), (35.866, 36.137)))
+```
+
+A map of a city: `makemap(mapbbox("Raleigh"; state = :NC); roads = false)` (with `using CairoMakie, GeoMakie`).
 """
-function mapbbox(county::AbstractString; state = nothing, xexpand::Real = 0.0, yexpand::Real = 0.0)
+function mapbbox(name::AbstractString; state = nothing, place::Bool = false, xexpand::Real = 0.0, yexpand::Real = 0.0)
     isnothing(state) && throw(ArgumentError(
-        "mapbbox: a county name needs its `state`, as in mapbbox(\"Wake\"; state = :NC)."))
+        "mapbbox: a county or place name needs its `state`, as in mapbbox(\"Wake\"; state = :NC)."))
     st = _normalize_state(state)                       # an ArgumentError naming the state if it is not one
-    q = lowercase(strip(String(county)))
+    q = lowercase(strip(String(name)))
     q = replace(q, r"\s+county$" => "")
-    isempty(q) && throw(ArgumentError("mapbbox: the county name is empty."))
-    cty = uscounty()
-    hit = findall(i -> cty.ST[i] == st && lowercase(cty.NAME[i]) == q, 1:nrow(cty))
-    isempty(hit) && throw(ArgumentError("mapbbox: no county named \"$(strip(String(county)))\" in $st."))
-    length(hit) > 1 && throw(ArgumentError("mapbbox: \"$(strip(String(county)))\" names $(length(hit)) counties in $st."))
-    co = cty[hit[1], :]
-    b = uscenblkgrp()
-    keep = (b.STFIP .== co.STFIP) .& (b.COFIP .== co.COFIP)
-    any(keep) || throw(ArgumentError("mapbbox: no block groups for \"$(strip(String(county)))\" in $st."))
-    lon, lat, aland = b.LON[keep], b.LAT[keep], b.ALAND[keep]
+    isempty(q) && throw(ArgumentError("mapbbox: the name is empty."))
+    if !place                                          # a county first, exactly as before v0.3.1
+        cty = _table("uscounty")
+        hit = findall(i -> cty.ST[i] == st && lowercase(cty.NAME[i]) == q, 1:nrow(cty))
+        length(hit) > 1 && throw(ArgumentError("mapbbox: \"$(strip(String(name)))\" names $(length(hit)) counties in $st."))
+        if length(hit) == 1
+            co = cty[hit[1], :]
+            b = _table("uscenblkgrp")
+            keep = (b.STFIP .== co.STFIP) .& (b.COFIP .== co.COFIP)
+            any(keep) || throw(ArgumentError("mapbbox: no block groups for \"$(strip(String(name)))\" in $st."))
+            return mapbbox(_countybox(b.LON[keep], b.LAT[keep], b.ALAND[keep]); xexpand, yexpand)
+        end
+    end
+    return mapbbox(_placebox(name, st; county = !place); xexpand, yexpand)
+end
+
+# A county's box, Lecture 4.2's construction (4-net-2.qmd, Code block 3), from its block groups' points and land
+# areas in the table's order: each block group's point widened by the radius of a disk of its land area, in degrees
+# of longitude and latitude at its latitude, and the extent of those. `mapbbox(name; state)` and `mapbbox(state)`
+# both build a county's box here, so a state's box is the extent of exactly the boxes its counties have.
+function _countybox(lon::AbstractVector, lat::AbstractVector, aland::AbstractVector)
     mpd = dgc((0, 0), (0, 1))                          # miles in a degree of latitude
     rad = sqrt.(aland ./ π)                            # radius as a disk, mi
     dlon = rad ./ (mpd .* cosd.(lat))                  # that radius in degrees of lon
     dlat = rad ./ mpd                                  # and of lat
-    bb = ((minimum(lon .- dlon), maximum(lon .+ dlon)), (minimum(lat .- dlat), maximum(lat .+ dlat)))
-    return mapbbox(bb; xexpand, yexpand)
+    return ((minimum(lon .- dlon), maximum(lon .+ dlon)), (minimum(lat .- dlat), maximum(lat .+ dlat)))
+end
+
+# The designators `usplace()` writes after a place's name (a city's or a town's it drops), and those a name given to
+# `mapbbox` may end with; each is dropped, with the space before it, when a name is matched without its designator.
+const _PLACE_DESIGNATORS = (" CDP", " village", " borough", " municipality")
+const _PLACE_QUERY_DESIGNATORS = (" city", " town", " cdp", " village", " borough", " municipality")
+
+function _dropsuffix(s::AbstractString, sufs)
+    for suf in sufs
+        endswith(s, suf) && return String(s[1:prevind(s, ncodeunits(s) - ncodeunits(suf) + 1)])
+    end
+    return String(s)
+end
+
+# The row of `usplace()` (its table, `_table("usplace")`) that `name` names in state `st`: the name as written,
+# ignoring case; failing that, without its designator. `county` says whether a county was looked for first, for the
+# error's wording.
+function _placerow(name::AbstractString, st::Symbol; county::Bool = false)
+    p = _table("usplace")
+    rows = get(_name_index("usplace").bystate, st, Int[])
+    nm = strip(String(name))
+    q = lowercase(nm)
+    hit = [i for i in rows if lowercase(p.NAME[i]) == q]
+    if isempty(hit)
+        qb = _dropsuffix(q, _PLACE_QUERY_DESIGNATORS)
+        hit = [i for i in rows if lowercase(_dropsuffix(p.NAME[i], _PLACE_DESIGNATORS)) == qb]
+    end
+    isempty(hit) && throw(ArgumentError("mapbbox: no $(county ? "county or place" : "place") named \"$nm\" in $st."))
+    if length(hit) > 1
+        which = join(["\"$(p.NAME[i])\" (PLFIP $(p.PLFIP[i]))" for i in hit], ", ", " and ")
+        throw(ArgumentError("mapbbox: \"$nm\" names $(length(hit)) places in $st: $which."))
+    end
+    return hit[1]
+end
+
+# A place's box, ((LONmin, LONmax), (LATmin, LATmax)), from `data/usplacebox.jls` (one row per `usplace()` row,
+# sorted by STFIP and PLFIP)
+function _placebox(name::AbstractString, st::Symbol; county::Bool = false)
+    p = _table("usplace")
+    i = _placerow(name, st; county)
+    B = _table("usplacebox")
+    r = searchsorted(B.STFIP, p.STFIP[i])                # the state's rows, then the place's among them
+    k = r[searchsorted(view(B.PLFIP, r), p.PLFIP[i])]
+    length(k) == 1 || error("mapbbox: no box for place ($(p.STFIP[i]), $(p.PLFIP[i])) in usplacebox")
+    j = only(k)
+    return ((B.LONmin[j], B.LONmax[j]), (B.LATmin[j], B.LATmax[j]))
+end
+
+"""
+    mapbbox(state::Symbol; xexpand::Real = 0.0, yexpand::Real = 0.0) -> Tuple
+
+The box of a state, in the form `mapbbox(x, y)` returns, `((xmin, xmax), (ymin, ymax))`, offline: the extent of the
+boxes of its counties, each built as `mapbbox(county; state)` builds it (from the county's Census block groups,
+Lecture 4.2's construction), so it contains every county's box and comes from the tables Logjam already ships (X7). The
+state is its two-letter abbreviation as a `Symbol`, as `usstate().ST` writes it (`:NC`), one of the 50 states and
+the District of Columbia; a territory, which [`usstate`](@ref) does not hold, is an `ArgumentError`. `xexpand` and
+`yexpand` widen the box as they do a box given to `mapbbox`.
+
+# Example
+North Carolina's box, the extent of its 100 counties' boxes:
+
+```jldoctest
+bb = mapbbox(:NC)
+(round.(bb[1], digits = 3), round.(bb[2], digits = 3))
+
+# output
+
+((-84.295, -75.447), (33.835, 36.595))
+```
+
+A map of a state: `makemap(mapbbox(:NC))` (with `using CairoMakie, GeoMakie`).
+"""
+function mapbbox(state::Symbol; xexpand::Real = 0.0, yexpand::Real = 0.0)
+    st = _normalize_state(state)                       # an ArgumentError naming the state if it is not one
+    cty = _table("uscounty")
+    rows = findall(==(st), cty.ST)
+    isempty(rows) && throw(ArgumentError("mapbbox: $st has no counties in uscounty(); a state's box is one of the 50 " *
+                                         "states' or the District of Columbia's."))
+    b = _table("uscenblkgrp")
+    ins = findall(==(cty.STFIP[rows[1]]), b.STFIP)
+    lon, lat, aland, cofip = b.LON[ins], b.LAT[ins], b.ALAND[ins], b.COFIP[ins]
+    xmin, xmax, ymin, ymax = Inf, -Inf, Inf, -Inf
+    for i in rows
+        keep = cofip .== cty.COFIP[i]
+        any(keep) || throw(ArgumentError("mapbbox: no block groups for $(cty.NAME[i]) in $st."))
+        (x0, x1), (y0, y1) = mapbbox(_countybox(lon[keep], lat[keep], aland[keep]))   # the county's box, as mapbbox(county; state) gives it
+        xmin, xmax, ymin, ymax = min(xmin, x0), max(xmax, x1), min(ymin, y0), max(ymax, y1)
+    end
+    return mapbbox(((xmin, xmax), (ymin, ymax)); xexpand, yexpand)
 end
 
 """

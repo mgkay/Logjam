@@ -303,6 +303,15 @@ CUS_LIMITS
 
 ### Map Creation
 
+`mapbbox` gives the box a map is drawn in, offline and without the map extension: around a set of points, of a
+county (Lecture 4.2's construction from the Census block groups), of a city, town or other Census place (the extent
+of its 2020 polygon), or of a state (the extent of its counties' boxes). Raleigh's, and North Carolina's:
+
+```@example boxes
+using Logjam
+mapbbox("Raleigh"; state = :NC), mapbbox(:NC)
+```
+
 ```@docs
 makemap
 mapbbox

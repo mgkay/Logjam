@@ -183,6 +183,26 @@ missed.
   codes by their codes' range (`27000 <= ZCTA5 <= 28999`, `270 <= ZCTA3 <= 289`); `STFIP == 37` selects them by the
   state that holds them. Code that checks the tables' exact columns, or that `ISCUS` is last, sees the new column, as
   four checks in v0.3.0's own `test/test_datatools.jl` do. **No migration** for code that reads columns by name.
+- **`mapbbox(name; state, place = false)`: the box of a city, town or census-designated place, offline (X7, MakePlan
+  D3; `place` provisional, D7).** A name that matches a county of the state still gives the county's box, exactly as
+  before (every county of `uscounty()` gives the box it gave, bit for bit, or the same error); a name that matches no
+  county, which was an `ArgumentError`, now gives the box of the place of that name, and `place = true` asks for the
+  place where a county has the name too: `mapbbox("Durham"; state = :NC)` is Durham County, and with `place = true`
+  the city of Durham. A place's box is the extent of its Census 2020 polygon, the bounding box the TIGER/Line 2020
+  place shapefile records, kept for each of the 31,617 places of `usplace()` in `data/usplacebox` (1.9 MB as CSV); it
+  contains the place's `usplace()` point, and Raleigh's is within 0.0005 degrees of Nominatim's on every side. A place
+  is matched by its name as `usplace()` writes it, ignoring case (`"Raleigh"`, `"Durham CDP"`), and failing that
+  without its designator (`"Raleigh city"`, `"Durham"` for Durham CDP); a name two places of the state share is an
+  `ArgumentError` naming both, with their `PLFIP`s. `xexpand` and `yexpand` widen it as they widen a county's.
+  **Served:** a map of a city with no network call, `makemap(mapbbox("Raleigh"; state = :NC))`, and the box
+  `osm_roads` downloads a city's streets for; until now a city's box came only from Nominatim's `boundingbox` (CR 28).
+  **No migration.**
+- **`mapbbox(state::Symbol)`: the box of a state (X7, "at no cost"; the form provisional, D7).** The extent of the
+  boxes of its counties, each built as `mapbbox(county; state)` builds it from the Census block groups, so it contains
+  every one of them and needs no new data; the state as its two-letter `Symbol` (`:NC`), one of the 50 states or the
+  District of Columbia (a territory, which `usstate()` does not hold, is an `ArgumentError`). `xexpand` and `yexpand`
+  as for any box. **Served:** a map of a state, `makemap(mapbbox(:NC))`; Lecture 4.2's Code block 3 notes that the box
+  around a county or a state can be computed from the block groups, which this does for a state. **No migration.**
 
 ### Changed
 
@@ -308,6 +328,19 @@ missed.
   `snapvals` and their helpers); `geomtools.jl` takes the geometry for drawing (`alloclines`). Text moved, not
   changed: the three files' code lines, in order, are the old file's, and the suite's count is the same before and
   after.
+- **The place boxes are a committed derivation with byte-reproducible output (D3).** `tools/v0_3_1/make_placebox.jl`
+  reads the U.S. Census Bureau's TIGER/Line 2020 place shapefiles (one per state, the District of Columbia and Puerto
+  Rico; each zip's URL, size and SHA-256 in its header, and each unpacked `.shp` and `.dbf` checked by size and
+  SHA-256 before it is read) with Base Julia alone: each polygon's bounding box from its `.shp` record header and its
+  `STATEFP` and `PLACEFP` from the fixed-width `.dbf`, so no shapefile package enters any environment. It first
+  confirms that every key of `usplace()` is a 2020 place in the files (all 31,617 are; the 292 places it does not
+  carry are Puerto Rico's), then writes `data/usplacebox.csv` (`STFIP`, `PLFIP`, `LONmin`, `LONmax`, `LATmin`,
+  `LATmax`, sorted by key, each float the shortest form that reads back as the shapefile's double, LF, no time stamp;
+  SHA-256 `39d6c734…`, the same on two runs) and its `.jls`, the CSV read back. Each `usplace()` point lies in its
+  place's box and within 5e-7 degrees of the Census interior point. `mapbbox(name; state)` builds a county's box in
+  `Logjam._countybox`, which `mapbbox(state)` shares; every county's box was saved before the change
+  (`tools/v0_3_1/save_county_boxes.jl`, `test/data/county_boxes_f3f0c1b.csv`) and `test/test_boxes_v031.jl` checks
+  each bit for bit.
 
 ## v0.3.0
 

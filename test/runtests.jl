@@ -53,6 +53,7 @@ include("test_invtools.jl")        # WP1 (v0.3.1, E1): poissoncdf, pi0, qbar, po
 include("test_transtools_v031.jl") # WP4 (v0.3.1, B6, B9, B10, B11): maxpayld and minTLC on a table, charge_tl(d, tr), the LTL constants against v0.3.0's bodies, the sh/tr contract
 include("test_location_v031.jl")   # WP3 (v0.3.1, A5, A7, A8): the metric kernel against v0.3.0's bodies, ala's call forms and metric, wcentroid(P, w), uflxchg on ranges, lonlat2loc(xy), views of tables, dgca for one point
 include("test_geodata_v031.jl")    # WP5 (v0.3.1, A4, A6, A10, X6): loc2lonlat's batch driver against v0.3.0's geocoder, the *_col keywords and their deprecations, the loader's copies and the name index, Puerto Rico's ZCTAs, STFIP on the ZIP tables (D4)
+include("test_boxes_v031.jl")      # WP10 (v0.3.1, X7): the place boxes from TIGER/Line 2020, mapbbox for a place and for a state (D3), every county's box bit for bit as at the branch's start
 
 if haskey(ENV, "LOGJAM_NETWORK_TESTS")
     include("test_osm_network.jl")
