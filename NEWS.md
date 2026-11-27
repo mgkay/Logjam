@@ -167,6 +167,22 @@ missed.
 - **`loc2lonlat(v)` takes any vector of strings (A4).** A view, a vector of `SubString`s or a column read from a file
   that is not a `Vector`, where a `Vector` was required (a `MethodError` otherwise); the result is the table the
   `Vector` of the same strings gives, its `INPUT` column a `Vector`. **No migration.**
+- **`STFIP` on `uszcta5()` and `uszcta3()`: the state of each ZIP Code Tabulation Area (D4).** Appended as the last
+  column, an `Int64` as `usplace().STFIP` is, so every column before it keeps its name, place, type and values (D2's
+  reading of an appended column). A ZCTA5 takes the state holding the largest share of its land, its county parts'
+  land in the U.S. Census Bureau's 2020 ZCTA to County Relationship File summed by state (a county's state the first
+  two digits of its GEOID); one with no land the state with the most water, a tie the smaller FIPS code (the file has
+  neither). 137 of the 33,682 ZCTA5s cross a state line, as 02861 (Rhode Island 99.54%, Massachusetts 0.46%) and
+  56144 (Minnesota 86.86%, South Dakota 13.14%) do; Puerto Rico's 40 are 72. A ZCTA3 takes the state holding the most
+  land over its ZCTA5s' county parts; 91 of the 890 have ZCTA5s in more than one state, and counting each ZCTA5
+  wholly in its own state gives the same answer for each. Made by `tools/v0_3_1/make_zcta_stfip.jl` (the file's URL,
+  vintage and SHA-256 in its header), byte-identical on regeneration (`uszcta5.csv` `fee98453…`, `uszcta3.csv`
+  `7c60ed0f…`; the `.jls` is the CSV read back); `test/test_geodata_v031.jl` checks the old columns against
+  v0.3.0's files and recomputes every cross-state and three-digit state from the committed extract
+  `test/data/zcta_state_parts.csv`. **Lectures served:** 2.5's Code blocks 3 and 15 select North Carolina's ZIP
+  codes by their codes' range (`27000 <= ZCTA5 <= 28999`, `270 <= ZCTA3 <= 289`); `STFIP == 37` selects them by the
+  state that holds them. Code that checks the tables' exact columns, or that `ISCUS` is last, sees the new column, as
+  four checks in v0.3.0's own `test/test_datatools.jl` do. **No migration** for code that reads columns by name.
 
 ### Changed
 

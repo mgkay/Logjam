@@ -275,19 +275,45 @@ Geographic and population data for each U.S. 5-digit ZIP Code Tabulation Area (Z
 - `ALAND`: Float representing land area of ZCTA5 in square miles.
 - `AWATER`: Float representing water area of ZCTA5 in square miles.
 - `ISCUS`: Boolean indicating whether ZCTA5 is within continental U.S. (true or false).
+- `STFIP`: Integer representing the state FIPS code of the state that holds the largest share of the ZCTA5's land (v0.3.1).
+
+# State (`STFIP`)
+A ZCTA5 can cross a state line: 137 of these do. `STFIP` is the state holding the largest share of the ZCTA5's land
+area, the land of its parts in each county, from [3], summed by state (a county's state is the first two digits of its
+GEOID). A ZCTA5 with no land would take the state holding the largest share of its water area, and a tie the smaller
+FIPS code; the file has neither. Puerto Rico's 40 ZCTA5s are 72. [`fips2st`](@ref) gives the state's symbol. The column
+was added in v0.3.1 as the last one, so every column before it is as it was (MakePlan D4; made by
+`tools/v0_3_1/make_zcta_stfip.jl`).
 
 # Sources
-Geographic data derived from [1]. Population data derived from [2]. `ISCUS` determined from `LAT` and `LON`.
+Geographic data derived from [1]. Population data derived from [2]. `ISCUS` determined from `LAT` and `LON`. `STFIP` determined from [3].
 
 1. U.S. Census Bureau, 2023 Gazetteer Files, [2023_Gaz_zcta_national.txt](https://www2.census.gov/geo/docs/maps-data/data/gazetteer/2023_Gazetteer/2023_Gaz_zcta_national.zip)
 
 2. U.S. Census Bureau, 2020 Census Demographic and Housing Characteristics File (DHC), [DECENNIALDHC2020.P1](https://data.census.gov/table?t=Populations%20and%20People&g=010XX00US\$8600000)
 
+3. U.S. Census Bureau, 2020 ZCTA to County Relationship File, [tab20_zcta520_county20_natl.txt](https://www2.census.gov/geo/docs/maps-data/data/rel2020/zcta520/tab20_zcta520_county20_natl.txt)
+
 # Example
 ```julia
 df = uszcta5()
-names(df)     # => ["ZCTA5", "LON", "LAT", "POP", "ALAND", "AWATER", "ISCUS"]
+names(df)     # => ["ZCTA5", "LON", "LAT", "POP", "ALAND", "AWATER", "ISCUS", "STFIP"]
 first(df, 5)  # LON precedes LAT
+```
+
+Three ZCTA5s and their states: 02861 lies 99.5% in Rhode Island and 0.5% in Massachusetts, 56144 87% in Minnesota and
+13% in South Dakota:
+
+```jldoctest
+z = uszcta5()
+[(zcta, fips2st(only(z.STFIP[z.ZCTA5 .== zcta]))) for zcta in (27601, 2861, 56144)]
+
+# output
+
+3-element Vector{Tuple{Int64, Symbol}}:
+ (27601, :NC)
+ (2861, :RI)
+ (56144, :MN)
 ```
 """
 function uszcta5()
@@ -309,6 +335,14 @@ Geographic and population data for each U.S. 3-digit ZIP Code Tabulation Area (Z
 - `ALAND`: Float representing land area of ZCTA3 in square miles.
 - `AWATER`: Float representing water area of ZCTA3 in square miles.
 - `ISCUS`: Boolean indicating whether ZCTA3 is within continental U.S. (true or false).
+- `STFIP`: Integer representing the state FIPS code of the state that holds the most land of the ZCTA3's ZCTA5s (v0.3.1).
+
+# State (`STFIP`)
+`STFIP` is the state holding the most land summed over the ZCTA3's ZCTA5s, each ZCTA5's land counted in the state
+that holds it, as for [`uszcta5`](@ref) (from the U.S. Census Bureau's 2020 ZCTA to County Relationship File); with
+no land, the most water; a tie to the smaller FIPS code. 91 of the ZCTA3s have ZCTA5s in more than one state; for
+each, counting every ZCTA5 wholly in its own `STFIP` gives the same state. Puerto Rico's ZCTA3 `9` is 72. The column
+was added in v0.3.1 as the last one, so every column before it is as it was.
 
 # Sources
 All data derived from `uszcta5`.
@@ -316,7 +350,7 @@ All data derived from `uszcta5`.
 # Example
 ```julia
 df = uszcta3()
-names(df)     # => ["ZCTA3", "LON", "LAT", "POP", "ALAND", "AWATER", "ISCUS"]
+names(df)     # => ["ZCTA3", "LON", "LAT", "POP", "ALAND", "AWATER", "ISCUS", "STFIP"]
 first(df, 5)  # LON precedes LAT
 ```
 """

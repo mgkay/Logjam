@@ -1,4 +1,4 @@
-# test_geodata_v031.jl -- added by PCV WP5 of Logjam v0.3.1 (GC rest: review A's A4, A6 and A10; X6). Test spec Sec. 5.
+# test_geodata_v031.jl -- added by PCV WP5 of Logjam v0.3.1 (GC rest: review A's A4, A6 and A10; ZCTA: D4; X6). Test spec Sec. 5.
 # Equality is `==` (or `isequal`, where a column may hold `missing`) on every element, with the element types compared
 # as well; no tolerance is used anywhere in this file. The evidence:
 #   1. the batch driver (A4): v0.3.0's geocoder, its vector and DataFrame methods and the row resolver they call,
@@ -12,11 +12,16 @@
 #   3. the loader and the name index (A10): every census loader returns a copy that can be changed without reaching
 #      the next call; the index finds the row (or raises the error) v0.3.0's scan of the whole table finds, for every
 #      name of `usplace()` and `uscounty()`, with its state and with none, and for 200 variants of them, the scan
-#      itself checked against v0.3.0's text on a sample; the Puerto Rico rows the ZIP docstrings now name (X6).
+#      itself checked against v0.3.0's text on a sample; the Puerto Rico rows the ZIP docstrings now name (X6);
+#   4. STFIP on the ZIP tables (MakePlan D4): the last column, an Int64, never missing; the columns before it v0.3.0's,
+#      by type and by the SHA-256 of v0.3.0's CSV files; the CSV files the script's output byte for byte and the .jls
+#      that CSV read back; Puerto Rico's 72; every cross-state ZCTA5 and every three-digit ZCTA recomputed by the rule
+#      from the committed extract of the Census relationship file (test/data/zcta_state_parts.csv).
 
 using Test
 using Logjam
 using DataFrames
+using CSV
 using Base.CoreLogging: with_logger, NullLogger    # Logging is not in the test environment (Pkg.test has no @stdlib)
 
 # ---- v0.3.0's geocoder, verbatim (the v0.3.0 tag fd0f1f3, src/geocode.jl: _batch_row :478-486, _resolve_row
@@ -714,4 +719,107 @@ end
         d = string(Docs.doc(f))
         @test occursin("Puerto Rico", d) && occursin("ISCUS = false", d) && !occursin("Does not include U.S. territories", d)
     end
+end
+
+# ---- 4. STFIP on the ZIP tables (MakePlan D4, X6) ----------------------------------------------------------------------
+# SHA is in every environment Logjam is in (Random depends on it) but not a dependency of the test target, so it is
+# reached by its package id, as tools/v0_3_1/make_faf5net.jl reaches CodecZlib.
+const _GD_SHA = Base.require(Base.PkgId(Base.UUID("ea8e919c-243c-51af-8825-aaa63cd721ce"), "SHA"))
+_gd_sha(b) = bytes2hex(_GD_SHA.sha256(b))
+_gd_lf(path) = (b = read(path); b[b .!= UInt8('\r')])          # the file as committed: a Windows checkout may add CRs
+_gd_csv(df) = (io = IOBuffer(); CSV.write(io, df); take!(io))
+
+# the committed tables' SHA-256, printed by tools/v0_3_1/make_zcta_stfip.jl on two runs (Julia 1.12.6), and the
+# SHA-256 of the v0.3.0 tables (fd0f1f3's data/uszcta5.csv and uszcta3.csv), which CSV.write of their columns gives
+const _GD_ZCTA_SHA = Dict(
+    "uszcta5" => (new = "fee98453f863f4ac6e93eaf7cbabf8a6ad5431d72ff139af32f616ba173e1adc",
+                  old = "b3c56baefd7f08428a2158eaf9d45eedd798281ca4fee0adc2e4602b5a0b9752"),
+    "uszcta3" => (new = "7c60ed0ff6859b6b33c7e91a5c2e7f2688fb66c873a165450765f1897881dcac",
+                  old = "3e8a0f7af8fb1eb3dccddee63365572572ffb6795fb12889c6e12fb0c98a90c8"))
+const _GD_EXTRACT_SHA = "8c442f6d4577b9ccdde6cd7dbc0a5f2cbefcee309eabf786766062503ddcfbc6"
+const _GD_V030_TYPES = [Int64, Float64, Float64, Int64, Float64, Float64, Bool]
+
+# the rule, as the script states it: the most land, else the most water; a tie to the smaller FIPS code
+function _gd_pick(d::AbstractDict)
+    sts = sort!(collect(keys(d)))
+    k = sum(d[s][1] for s in sts) > 0 ? 1 : 2
+    best = sts[1]
+    for s in sts
+        d[s][k] > d[best][k] && (best = s)
+    end
+    return best
+end
+
+@testset "[WP5 D4] STFIP is the last column of uszcta5 and uszcta3, and nothing else moved" begin
+    data = joinpath(pkgdir(Logjam), "data")
+    for (name, f, code) in (("uszcta5", uszcta5, :ZCTA5), ("uszcta3", uszcta3, :ZCTA3))
+        df = f()
+        @test names(df) == [String(code), "LON", "LAT", "POP", "ALAND", "AWATER", "ISCUS", "STFIP"]
+        @test eltype(df.STFIP) == eltype(usplace().STFIP) == Int64
+        @test !any(ismissing, df.STFIP) && all(s -> s in keys(Logjam.fips_state), df.STFIP)
+        # the existing columns: v0.3.0's types, and the bytes of v0.3.0's CSV file
+        old = select(df, Not(:STFIP))
+        @test eltype.(eachcol(old)) == _GD_V030_TYPES
+        @test _gd_sha(_gd_csv(old)) == _GD_ZCTA_SHA[name].old
+        # the CSV is the script's output byte for byte, and the .jls is that CSV read back
+        csv = _gd_lf(joinpath(data, name * ".csv"))
+        @test _gd_sha(csv) == _GD_ZCTA_SHA[name].new
+        back = CSV.read(IOBuffer(csv), DataFrame; ntasks = 1)
+        @test isequal(back, df) && eltype.(eachcol(back)) == eltype.(eachcol(df))
+    end
+    # every ZIP of Puerto Rico in the tables, 009xx, is 72, outside the continental U.S.
+    z5, z3 = uszcta5(), uszcta3()
+    pr = filter(r -> 900 <= r.ZCTA5 <= 999, z5)
+    @test nrow(pr) == 40 && all(==(72), pr.STFIP) && !any(pr.ISCUS)
+    @test only(z3.STFIP[z3.ZCTA3 .== 9]) == 72
+    @test count(==(72), z5.STFIP) == 40 && count(==(72), z3.STFIP) == 1
+    # a few with no doubt: Raleigh's 27601, Cambridge's 02139, Beverly Hills' 90210
+    @test [only(z5.STFIP[z5.ZCTA5 .== z]) for z in (27601, 2139, 90210)] == [37, 25, 6]
+end
+
+@testset "[WP5 D4] each cross-state ZCTA and each three-digit ZCTA follows the rule, from the committed extract" begin
+    path = joinpath(@__DIR__, "data", "zcta_state_parts.csv")
+    @test _gd_sha(_gd_lf(path)) == _GD_EXTRACT_SHA
+    ex = CSV.read(path, DataFrame; comment = "#")
+    parts = Dict{Int, Dict{Int, NTuple{2, Int}}}()
+    for r in eachrow(ex)
+        get!(parts, r.ZCTA5, Dict{Int, NTuple{2, Int}}())[r.STFIP] = (r.ALAND_M2, r.AWATER_M2)
+    end
+    z5, z3 = uszcta5(), uszcta3()
+    st5 = Dict(zip(z5.ZCTA5, z5.STFIP))
+    @test all(z -> haskey(st5, z), keys(parts))
+    # five-digit: every ZCTA the extract shows in two or more states takes the state with the most land
+    cross = [z for (z, d) in parts if length(d) > 1]
+    @test length(cross) == 137
+    @test all(st5[z] == _gd_pick(parts[z]) for z in cross)
+    # a ZCTA in one state takes it
+    @test all(st5[z] == only(keys(d)) for (z, d) in parts if length(d) == 1)
+    # the rule's no-land branch and its tie, on made-up parts (the file has neither)
+    @test _gd_pick(Dict(6 => (0, 5), 4 => (0, 9))) == 4 && _gd_pick(Dict(6 => (0, 9), 4 => (0, 5))) == 6
+    @test _gd_pick(Dict(6 => (7, 0), 4 => (7, 0))) == 4 && _gd_pick(Dict(6 => (8, 0), 4 => (7, 99))) == 6
+    # three-digit: members in one state give that state; members in more than one, the state with the most land
+    # summed over the members' parts, every member of such a ZCTA being in the extract
+    members = Dict{Int, Vector{Int}}()
+    for z in z5.ZCTA5
+        push!(get!(members, z ÷ 100, Int[]), z)
+    end
+    one, mixed, incomplete, wrong = 0, 0, Int[], Int[]
+    for (c, s) in zip(z3.ZCTA3, z3.STFIP)
+        m = members[c]
+        if all(z -> !haskey(parts, z), m) && length(unique(st5[z] for z in m)) == 1
+            one += 1
+            s == st5[m[1]] || push!(wrong, c)
+        else
+            mixed += 1
+            all(z -> haskey(parts, z), m) || (push!(incomplete, c); continue)
+            agg = Dict{Int, NTuple{2, Int}}()
+            for z in m, (st, v) in parts[z]
+                a = get(agg, st, (0, 0)); agg[st] = (a[1] + v[1], a[2] + v[2])
+            end
+            s == _gd_pick(agg) || push!(wrong, c)
+        end
+    end
+    @test (one, mixed) == (799, 91)
+    @test isempty(incomplete)
+    @test isempty(wrong)
 end

@@ -38,7 +38,7 @@ end
     df = uszcta5()
     @test isa(df, DataFrame)
     @test !isempty(df)
-    @test all(issubset(names(df), ["ZCTA5", "LAT", "LON", "POP", "ALAND", "AWATER", "ISCUS"]))
+    @test all(issubset(names(df), ["ZCTA5", "LAT", "LON", "POP", "ALAND", "AWATER", "ISCUS", "STFIP"]))   # STFIP appended in v0.3.1 (D4)
 end
 
 # Test for uszcta3 function
@@ -46,7 +46,7 @@ end
     df = uszcta3()
     @test isa(df, DataFrame)
     @test !isempty(df)
-    @test all(issubset(names(df), ["ZCTA3", "LAT", "LON", "POP", "ALAND", "AWATER", "ISCUS"]))
+    @test all(issubset(names(df), ["ZCTA3", "LAT", "LON", "POP", "ALAND", "AWATER", "ISCUS", "STFIP"]))   # STFIP appended in v0.3.1 (D4)
 end
 
 # Test for uscbsa function
@@ -109,7 +109,8 @@ end
         df = loader()
         @test "ISCUS" in names(df)
         @test eltype(df.ISCUS) == Bool
-        @test names(df)[end] == "ISCUS"
+        # ISCUS ends the v0.2.9 schema; on the ZIP tables v0.3.1 appends STFIP after it (D4)
+        @test names(df)[end] == "ISCUS" || (loader in (uszcta5, uszcta3) && names(df)[end-1:end] == ["ISCUS", "STFIP"])
     end
 end
 
