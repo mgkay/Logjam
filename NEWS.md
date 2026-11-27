@@ -218,6 +218,28 @@ missed.
   its first has already changed, and returns 10% to 13% more; Logjam follows 2.5's equation there.
   **Lecture served:** 2.5, which gives `@eq-daemp` "for the occasions that warrant it" and runs `@eq-da2dmax` with
   `dgca` (Code blocks 17 and 20); `dgca(P, P, z.ALAND; method = :empirical)` runs the equation. **No migration.**
+- **`twoopt(...; verbose = false)` and `mincostinsert(...; verbose = false)`: the trace of what each procedure tries
+  (E2, refactor E's R2, Matlog's `dodisp`; the keyword provisional, D7).** With `verbose = true`, `twoopt` prints its
+  start as `*TC: r`, then every vector it considers, in the order considered, as ` TC: r′` for a change it does not
+  keep and `*TC: r′` for one it keeps, each with the cost the handle returned; `mincostinsert` prints every route it
+  tries as `i,j: route = TC`, the positions of the pickup and the delivery. The lines are printed with `println` by
+  the loop that finds the result, so the trace is Logjam's own search and not a copy of it. Every `twoopt` method
+  takes the keyword: the cost-handle method, for a tour or a route (a reversal that empties the truck is not
+  considered, so not printed); the matrix method `twoopt(π, C)`, which still decides by the delta and, for the trace
+  only, builds each tour it considers and prints its whole cost, `sum(segcost(π′, C))`, as the handle form would;
+  and the two methods for a vector of routes, which print each route's trace in turn. Into an empty route
+  `mincostinsert` places `[k, k]` outside its loops and prints nothing, as the lecture's function prints nothing
+  there. A route's order of ties (CR 58) is applied after the search, so the route returned can differ from the
+  last starred line by the order of two tied shipments. The default, `false`, prints and builds nothing and returns
+  exactly what v0.3.0 returned, and `true` returns the same values (`test/test_routing_v031.jl` holds both against
+  v0.3.0's bodies, copied as text). On the lectures' inputs the output is the lectures' byte for byte, their
+  definitions run as text: Lecture 5.1 Ex. 3's 20 lines from `twoopt(π, πTCh; verbose = true)` and from
+  `twoopt(π, D; verbose = true)`; Lecture 5.2 Ex. 1's 4 and 13 routes from its two insertions, and the whole cell's
+  21 lines with its `@show`s. Matlog's `twoopt.m` and `mincostinsert.m` print other traces by design, since v0.3.0
+  ruled Logjam's 2-opt the lecture's (K7a) and its insertion the F24 loop (CR 38). **Lectures served:** 5.1 Code
+  block 15 (`twoopt_prt`) and 5.2 Code block 17 (`mincostinsert_prt`), whose own printing definitions it can
+  replace at the re-pin with `twoopt(π, πTCh; verbose = true)` and `mincostinsert(2, [1, 1], rTD1h; verbose =
+  true)`; whether the lectures keep their printing versions is a decision about their shape. **No migration.**
 
 ### Changed
 
@@ -257,6 +279,14 @@ missed.
 - **The ZIP tables' docstrings say which territories they hold (X6).** `uszcta5()` and `uszcta3()` said they held no
   U.S. territory; they hold Puerto Rico's 40 ZCTA5s whose codes begin with 009 (`ZCTA5` 901 to 987) and its ZCTA3
   `9`, with `ISCUS = false`, and none of its 006xx and 007xx ZCTA5s. The docstrings now say so; no data changed.
+- **Every example in `src/routetools.jl` shows its output and runs as a doctest (DOC, verifier issue 4).** The
+  examples of `segcost`, `isorigin`, `rte2loc`, `twoopt` (the cost-handle and matrix methods), `mincostinsert`,
+  `pairwisesavings` and `savings` gave their output in a comment, or `twoopt`'s not at all, and nothing ran them;
+  each is now a `jldoctest` whose output is the function's own, checked on every test run (`test/test_doctests.jl`)
+  and in the manual's build. Each keeps its example's data and calls. `twoopt(π, C)`'s no longer assigns to `π`,
+  `pairwisesavings`' comment that `ijs.s` and `ijs[3]` are the destructured `sˢ` is now a line that runs, and
+  `twoopt`'s and `mincostinsert`'s each add a `verbose = true` call, `twoopt(π, C)`'s printing Lecture 5.1's trace.
+  The conversion changes no function.
 
 ### Internal
 

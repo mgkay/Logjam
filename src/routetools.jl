@@ -19,10 +19,16 @@ Returns a vector of costs for traveling between consecutive locations.
 - Vector of segment costs of length `length(loc) - 1`.
 
 # Example
-```julia
-C = [0 10 20; 10 0 15; 20 15 0]  # 3x3 cost matrix
-loc = [1, 2, 3, 1]               # Tour visiting all nodes
-segcost(loc, C)                  # Returns [10, 15, 20]
+```jldoctest
+julia> C = [0 10 20; 10 0 15; 20 15 0];    # 3x3 cost matrix
+
+julia> loc = [1, 2, 3, 1];                 # Tour visiting all nodes
+
+julia> segcost(loc, C)
+3-element Vector{Int64}:
+ 10
+ 15
+ 20
 ```
 """
 segcost(loc, C) = map(i -> C[loc[i], loc[i+1]], 1:length(loc) - 1)
@@ -48,9 +54,17 @@ This function identifies which occurrence is the pickup (origin).
 - Boolean vector where `true` indicates first occurrence (origin/pickup).
 
 # Example
-```julia
-rte = [1, 2, 1, 3, 2, 3]  # Pickup 1, pickup 2, deliver 1, pickup 3, deliver 2, deliver 3
-isorigin(rte)             # Returns [true, true, false, true, false, false]
+```jldoctest
+julia> rte = [1, 2, 1, 3, 2, 3];    # Pickup 1, pickup 2, deliver 1, pickup 3, deliver 2, deliver 3
+
+julia> isorigin(rte)               # true, true, false, true, false, false
+6-element Vector{Bool}:
+ 1
+ 1
+ 0
+ 1
+ 0
+ 0
 ```
 """
 isorigin(rte) = begin
@@ -81,11 +95,19 @@ using pickup location for origins and delivery location for destinations.
   a `Vector{Int}` when `sh.b` and `sh.e` are integer columns (v0.2.8 returned a `Vector{Any}`, N20).
 
 # Example
-```julia
-using DataFrames
-sh = DataFrame(b=[10, 20], e=[15, 25])  # 2 shipments
-rte = [1, 2, 1, 2]                       # Pickup both, then deliver both
-rte2loc(rte, sh)                         # Returns [10, 20, 15, 25]
+```jldoctest
+julia> using DataFrames
+
+julia> sh = DataFrame(b=[10, 20], e=[15, 25]);    # 2 shipments
+
+julia> rte = [1, 2, 1, 2];                         # Pickup both, then deliver both
+
+julia> rte2loc(rte, sh)
+4-element Vector{Int64}:
+ 10
+ 20
+ 15
+ 25
 ```
 
 A vector of routes gives a location sequence for each, as Lecture 5.3's `[rte2loc(r, shcw, tr) for r in R1]`
@@ -685,7 +707,7 @@ end
 # =============================================================================
 
 """
-    twoopt(r, rTCh) -> (rte = improved route or tour, TC = its cost)
+    twoopt(r, rTCh; verbose = false) -> (rte = improved route or tour, TC = its cost)
 
 Improve a tour or a route with the first-improvement 2-opt procedure.
 
@@ -715,27 +737,49 @@ starts the scan again from the new vector; it stops when a whole scan improves n
 - `r`: Initial route vector or tour.
 - `rTCh`: Function that calculates the total cost of a whole vector: `rTCh(r) -> cost`. It may
   return `Inf` for a vector that violates a constraint; it need not be a sum of arc costs.
+- `verbose`: (keyword) `true` prints each vector the procedure considers with its cost, as Lecture 5.1's
+  `twoopt_prt` (Code block 15) prints them: first the start, `"*" TC ": " r`; then, in the order
+  considered, `" " TC ": " r′` for a change that is not kept and `"*" TC ": " r′` for one that is, so
+  the starred lines are the vectors the search moves through. Each line's cost is the one `rTCh`
+  returned for its vector, and each line is printed with `println`. A route's reversal that leaves the
+  truck empty is not considered, so it is not printed. Default `false`, which prints nothing.
 
 # Returns
 - The named tuple `(rte, TC)`, the improved vector and its total cost, which destructures as `r, TC = twoopt(r, rTCh)`. The input is not modified.
 
 # Example
-```julia
-# A tour: 5.1's rule of a closed tour through four locations (Matlog's `tsp2opt` neighborhood)
-C = [0 10 25 20; 10 0 15 30; 25 15 0 10; 20 30 10 0]
-rTCh = r -> sum(C[r[i], r[i+1]] for i in 1:length(r)-1)
-improved, cost = twoopt([1, 2, 3, 4, 1], rTCh)
+```jldoctest
+julia> # A tour: 5.1's rule of a closed tour through four locations (Matlog's `tsp2opt` neighborhood)
+       C = [0 10 25 20; 10 0 15 30; 25 15 0 10; 20 30 10 0];
 
-# A route: Lecture 5.2 Ex. 6(a)'s shipments (1 to 2, 3 to 4, 5 to 6) at one dollar a mile
-using DataFrames
-D = [  0 300  30 280  60 335
-     300   0 280  30 335  60
-      30 280   0 250  90 340
-     280  30 250   0 340  90
-      60 335  90 340   0 275
-     335  60 340  90 275   0]
-sh = DataFrame(b = [1, 3, 5], e = [2, 4, 6])
-route, cost = twoopt([1, 2, 3, 1, 2, 3], r -> rteTC(r, sh, D))
+julia> rTCh = r -> sum(C[r[i], r[i+1]] for i in 1:length(r)-1);
+
+julia> improved, cost = twoopt([1, 2, 3, 4, 1], rTCh)
+(rte = [1, 2, 3, 4, 1], TC = 55)
+
+julia> twoopt([1, 3, 2, 4, 1], rTCh; verbose = true)    # every tour considered, a star on each kept
+*90: [1, 3, 2, 4, 1]
+*55: [1, 2, 3, 4, 1]
+ 90: [1, 3, 2, 4, 1]
+ 75: [1, 2, 4, 3, 1]
+(rte = [1, 2, 3, 4, 1], TC = 55)
+```
+
+```jldoctest
+julia> using DataFrames
+
+julia> # A route: Lecture 5.2 Ex. 6(a)'s shipments (1 to 2, 3 to 4, 5 to 6) at one dollar a mile
+       D = [  0 300  30 280  60 335
+            300   0 280  30 335  60
+             30 280   0 250  90 340
+            280  30 250   0 340  90
+             60 335  90 340   0 275
+            335  60 340  90 275   0];
+
+julia> sh = DataFrame(b = [1, 3, 5], e = [2, 4, 6]);
+
+julia> route, cost = twoopt([1, 2, 3, 1, 2, 3], r -> rteTC(r, sh, D))
+(rte = [3, 1, 2, 2, 1, 3], TC = 430)
 ```
 
 # Notes
@@ -743,19 +787,25 @@ route, cost = twoopt([1, 2, 3, 1, 2, 3], r -> rteTC(r, sh, D))
   here a reversal that empties the truck is skipped, as Lecture 5.2's `twoopt_rte` skips it.
 - For pickup-delivery with constraints: have `rTCh` return `Inf` for an infeasible route.
 - **Order of ties (CR 58), routes only:** where two neighboring loadings, or two neighboring unloadings, can trade places at exactly the same cost, the returned route lists the lower-numbered shipment first (applied after the search, which is unchanged); a tour is returned as the search leaves it. The cost is never changed. The same holds for each route of a vector of routes.
+- **The trace (`verbose = true`, E2)** is printed by the search itself, in the loop that finds the result, so
+  for a tour its last starred line is the tour returned; for a route the order of ties is applied after the
+  search, so the returned route can differ from the last starred line by the order of two tied shipments.
+  On Lecture 5.1 Ex. 3 (`twoopt(π, πTCh; verbose = true)`) the output is the lecture's Code block 15, byte for
+  byte. Printing changes nothing the search computes: the result is the same with `verbose` `true` or `false`.
 """
-function twoopt(r, rTCh)
-    rte, TC = _twoopt_out(r, rTCh)
+function twoopt(r, rTCh; verbose::Bool = false)
+    rte, TC = _twoopt_out(r, rTCh; verbose)
     return (rte = rte, TC = TC)
 end
 
 # a route or a tour, by the vector itself (the kernels, which the exports and the set methods call)
-_twoopt(r, rTCh) = _isroutevec(r) ? _twoopt_route(r, rTCh) : _twoopt_tour(r, rTCh)
+_twoopt(r, rTCh; verbose::Bool = false) =
+    _isroutevec(r) ? _twoopt_route(r, rTCh; verbose) : _twoopt_tour(r, rTCh; verbose)
 
 # what the exported methods return: the kernel's result, a route put in increasing order of equal-cost
 # ties (CR 58) after the search, a tour untouched
-function _twoopt_out(r, rTCh)
-    rte, TC = _twoopt(r, rTCh)
+function _twoopt_out(r, rTCh; verbose::Bool = false)
+    rte, TC = _twoopt(r, rTCh; verbose)
     return (_isroutevec(r) ? _order_ties(rte, rTCh) : rte), TC
 end
 
@@ -790,8 +840,8 @@ end
 _narrow(v) = isempty(v) ? v : convert(Vector{mapreduce(typeof, promote_type, v)}, v)
 
 """
-    twoopt(R, rTCh) -> (rte = R′, TC = Vector)
-    twoopt(R, C::AbstractMatrix) -> (rte = R′, TC = Vector)
+    twoopt(R, rTCh; verbose = false) -> (rte = R′, TC = Vector)
+    twoopt(R, C::AbstractMatrix; verbose = false) -> (rte = R′, TC = Vector)
 
 2-opt of a set of routes: each route (or tour) of the vector `R` improved on its own, Matlog's `twoopt`
 on a cell array of routes. The result is the named tuple of the vector of improved routes and the vector
@@ -807,6 +857,9 @@ of `twoopt(π, C)`, whose cost is the sum of arc costs.
 - `R`: A vector of routes, each a vector of integers. Not modified.
 - `rTCh`: Function that calculates the total cost of one route, `rTCh(r) -> cost`, the handle `savings` takes.
 - `C`: Square matrix of arc costs, for a vector of tours.
+- `verbose`: (keyword) passed to each route's 2-opt, so `true` prints the trace of `twoopt(r, rTCh; verbose =
+  true)` or `twoopt(π, C; verbose = true)` for each route in the order of `R`, one after another, each
+  beginning with its starting route's starred line. Default `false`, which prints nothing.
 
 # Returns
 - The named tuple `(rte, TC)`, which destructures as `R, TC = twoopt(R, rTCh)`: the improved routes in the
@@ -849,12 +902,12 @@ julia> TC
   `twoopt(r, rTCh)`.
 - `twoopt(R, C)` throws `ArgumentError` for a route vector, as `twoopt(π, C)` does.
 """
-function twoopt(R::AbstractVector{<:AbstractVector{<:Integer}}, rTCh)
-    res = [_twoopt_out(r, rTCh) for r in R]
+function twoopt(R::AbstractVector{<:AbstractVector{<:Integer}}, rTCh; verbose::Bool = false)
+    res = [_twoopt_out(r, rTCh; verbose) for r in R]
     return (rte = map(first, res), TC = _narrow(map(x -> x[2], res)))
 end
-function twoopt(R::AbstractVector{<:AbstractVector{<:Integer}}, C::AbstractMatrix)
-    res = [twoopt(π, C) for π in R]
+function twoopt(R::AbstractVector{<:AbstractVector{<:Integer}}, C::AbstractMatrix; verbose::Bool = false)
+    res = [twoopt(π, C; verbose) for π in R]
     return (rte = map(first, res), TC = _narrow(map(x -> x[2], res)))
 end
 
@@ -868,10 +921,12 @@ function _isroutevec(r)
     return all(==(2), values(n))
 end
 
-# Matlog's twoopt.m on one route, with the empty-truck vectors left out
-function _twoopt_route(r, rTCh)
+# Matlog's twoopt.m on one route, with the empty-truck vectors left out. `verbose` prints each route whose
+# cost is computed, in Lecture 5.1's `twoopt_prt` form (E2); it changes nothing the search computes.
+function _twoopt_route(r, rTCh; verbose::Bool = false)
     m = length(r)
     rᵒ, TCᵒ = copy(r), rTCh(r)
+    verbose && println("*", TCᵒ, ": ", rᵒ)
     done = false
     while !done
         done = true
@@ -881,17 +936,22 @@ function _twoopt_route(r, rTCh)
             TC = rTCh(r′)
             if TC < TCᵒ
                 rᵒ, TCᵒ = r′, TC
+                verbose && println("*", TCᵒ, ": ", rᵒ)
                 done = false
                 break
+            elseif verbose
+                println(" ", TC, ": ", r′)
             end
         end
     end
     return rᵒ, TCᵒ
 end
 
-# the closed tour's neighborhood: the ends stay; v0.2.8's loops, unchanged
-function _twoopt_tour(r, rTCh)
+# the closed tour's neighborhood: the ends stay; v0.2.8's loops, unchanged. `verbose` prints what Lecture
+# 5.1's `twoopt_prt` (Code block 15) prints, the same three `println`s at the same places in the same loop (E2).
+function _twoopt_tour(r, rTCh; verbose::Bool = false)
     rᵒ, TCᵒ = copy(r), rTCh(r)
+    verbose && println("*", TCᵒ, ": ", rᵒ)
     done = false
     while !done
         done = true
@@ -901,8 +961,11 @@ function _twoopt_tour(r, rTCh)
                 TC = rTCh(r′)
                 if TC < TCᵒ
                     rᵒ, TCᵒ = r′, TC
+                    verbose && println("*", TCᵒ, ": ", rᵒ)
                     done = false
                     break
+                elseif verbose
+                    println(" ", TC, ": ", r′)
                 end
             end
             if done == false
@@ -915,7 +978,7 @@ function _twoopt_tour(r, rTCh)
 end
 
 """
-    twoopt(π, C::AbstractMatrix) -> (rte = improved tour, TC = its cost)
+    twoopt(π, C::AbstractMatrix; verbose = false) -> (rte = improved tour, TC = its cost)
 
 2-opt of a closed tour whose cost is the sum of its arc costs, each change evaluated by its
 **delta**: the arcs removed against the arcs added, not the cost of the whole new tour.
@@ -934,15 +997,45 @@ stretch's backward and forward arcs, read from prefix sums kept for the scan.
 # Arguments
 - `π`: Initial tour, a vector of location indices with `π[1] == π[end]`. Not modified.
 - `C`: Square matrix of arc costs, indexed by the locations of `π`.
+- `verbose`: (keyword) `true` prints the trace `twoopt(π, rTCh; verbose = true)` prints with
+  `rTCh = π -> sum(segcost(π, C))`: the start, then each tour considered with its cost, a star on each
+  one kept. The search still decides by the delta; only for the printing is each tour considered built
+  and its whole cost, `sum(segcost(π′, C))`, computed, so `verbose = true` costs O(m) a change, as the
+  general method does. Default `false`, which builds and prints nothing.
 
 # Returns
 - The named tuple `(rte, TC)`: the improved tour and its cost, `sum(segcost(rte, C))`.
 
 # Example
-```julia
-# 5.1 Ex. 3, slide 240's trace: six nodes, asymmetric arc costs, from the tour 1-2-3-4-5-6-1
-D = [0 8 6 9 1 5; 3 0 1 5 4 2; 9 2 0 3 1 1; 8 2 1 0 10 6; 6 7 10 1 0 10; 6 2 5 2 1 0]
-π, TC = twoopt([1, 2, 3, 4, 5, 6, 1], D)   # (rte = [1, 5, 4, 2, 3, 6, 1], TC = 12)
+```jldoctest
+julia> # 5.1 Ex. 3, slide 240's trace: six nodes, asymmetric arc costs, from the tour 1-2-3-4-5-6-1
+       D = [0 8 6 9 1 5; 3 0 1 5 4 2; 9 2 0 3 1 1; 8 2 1 0 10 6; 6 7 10 1 0 10; 6 2 5 2 1 0];
+
+julia> twoopt([1, 2, 3, 4, 5, 6, 1], D)
+(rte = [1, 5, 4, 2, 3, 6, 1], TC = 12)
+
+julia> twoopt([1, 2, 3, 4, 5, 6, 1], D; verbose = true)    # the trace of Lecture 5.1's Code block 15
+*38: [1, 2, 3, 4, 5, 6, 1]
+ 39: [1, 3, 2, 4, 5, 6, 1]
+*32: [1, 4, 3, 2, 5, 6, 1]
+*31: [1, 3, 4, 2, 5, 6, 1]
+ 32: [1, 4, 3, 2, 5, 6, 1]
+ 31: [1, 2, 4, 3, 5, 6, 1]
+*21: [1, 5, 2, 4, 3, 6, 1]
+ 21: [1, 2, 5, 4, 3, 6, 1]
+ 32: [1, 4, 2, 5, 3, 6, 1]
+ 31: [1, 3, 4, 2, 5, 6, 1]
+*12: [1, 5, 4, 2, 3, 6, 1]
+ 34: [1, 4, 5, 2, 3, 6, 1]
+ 40: [1, 2, 4, 5, 3, 6, 1]
+ 39: [1, 3, 2, 4, 5, 6, 1]
+ 21: [1, 5, 2, 4, 3, 6, 1]
+ 30: [1, 5, 3, 2, 4, 6, 1]
+ 31: [1, 5, 6, 3, 2, 4, 1]
+ 13: [1, 5, 4, 3, 2, 6, 1]
+ 18: [1, 5, 4, 6, 3, 2, 1]
+ 20: [1, 5, 4, 2, 6, 3, 1]
+(rte = [1, 5, 4, 2, 3, 6, 1], TC = 12)
 ```
 
 # Notes
@@ -953,11 +1046,12 @@ D = [0 8 6 9 1 5; 3 0 1 5 4 2; 9 2 0 3 1 1; 8 2 1 0 10 6; 6 7 10 1 0 10; 6 2 5 2
 - A change is kept only if its delta is below zero, as the general method keeps a change whose
   cost is strictly lower; a tie in exact arithmetic is decided by rounding, as there.
 """
-function twoopt(π::AbstractVector, C::AbstractMatrix)
+function twoopt(π::AbstractVector, C::AbstractMatrix; verbose::Bool = false)
     _isroutevec(π) && throw(ArgumentError(
         "twoopt(π, C) takes a closed tour; a route vector's cost is not a sum of arc costs, so use twoopt(r, rTCh)"))
     n = length(π)
     πᵒ = collect(π)
+    verbose && println("*", sum(segcost(πᵒ, C)), ": ", πᵒ)
     sym = all(C[i, j] == C[j, i] for j in axes(C, 2) for i in 1:j)
     F = zeros(n)                  # F[k + 1]: cost of the forward arcs 1..k; B[k + 1] the backward ones
     B = zeros(n)
@@ -979,8 +1073,12 @@ function twoopt(π::AbstractVector, C::AbstractMatrix)
                 end
                 if Δ < 0
                     reverse!(πᵒ, i + 1, j)
+                    verbose && println("*", sum(segcost(πᵒ, C)), ": ", πᵒ)
                     done = false
                     break
+                elseif verbose     # the tour the handle form would cost, for the trace only (E2)
+                    π′ = vcat(πᵒ[1:i], reverse(πᵒ[i+1:j]), πᵒ[j+1:end])
+                    println(" ", sum(segcost(π′, C)), ": ", π′)
                 end
             end
             done || break
@@ -994,7 +1092,7 @@ end
 # =============================================================================
 
 """
-    mincostinsert(idx, rte, rteTCh) -> (rte = new route, TC = its cost)
+    mincostinsert(idx, rte, rteTCh; verbose = false) -> (rte = new route, TC = its cost)
 
 Insert a shipment into a route at the minimum cost position.
 
@@ -1012,26 +1110,43 @@ not one (Lecture 5.2's slide 248 crosses out the same rows).
 - `idx`: Shipment index to insert.
 - `rte`: Current route as a vector of shipment indices.
 - `rteTCh`: Function that calculates route cost: `rteTCh(route) -> cost`.
+- `verbose`: (keyword) `true` prints each route tried, in the order tried, as Lecture 5.2's
+  `mincostinsert_prt` (Code block 17) prints it: `i "," j ": " route " = " TC`, the positions of the
+  pickup and the delivery, the route and the cost `rteTCh` returned, printed with `println`. Into an empty
+  route the shipment goes as `[idx, idx]`, a position outside the loops, and nothing is printed, as the
+  lecture's function prints nothing for it. Default `false`, which prints nothing.
 
 # Returns
 - The named tuple `(rte, TC)`, the new route and its total cost, which destructures as `rte, TC = mincostinsert(...)`.
 
 # Example
-```julia
-using DataFrames
+```jldoctest
+julia> using DataFrames
 
-# Lecture 5.2 Ex. 6(a): three shipments at one dollar a mile (locations 1 to 2, 3 to 4, 5 to 6)
-D = [  0 300  30 280  60 335
-     300   0 280  30 335  60
-      30 280   0 250  90 340
-     280  30 250   0 340  90
-      60 335  90 340   0 275
-     335  60 340  90 275   0]
-sh = DataFrame(b = [1, 3, 5], e = [2, 4, 6])
-rteTCh = rte -> rteTC(rte, sh, D)
+julia> # Lecture 5.2 Ex. 6(a): three shipments at one dollar a mile (locations 1 to 2, 3 to 4, 5 to 6)
+       D = [  0 300  30 280  60 335
+            300   0 280  30 335  60
+             30 280   0 250  90 340
+            280  30 250   0 340  90
+             60 335  90 340   0 275
+            335  60 340  90 275   0];
 
-rte, cost = mincostinsert(2, [1, 1], rteTCh)    # (rte = [1, 2, 2, 1], TC = 310)
-rte, cost = mincostinsert(3, rte, rteTCh)       # (rte = [3, 1, 2, 2, 1, 3], TC = 430)
+julia> sh = DataFrame(b = [1, 3, 5], e = [2, 4, 6]);
+
+julia> rteTCh = rte -> rteTC(rte, sh, D);
+
+julia> rte, cost = mincostinsert(2, [1, 1], rteTCh)
+(rte = [1, 2, 2, 1], TC = 310)
+
+julia> rte, cost = mincostinsert(3, rte, rteTCh)
+(rte = [3, 1, 2, 2, 1, 3], TC = 430)
+
+julia> mincostinsert(2, [1, 1], rteTCh; verbose = true)    # the four routes of Lecture 5.2's Code block 17
+1,2: [2, 1, 2, 1] = 340
+1,3: [2, 1, 1, 2] = 360
+2,2: [1, 2, 2, 1] = 310
+2,3: [1, 2, 1, 2] = 340
+(rte = [1, 2, 2, 1], TC = 310)
 ```
 
 # Notes
@@ -1041,14 +1156,19 @@ rte, cost = mincostinsert(3, rte, rteTCh)       # (rte = [3, 1, 2, 2, 1, 3], TC 
 - **Order of ties (CR 58):** where two neighboring loadings, or two neighboring unloadings, can trade places at exactly the same cost, the returned route lists the lower-numbered shipment first; the cost is never changed.
 - Source of the loops: Lecture 5.2's `mincostinsert_rte`; Matlog's `mincostinsert.m` also tries the two positions left out here and leaves them to
   its route cost, which does not refuse them.
+- **The trace (`verbose = true`, E2)** is printed in the loop that finds the result, so on Lecture 5.2's inputs
+  (Code block 17's two insertions) it is the lecture's output byte for byte. The order of ties is applied after
+  the loop, so the returned route can differ from the cheapest route printed by the order of two tied shipments.
+  Printing changes nothing the loop computes: the result is the same with `verbose` `true` or `false`.
 """
-function mincostinsert(idx, rte::AbstractVector, rteTCh)
-    rte′, TC = _mincostinsert(idx, rte, rteTCh)
+function mincostinsert(idx, rte::AbstractVector, rteTCh; verbose::Bool = false)
+    rte′, TC = _mincostinsert(idx, rte, rteTCh; verbose)
     return (rte = _order_ties(rte′, rteTCh), TC = TC)
 end
 
-# the loops of mincostinsert; `savings`, `pairwisesavings` and the insertion hook run this one
-function _mincostinsert(idx, rte, rteTCh)
+# the loops of mincostinsert; `savings`, `pairwisesavings` and the insertion hook run this one. `verbose`
+# prints each route tried in Lecture 5.2's `mincostinsert_prt` form (Code block 17, E2).
+function _mincostinsert(idx, rte, rteTCh; verbose::Bool = false)
     if isempty(rte)
         return [idx, idx], rteTCh([idx, idx])
     end
@@ -1057,6 +1177,7 @@ function _mincostinsert(idx, rte, rteTCh)
         for j = max(2,i):length(rte) + 1
             rte′ = vcat(rte[1:i-1], idx, rte[i:j-1], idx, rte[j:end])
             TC = rteTCh(rte′)
+            verbose && println(i, ",", j, ": ", rte′, " = ", TC)
             if TC < TCᵒ
                 rteᵒ, TCᵒ = rte′, TC
             end
@@ -1107,25 +1228,32 @@ on one route instead of two separate routes.
 - The named tuple `(i, j, s)`, the pairs and their savings sorted by savings (descending); it destructures as `iˢ, jˢ, sˢ = pairwisesavings(...)` and `ijs[3]` is `s`.
 
 # Example
-```julia
-using DataFrames
+```jldoctest
+julia> using DataFrames
 
-# Lecture 5.2 Ex. 6(a): three shipments at one dollar a mile (locations 1 to 2, 3 to 4, 5 to 6)
-D = [  0 300  30 280  60 335
-     300   0 280  30 335  60
-      30 280   0 250  90 340
-     280  30 250   0 340  90
-      60 335  90 340   0 275
-     335  60 340  90 275   0]
-sh = DataFrame(b = [1, 3, 5], e = [2, 4, 6])
-rteTCh = rte -> rteTC(rte, sh, D)
+julia> # Lecture 5.2 Ex. 6(a): three shipments at one dollar a mile (locations 1 to 2, 3 to 4, 5 to 6)
+       D = [  0 300  30 280  60 335
+            300   0 280  30 335  60
+             30 280   0 250  90 340
+            280  30 250   0 340  90
+             60 335  90 340   0 275
+            335  60 340  90 275   0];
 
-# Calculate pairwise savings (pairs with highest savings are first)
-ijs = pairwisesavings(rteTCh, sh)       # (i = [1, 1, 2], j = [2, 3, 3], s = [240.0, 180.0, 95.0])
-iˢ, jˢ, sˢ = ijs                        # destructures as the tuple of v0.2.8 did; ijs.s and ijs[3] are sˢ
+julia> sh = DataFrame(b = [1, 3, 5], e = [2, 4, 6]);
 
-# the same savings with the independent costs given: c(1) = 300, c(2) = 250, c(3) = 275
-pairwisesavings(rteTCh, sh; TC1 = [300, 250, 275])
+julia> rteTCh = rte -> rteTC(rte, sh, D);
+
+julia> ijs = pairwisesavings(rteTCh, sh)     # Calculate pairwise savings (pairs with highest savings are first)
+(i = [1, 1, 2], j = [2, 3, 3], s = [240.0, 180.0, 95.0])
+
+julia> iˢ, jˢ, sˢ = ijs;     # destructures as the tuple of v0.2.8 did; ijs.s and ijs[3] are sˢ
+
+julia> sˢ == ijs.s == ijs[3]
+true
+
+julia> # the same savings with the independent costs given: c(1) = 300, c(2) = 250, c(3) = 275
+       pairwisesavings(rteTCh, sh; TC1 = [300, 250, 275])
+(i = [1, 1, 2], j = [2, 3, 3], s = [240.0, 180.0, 95.0])
 ```
 
 # Notes
@@ -1200,28 +1328,42 @@ passed over again until a pass makes no change or every shipment is on a route.
   had formed it. No shipment is on more than one route.
 
 # Example
-```julia
-using DataFrames
+```jldoctest
+julia> using DataFrames
 
-# Lecture 5.2 Ex. 6(a): three shipments at one dollar a mile (locations 1 to 2, 3 to 4, 5 to 6);
-# the savings are 240, 180 and 95 and the route is (3, 1, 2, 2, 1, 3) at 430
-D = [  0 300  30 280  60 335
-     300   0 280  30 335  60
-      30 280   0 250  90 340
-     280  30 250   0 340  90
-      60 335  90 340   0 275
-     335  60 340  90 275   0]
-sh = DataFrame(b = [1, 3, 5], e = [2, 4, 6])
-rteTCh = rte -> rteTC(rte, sh, D)
-routes = savings(rteTCh, sh)       # [[3, 1, 2, 2, 1, 3]]
+julia> # Lecture 5.2 Ex. 6(a): three shipments at one dollar a mile (locations 1 to 2, 3 to 4, 5 to 6);
+       # the savings are 240, 180 and 95 and the route is (3, 1, 2, 2, 1, 3) at 430
+       D = [  0 300  30 280  60 335
+            300   0 280  30 335  60
+             30 280   0 250  90 340
+            280  30 250   0 340  90
+             60 335  90 340   0 275
+            335  60 340  90 275   0];
 
-# the same list given by hand (Lecture 5.2's randomized savings does this with a reordered list)
-ijs = pairwisesavings(rteTCh, sh)  # (i = [1, 1, 2], j = [2, 3, 3], s = [240.0, 180.0, 95.0])
-savings(rteTCh, sh; ijs = ijs)     # [[3, 1, 2, 2, 1, 3]]
-savings(rteTCh, sh; ijs = ([1], [2], [240.0]))   # one pair only: [[1, 2, 2, 1]]; shipment 3 is on no route
+julia> sh = DataFrame(b = [1, 3, 5], e = [2, 4, 6]);
 
-# the independent costs given: the list and the merge tests both use c(1) = 300, c(2) = 250, c(3) = 275
-savings(rteTCh, sh; TC1 = [300, 250, 275])       # [[3, 1, 2, 2, 1, 3]]
+julia> rteTCh = rte -> rteTC(rte, sh, D);
+
+julia> routes = savings(rteTCh, sh)
+1-element Vector{Vector{Int64}}:
+ [3, 1, 2, 2, 1, 3]
+
+julia> # the same list given by hand (Lecture 5.2's randomized savings does this with a reordered list)
+       ijs = pairwisesavings(rteTCh, sh)
+(i = [1, 1, 2], j = [2, 3, 3], s = [240.0, 180.0, 95.0])
+
+julia> savings(rteTCh, sh; ijs = ijs)
+1-element Vector{Vector{Int64}}:
+ [3, 1, 2, 2, 1, 3]
+
+julia> savings(rteTCh, sh; ijs = ([1], [2], [240.0]))   # one pair only: shipment 3 is on no route
+1-element Vector{Vector{Int64}}:
+ [1, 2, 2, 1]
+
+julia> # the independent costs given: the list and the merge tests both use c(1) = 300, c(2) = 250, c(3) = 275
+       savings(rteTCh, sh; TC1 = [300, 250, 275])
+1-element Vector{Vector{Int64}}:
+ [3, 1, 2, 2, 1, 3]
 ```
 
 # Notes

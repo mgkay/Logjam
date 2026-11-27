@@ -54,6 +54,7 @@ include("test_transtools_v031.jl") # WP4 (v0.3.1, B6, B9, B10, B11): maxpayld an
 include("test_location_v031.jl")   # WP3 (v0.3.1, A5, A7, A8): the metric kernel against v0.3.0's bodies, ala's call forms and metric, wcentroid(P, w), uflxchg on ranges, lonlat2loc(xy), views of tables, dgca for one point
 include("test_geodata_v031.jl")    # WP5 (v0.3.1, A4, A6, A10, X6): loc2lonlat's batch driver against v0.3.0's geocoder, the *_col keywords and their deprecations, the loader's copies and the name index, Puerto Rico's ZCTAs, STFIP on the ZIP tables (D4)
 include("test_boxes_v031.jl")      # WP10 (v0.3.1, X7, X8): the place boxes from TIGER/Line 2020, mapbbox for a place and for a state (D3), every county's box bit for bit as at the branch's start; dgca(...; method = :empirical) against Lecture 2.5's @eq-daemp and MATLAB's dagg.m (D8)
+include("test_routing_v031.jl")    # WP6 (v0.3.1, E2): twoopt's and mincostinsert's verbose traces byte for byte against Lecture 5.1's Code block 15 and 5.2's Code block 17, run as text; verbose = false against v0.3.0's bodies (the routing doctests, DOC, run in test_doctests.jl)
 
 if haskey(ENV, "LOGJAM_NETWORK_TESTS")
     include("test_osm_network.jl")
