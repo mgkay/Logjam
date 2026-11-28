@@ -1334,6 +1334,21 @@ _wp4_sametable(a, b) = names(a) == names(b) && all(a[!, n] == b[!, n] for n in n
         @test_throws Exception maxpayld((s = 8.0,), (Kwt = 25,))
     end
 
+    @testset "D7 TRN2: maxpayld(s::Real, tr) is the keyword form on the truck's capacities" begin
+        for tr in ((Kwt = 25, Kcu = 2750), (Kwt = 25.0, Kcu = 2750.0), (Kwt = 24, Kcu = 3000),
+                   (r = 2, Kwt = 25, Kcu = 2750, ppi = 102.7))
+            for s in (0.1, 1, 8, 10, 18, 40/9, 19, 50, 3.5f0)
+                @test maxpayld(s, tr) === maxpayld(s; Kwt = tr.Kwt, Kcu = tr.Kcu)
+                @test maxpayld(s, tr) === maxpayld((s = s,), tr)
+                @test [maxpayld(s, tr)] == maxpayld([s], tr)
+            end
+        end
+        # Lecture 3.4's Code block 29 (3-tran-4.qmd:1628): maxpayld(s3; Kwt = tr3.Kwt, Kcu = tr3.Kcu), s3 = 10
+        tr3 = (Kwt = 25, Kcu = 2750)                       # tr3's capacities (its r and ppi are not read)
+        @test maxpayld(10, tr3) === maxpayld(10; Kwt = tr3.Kwt, Kcu = tr3.Kcu) === 13.75
+        @test_throws Exception maxpayld(8.0, (Kwt = 25,))
+    end
+
     @testset "B6: maxpayld(sh::AbstractDataFrame, tr) equals the lectures' row-by-row comprehension" begin
         # 3.3 Code block 13 (:1568)
         @test maxpayld(l33sh, l33tr) == [maxpayld(row, l33tr) for row in eachrow(l33sh)]

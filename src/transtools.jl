@@ -566,11 +566,13 @@ or `DataFrameRow`.
 maxpayld(sh::Union{NamedTuple, DataFrames.DataFrameRow}, tr) = maxpayld(sh.s; Kwt=tr.Kwt, Kcu=tr.Kcu)
 
 """
+    maxpayld(s::Real, tr) -> Float64
     maxpayld(s::AbstractVector, tr) -> Vector
     maxpayld(sh::AbstractDataFrame, tr) -> Vector
 
-The maximum payload of each shipment on the truck `tr`, from a vector of densities `s` (lb/ft³) or from the
-table `sh`, whose column `s` it reads (B6): element `i` is `maxpayld(s[i]; Kwt = tr.Kwt, Kcu = tr.Kcu)`, so the
+The maximum payload on the truck `tr` of one density `s` (lb/ft³), `maxpayld(s; Kwt = tr.Kwt, Kcu = tr.Kcu)`, so
+the scalar, vector and table forms all take the truck (D7, TRN2). And of each shipment, from a vector of densities `s`
+or from the table `sh`, whose column `s` it reads (B6): element `i` is `maxpayld(s[i]; Kwt = tr.Kwt, Kcu = tr.Kcu)`, so the
 table form equals `[maxpayld(row, tr) for row in eachrow(sh)]`, the row form applied to each row. Reads `tr.Kwt`
 and `tr.Kcu`, both required, as the row form does. Each element is the scalar rule computed on its own density,
 so a range of densities gives the scalar rule's value at each one (the keyword form `maxpayld(s; Kwt, Kcu)` on a
@@ -605,7 +607,19 @@ maxpayld([8.0, 15.0, 25.0], (Kwt = 25, Kcu = 2750))
  20.625
  25.0
 ```
+
+One density on the truck, as Lecture 3.4's Code block 29 computes the payload of its average class-100
+product, 10 lb/ft³, there written `maxpayld(s3; Kwt = tr3.Kwt, Kcu = tr3.Kcu)`:
+
+```jldoctest
+maxpayld(10, (Kwt = 25, Kcu = 2750))
+
+# output
+
+13.75
+```
 """
+maxpayld(s::Real, tr) = maxpayld(s; Kwt = tr.Kwt, Kcu = tr.Kcu)
 function maxpayld(s::AbstractVector, tr)
     Kwt, Kcu = tr.Kwt, tr.Kcu
     return [maxpayld(x; Kwt = Kwt, Kcu = Kcu) for x in s]   # the scalar rule at each density: a range broadcast as a range differs in the last place

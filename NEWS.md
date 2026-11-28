@@ -113,6 +113,10 @@ maps only where FAF5 has ramps v0.3.0's name rule missed.
   of 25 tons and 2,750 ft³. **Lectures served:**
   3.3 Code block 13, 3.4 Code blocks 2, 14, 21, 22 and 24, which write that comprehension, and 5.3 Code block 41's
   `maxpayld.(eachrow(sho), Ref(tro))`, which can call `maxpayld(sh, tr)` at the re-pin. **No migration.**
+- **`maxpayld(s::Real, tr)`: the maximum payload of one density on the truck `tr` (D7, TRN2).** It is
+  `maxpayld(s; Kwt = tr.Kwt, Kcu = tr.Kcu)`, so the scalar, vector and table forms all take the truck; a number and a
+  truck were a `MethodError` before, so no call changes. **Lecture served:** 3.4 Code block 29's
+  `maxpayld(s3; Kwt = tr3.Kwt, Kcu = tr3.Kcu)` can be `maxpayld(s3, tr3)` at the re-pin. **No migration.**
 - **`minTLC(sh::AbstractDataFrame, tr, ppi_ltl)`, and its keyword form: the minimum-TLC shipment of every row of a
   table (B6).** It returns a new table, `sh`'s columns unchanged and in their order with `qᵒ`, `TLCᵒ` and `isLTL`
   added, each row's values those of the row form `minTLC(row, tr, ppi_ltl)`; `sh` itself is not changed. Every call
