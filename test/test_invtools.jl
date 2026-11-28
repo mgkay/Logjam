@@ -1,3 +1,9 @@
+# test_invtools.jl -- the tests of src/invtools.jl, one test file per source file (PCV WP8 of Logjam v0.3.1).
+# Each section below was moved verbatim from the test file its marker names, under that file's own header,
+# which says which component added it. No assertion changed. A testset taken out of a wrapper that held the
+# tests of several modules sits in a wrapper of the same name with this module's name before it.
+
+# ==== moved from test/test_invtools.jl, its lines 1-379 ====
 # test_invtools.jl -- added by PCV WP1 of Logjam v0.3.1 (E1, X4): the inventory measures of src/invtools.jl,
 # `Logjam.poissoncdf`, `Logjam.pi0` and `Logjam.qbar` (Lecture 6.2's reorder-point forms `pi0rp` and `qbarrp` as
 # their three-argument methods), and `Logjam.poissarr`. Test spec Sec. 2; the evidence, each judged as it says:

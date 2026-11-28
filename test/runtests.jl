@@ -5,56 +5,32 @@ using GeoMakie
 
 # Draw figures but never open an image viewer. Outside an IDE or notebook, CairoMakie's `display`
 # writes a temporary display.png and opens it in the system viewer, so dcf's smoke test
-# (test_plottools.jl) left one Photos window open per suite run.
+# (test_LogjamMapExt.jl, from test_plottools.jl) left one Photos window open per suite run.
 CairoMakie.activate!(visible = false)
 
-include("test_doctests.jl")
-include("test_loctools.jl")
-include("test_disttools.jl")
-include("test_transtools.jl")
-include("test_maptools.jl")
-include("test_datatools.jl")
-include("test_prt_pins.jl")    # byte-equality pins of prt's output (PCV K4, principle 9)
-include("test_prt_columns.jl") # prt's decimals per column and Matlog's fractional-column rule (PCV K14, PR)
-include("test_dist_geo_pins.jl")   # value pins of the course's distance and geocoding calls (PCV K5, principle 9)
-include("test_transport_pins.jl")  # value pins of the course's transport calls (PCV K6, principle 9)
-include("test_routing_pins.jl")    # value pins of the course's routing calls (PCV K7a, principle 9)
-include("test_road_pins.jl")       # value pins of the course's road-network calls (PCV K8, principle 9)
-include("test_map_pins.jl")        # what the course sees of its makemap calls, and that makemap leaves the caller's CairoMakie settings alone (PCV K11a, principle 9)
-include("test_line_builders.jl")   # x2ln(i, j, x), tracepath(P, i, j), tracepath(P, seq) (PCV K11b, C8)
-include("test_makemap_c4.jl")      # makemap's interface: cell, size, roads, borders, the return, doRoadbkgd (PCV K11b, C4)
-include("test_map_line_pins.jl")   # plotroads!, makemap's base-layer styles, the FAF5 tables and tracepath on the course's idiom (PCV K11b, principle 9)
-include("test_map_k11c_pins.jl")   # the default-road makemap calls' drawn extents and layers, and the map functions' declarations (PCV K11c, principle 9)
-include("test_map_s22.jl")         # the road network on a small map: the measure, the crop, the style, layers.roads (PCV K11c, S22, S23)
-include("test_map_tiers.jl")       # makemap's road layer in tiers, the derived network above 150 miles: T5.1 to T5.6 (PCV N4, CR 19); after the map pin files, whose dicts it reads
-include("test_k12_pins.jl")        # what the course gets today from the calls K12's functions replace: Lecture 5.1's randtour, disk, sfcpos, tspspfillcur, hcat(df.LON, df.LAT), string ZIPs, Wake's box, usstates (PCV K12, principle 9)
-include("test_k12_functions.jl")   # the small functions K12 adds, each equal to the course definition it takes the place of (PCV K12, principles 8 and 9)
-include("test_roadtools.jl")
-include("test_connector_search.jl")  # K8: addconnectors' exact local point location against the whole triangulation
-include("test_links2graph.jl")       # K8: links2graph equals the graph the lectures build by hand (S17, CR 17)
-include("test_thin.jl")              # K8: thin on typed arcs, direction-aware, label-independent (CR 18, CR 25, N6)
-include("test_pathroads.jl")         # K8: the roads along a path, equal to Lecture 4.2's streets (CR 30)
-include("test_faf5net.jl")           # N1, N2: the derived FAF5 network's route keys, Interstate flag, ramp rule and derivation (CR 19)
-include("test_joinroads.jl")         # N3b: an OpenStreetMap network joined to the derived network at its box's edge (RD3, T4.6)
-include("test_routetools.jl")
-include("test_routing_k7a.jl")     # K7a: principle 9 checks against Lecture 5.2's stand-ins, per-item tests
-include("test_routing_k7b.jl")     # K7b: the checked route cost, principle 9 checks against Lecture 5.3's definitions
-include("test_integration.jl")
-include("test_plotroute.jl")       # K11a: plotroute!'s three methods, arrowheads measured from the picture (D2, P8)
-include("test_aligntext_duplicates.jl")
-include("test_plottools.jl")
-include("test_geocode.jl")
-include("test_osm.jl")         # offline fixture; the networked tests are test_osm_network.jl
-include("test_properties.jl")
-include("test_oracles.jl")     # Matlog oracle data (test/oracles/*.csv, from tools/v0_3_0/make_oracles.m)
-include("test_packaging.jl")   # loads HTTP + JSON3 (Nominatim ext.): keep after test_geocode.jl
-include("test_extensions_c5.jl")   # the three extensions, every extension function declared in core, the hint, fresh processes (PCV K11c, MAP, C5); needs all three loaded
-include("test_invtools.jl")        # WP1 (v0.3.1, E1): poissoncdf, pi0, qbar, poissarr against Lectures 6.2 and 6.3, the ISE 453 spreadsheet and MATLAB's poissarr.m
-include("test_transtools_v031.jl") # WP4 (v0.3.1, B6, B9, B10, B11): maxpayld and minTLC on a table, charge_tl(d, tr), the LTL constants against v0.3.0's bodies, the sh/tr contract
-include("test_location_v031.jl")   # WP3 (v0.3.1, A5, A7, A8): the metric kernel against v0.3.0's bodies, ala's call forms and metric, wcentroid(P, w), uflxchg on ranges, lonlat2loc(xy), views of tables, dgca for one point
-include("test_geodata_v031.jl")    # WP5 (v0.3.1, A4, A6, A10, X6): loc2lonlat's batch driver against v0.3.0's geocoder, the *_col keywords and their deprecations, the loader's copies and the name index, Puerto Rico's ZCTAs, STFIP on the ZIP tables (D4)
-include("test_boxes_v031.jl")      # WP10 (v0.3.1, X7, X8): the place boxes from TIGER/Line 2020, mapbbox for a place and for a state (D3), every county's box bit for bit as at the branch's start; dgca(...; method = :empirical) against Lecture 2.5's @eq-daemp and MATLAB's dagg.m (D8)
-include("test_routing_v031.jl")    # WP6 (v0.3.1, E2): twoopt's and mincostinsert's verbose traces byte for byte against Lecture 5.1's Code block 15 and 5.2's Code block 17, run as text; verbose = false against v0.3.0's bodies (the routing doctests, DOC, run in test_doctests.jl)
+# One test file per source file (PCV WP8 of Logjam v0.3.1): test_<name>.jl holds the tests of src/<name>.jl or
+# ext/<name>.jl, moved there verbatim from the files the components added, each section under its old file's header.
+# The shared pin cases, oracle readers, lecture texts and helpers are included by the files that use them, each once.
+# The order keeps the constraints the old list had: geocode before anything loads HTTP and JSON3 (the Nominatim
+# extension), the extension checks after LightOSM, HTTP and JSON3 are loaded, and JuMP and HiGHS last.
+include("test_doctests.jl")       # the docstrings' jldoctest blocks
+include("test_loctools.jl")       # facility location; its properties and Matlog oracles; WP3's ala forms and alignments
+include("test_disttools.jl")      # distances; their properties and oracles; WP3's metric kernel; WP10's empirical dgca
+include("test_transtools.jl")     # transport costing; the K6 pins; properties and oracles; WP4's tables and contract
+include("test_maptools.jl")       # mapbbox, aligntext(x, y), usstates; K12's county box; WP10's place and state boxes
+include("test_datatools.jl")      # the census and FAF5 tables; K11b's FAF5 table pins; K12's usstate; WP5's loaders and STFIP
+include("test_displaytools.jl")   # prt, snapvals, thousands; the K4 prt pins and K14's decimals per column
+include("test_geomtools.jl")      # alloclines
+include("test_roadtools.jl")      # road networks; the K8 pins; the line builders; connectors, links2graph, thin, pathroads
+include("test_faf5net.jl")        # the derived FAF5 network (N1, N2, N3)
+include("test_routetools.jl")     # routing; the K7a pins; K7a, K7b; K12's Lecture 5.1 pins; properties, oracles; WP6
+include("test_integration.jl")    # the README example workflows, across modules
+include("test_LogjamMapExt.jl")   # makemap, plotroads!, plotroute!, dcf; the K11a, K11b and K11c map pins; S22; N4's tiers
+include("test_geocode.jl")        # loc2lonlat, lonlat2loc, lonlat; the K5 pins; K12's lonlat; WP5's batch driver and keywords
+include("test_osmtools.jl")       # joinroads; osm_roads' box, crop and saved pairs (loads HTTP + JSON3: after test_geocode.jl)
+include("test_LogjamOSMExt.jl")   # the OSM extension: the fixture's translation, the request and retry, loading (offline)
+include("test_invtools.jl")       # WP1's inventory measures
+include("test_Logjam.jl")         # exports and public names; the extensions and the hint (needs all three extensions loaded)
 
 # WP2 (v0.3.1): every file above ran without JuMP and HiGHS, so without the optimization extension. They are loaded
 # here, by `import` so that Main gains none of their names, and LogjamJuMPExt with them, for the file that tests it.
@@ -62,10 +38,10 @@ include("test_routing_v031.jl")    # WP6 (v0.3.1, E2): twoopt's and mincostinser
     @test Base.get_extension(Logjam, :LogjamJuMPExt) === nothing
 end
 import JuMP, HiGHS
-include("test_jump_ext.jl")        # WP2 (v0.3.1, CR 45, E3, SV, X3): TSP, subtours and binpack against Lectures 5.1's, 5.3's and 2.7's definitions, run as text on their inputs; snapvals on JuMP variables against snapvals(value.(x)); fresh processes without and with JuMP and HiGHS
-include("test_aligntext_ax.jl")    # WP7a (v0.3.1, D1, MAP1): aligntext(ax, x, y, labels) in LogjamMakieExt on synthetic figures: the splat, determinism, what it reads and flags, base layers, fix, prefer, errors, the declarations; a fresh process with CairoMakie alone
+include("test_LogjamJuMPExt.jl")  # WP2: TSP, subtours, binpack, snapvals on JuMP variables; fresh processes
+include("test_LogjamMakieExt.jl") # WP7a: aligntext(ax, x, y, labels); a fresh process with CairoMakie alone
 
 if haskey(ENV, "LOGJAM_NETWORK_TESTS")
     include("test_osm_network.jl")
-    include("test_nominatim.jl")
+    include("test_LogjamNominatimExt.jl")
 end

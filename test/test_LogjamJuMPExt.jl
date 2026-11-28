@@ -1,3 +1,9 @@
+# test_LogjamJuMPExt.jl -- the tests of ext/LogjamJuMPExt.jl, one test file per source file (PCV WP8 of Logjam v0.3.1).
+# Each section below was moved verbatim from the test file its marker names, under that file's own header,
+# which says which component added it. No assertion changed. A testset taken out of a wrapper that held the
+# tests of several modules sits in a wrapper of the same name with this module's name before it.
+
+# ==== moved from test/test_jump_ext.jl, its lines 1-586 ====
 # test_jump_ext.jl -- added by PCV WP2 of Logjam v0.3.1 (CR 45, E3, SV, X3): the optimization extension,
 # LogjamJuMPExt, which JuMP and HiGHS load together. Test spec Sec. 8. The oracle is each lecture's own definition,
 # copied below as text with its `.qmd` lines cited and run, after `using Logjam` as the lecture runs it, beside

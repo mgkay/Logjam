@@ -1,3 +1,9 @@
+# test_datatools.jl -- the tests of src/datatools.jl, one test file per source file (PCV WP8 of Logjam v0.3.1).
+# Each section below was moved verbatim from the test file its marker names, under that file's own header,
+# which says which component added it. No assertion changed. A testset taken out of a wrapper that held the
+# tests of several modules sits in a wrapper of the same name with this module's name before it.
+
+# ==== moved from test/test_datatools.jl, its lines 1-164, 611-632 ====
 using Test
 using DataFrames
 
@@ -163,452 +169,6 @@ end
     @test !isfile(joinpath(pkgdir(Logjam), "data", "faf5_interstate_roads.jls"))
 end
 
-# Test for loc2lonlat function (replaces name2lonlat)
-@testset "loc2lonlat basic tests" begin
-    # Basic lookup with state filter
-    r = loc2lonlat("Raleigh", state=:NC)
-    @test r.GC_STATUS == "OK"
-    @test -79.5 < r.LON < -78.0   # LON range for Raleigh
-    @test 35.5 < r.LAT < 36.0     # LAT range for Raleigh
-
-    # Not found: with no state nothing answers; with one the ladder ends at the state (GC)
-    @test loc2lonlat("Nonexistent City XYZ").GC_STATUS == "FAIL"
-    r2 = loc2lonlat("Nonexistent City XYZ", state=:NC)
-    @test (r2.GC_SOURCE, r2.GC_STATUS) == ("STATE", "PARTIAL")
-end
-
-# Test for lonlat2loc function (replaces lonlat2name)
-@testset "lonlat2loc basic tests" begin
-    cities = usplace()
-
-    # --- Schema test: all expected columns present ---
-    xy = [-78.6382 35.7796]  # near Raleigh, NC
-    result = lonlat2loc(xy, cities)
-    @test isa(result, DataFrame)
-    @test nrow(result) == 1
-    for col in ["idx", "NAME", "ST", "dist", "bearing", "dir", "desc"]
-        @test col in names(result)
-    end
-
-    # --- In-city threshold behavior ---
-    @test startswith(result.desc[1], "in ")
-    @test result.NAME[1] == "Raleigh"
-    @test result.ST[1] == :NC   # ST is now a Symbol (matches usplace().ST)
-
-    # --- Bearing range: 0 <= bearing < 2pi ---
-    @test 0.0 <= result.bearing[1] < 2pi
-
-    # --- Cardinal direction and description format ---
-    # Use large-city filter so test point is far from nearest match
-    big = filter(r -> r.POP > 100_000 && r.ISCUS, cities)
-    # Point ~50 mi east of Raleigh (same lat, shifted lon)
-    xy_east = [-77.8 35.7796]
-    res_east = lonlat2loc(xy_east, big)
-    # Should not be "in" city (beyond threshold)
-    @test occursin(" mi ", res_east.desc[1])
-    @test occursin(" of ", res_east.desc[1])
-
-    # --- Vector input (single [LON, LAT]) ---
-    res_vec = lonlat2loc([-78.6382, 35.7796], cities)
-    @test res_vec.NAME == result.NAME[1]
-
-    # --- Multi-row matrix input ---
-    xy_multi = [-78.6382 35.7796; -80.8431 35.2271]  # Raleigh, Charlotte
-    res_multi = lonlat2loc(xy_multi, cities)
-    @test nrow(res_multi) == 2
-    @test res_multi.NAME[1] == "Raleigh"
-    @test res_multi.NAME[2] == "Charlotte"
-
-    # --- Invalid input ---
-    @test_throws ArgumentError lonlat2loc([1.0, 2.0, 3.0], cities)
-end
-
-# ─── H2: prt ──────────────────────────────────────────────────────
-@testset "prt" begin
-    @testset "integer matrix" begin
-        # Should not error; output goes to stdout
-        prt([1 2; 3 4])
-    end
-
-    @testset "fractional matrix" begin
-        prt([0.1234 0.5678; 0.9012 0.3456])
-    end
-
-    @testset "mixed matrix with commas" begin
-        prt([1.5 2000.75; 3.0 4500.25])
-    end
-
-    @testset "custom headers" begin
-        prt([1.0 2.0; 3.0 4.0]; rows=["W1", "W2"], cols=["C1", "C2"])
-    end
-
-    @testset "NaN handling" begin
-        prt([1.0 NaN; 3.0 4.0])
-    end
-
-    @testset "vector method" begin
-        prt([1, 2, 3])
-    end
-
-    @testset "DataFrame method" begin
-        df = DataFrame(A=[1, 2], B=[3.14, 2.72])
-        prt(df)
-    end
-
-    @testset "empty matrix" begin
-        prt(Matrix{Float64}(undef, 0, 0))
-    end
-
-    @testset "title keyword" begin
-        prt([1 2; 3 4]; title="Test Title")
-    end
-
-    @testset "row_title keyword" begin
-        prt([1 2; 3 4]; rows=["a", "b"], cols=["X", "Y"], row_title="ID")
-    end
-
-    @testset "row_title with vector method" begin
-        prt([10, 20, 30]; rows=["A", "B", "C"], row_title="Item")
-    end
-
-    @testset "str=true returns string" begin
-        s = prt([1 2; 3 4]; str=true)
-        @test isa(s, String)
-        @test !isempty(s)
-        @test !occursin('─', s)        # separators stripped
-        @test occursin("1", s)
-        @test occursin("4", s)
-    end
-
-    @testset "str=false returns nothing" begin
-        result = prt([1 2; 3 4])
-        @test result === nothing
-    end
-
-    @testset "R3: sign preserved for values in (-1, 0)" begin
-        # Regression: _formatfixed dropped the minus sign for magnitudes < 1
-        # (trunc(Int, v) == 0), printing negatives as positive.
-        # Each column of fractions shows the places its values have (PR): -0.50 and 0.75, -0.125 and 0.25.
-        s = prt([-0.5 0.25; 0.75 -0.125]; str=true)
-        @test occursin("-0.50", s)
-        @test occursin("-0.125", s)
-        # Positive values remain unsigned.
-        @test occursin("0.250", s)
-        @test !occursin("-0.250", s)
-        # Internal helper directly.
-        @test Logjam._formatfixed(-0.5, 4) == "-0.5000"
-        @test Logjam._formatfixed(-0.125, 4) == "-0.1250"
-        @test Logjam._formatfixed(0.5, 4) == "0.5000"
-        @test Logjam._formatfixed(-1.5, 4) == "-1.5000"
-    end
-
-    @testset "str=true preserves alignment spaces" begin
-        s = prt([1000 2; 3 4000]; str=true)
-        @test occursin("1,000", s)
-        @test occursin("4,000", s)
-        @test occursin(' ', s)          # spaces preserved
-    end
-
-    @testset "str=true with custom headers" begin
-        s = prt([1.5 2.5; 3.5 4.5]; rows=["a","b"], cols=["X","Y"], str=true)
-        @test occursin("X", s)
-        @test occursin("Y", s)
-        @test occursin("a", s)
-        @test occursin("b", s)
-    end
-
-    @testset "str=true vector method" begin
-        s = prt([10, 20, 30]; str=true)
-        @test isa(s, String)
-        @test !occursin('─', s)
-        @test occursin("10", s)
-    end
-
-    @testset "str=true DataFrame method" begin
-        df = DataFrame(City=["Raleigh", "Charlotte"], Pop=[467665, 874579])
-        s = prt(df; str=true)
-        @test isa(s, String)
-        @test !occursin('─', s)
-        @test occursin("Raleigh", s)
-        @test occursin("467,665", s)
-    end
-
-    @testset "str=true empty matrix" begin
-        s = prt(Matrix{Float64}(undef, 0, 0); str=true)
-        @test s == ""
-    end
-end
-
-# ─── H3: snapvals ────────────────────────────────────────────────
-@testset "snapvals" begin
-    @testset "near-integer snapping" begin
-        result = snapvals([2.9999999997, 1.0000000003, 0.5])
-        @test result ≈ [3.0, 1.0, 0.5]
-    end
-
-    @testset "near-zero snapping" begin
-        result = snapvals([1e-12, -1e-12, 0.5])
-        @test result ≈ [0.0, 0.0, 0.5]
-    end
-
-    @testset "custom tolerance" begin
-        result = snapvals([1.1]; atol=0.2)
-        @test result ≈ [1.0]
-    end
-
-    @testset "empty array" begin
-        result = snapvals(Float64[])
-        @test isempty(result)
-    end
-
-    @testset "already-integer values" begin
-        result = snapvals([1.0, 2.0, 3.0])
-        @test result == [1.0, 2.0, 3.0]
-    end
-
-    @testset "values far from integers unchanged" begin
-        result = snapvals([1.3, 2.7, 0.5])
-        @test result == [1.3, 2.7, 0.5]
-    end
-end
-
-
-# ─── isptinbbox is removed (P8, 0 course calls) ────────────────────
-@testset "isptinbbox is gone" begin
-    @test !isdefined(Logjam, :isptinbbox)
-end
-
-# ─── Relocated: alloclines (from maptools) ────────────────────────
-@testset "alloclines relocated" begin
-    using SparseArrays
-    hubs = [-80.0 35.0; -78.0 36.0]
-    spokes = [-80.5 35.2; -78.5 35.8; -79.2 36.1]
-    W = sparse([1, 1, 2], [1, 2, 3], [1.0, 1.0, 1.0], 2, 3)
-    X, Y = alloclines(W, hubs, spokes)
-    @test length(X) == 2
-    @test X isa Vector{Vector{Float64}}
-end
-
-# =============================================================================
-# K2a: wrong-answer tests (test spec Sec. 2). Tagged [ID]; see tools/v0_3_0/run_against.jl.
-# =============================================================================
-
-# a call that throws is a wrong answer here, not a test error: report `nothing`
-_attempt(f) = try f() catch; nothing end
-
-# =============================================================================
-# K4: display (WP3). prt: CR 2, CR 32, N11, N12, S13 and keyword parity; thousands: CR 8 / R6 / S12.
-# =============================================================================
-
-@testset "[CR 2] prt prints a value of 1e300 without throwing" begin
-    # CR 2: no value converts to Int64; the value's own digits print at any magnitude (fixed in K4)
-    @test _attempt(() -> Logjam.prt([1e300 1.0]; str = true)) isa String
-    @test _attempt(() -> Logjam.prt([1e300 2.5]; str = true)) isa String
-    @test _attempt(() -> Logjam.prt([1e6 2.5]; str = true)) isa String      # control: a large but Int64-sized value
-end
-
-# the tagged row above holds only assertions that FAIL on v0.2.8 (a throw is a wrong answer there, run_against.jl);
-# the digits themselves are checked here
-@testset "prt prints the value's own digits at any magnitude (CR 2)" begin
-    row1 = split(Logjam.prt([1e300 1.0]; str = true), '\n')[2]
-    digs = split(row1, "  ")[2]
-    @test replace(digs, "," => "") == string(BigInt(1e300))                  # the float's own 301 digits, grouped
-    @test length(replace(digs, "," => "")) == 301
-    @test Logjam._commasep(BigInt(10)^40) == "10,000,000,000,000,000,000,000,000,000,000,000,000,000"
-    @test Logjam._formatfixed(1e300, 2) == Logjam._commasep(BigInt(1e300)) * ".00"
-    @test Logjam._formatfixed(typemax(Int64), 0) == "9,223,372,036,854,775,807"
-    @test Logjam._commasep(typemin(Int64)) == "-9,223,372,036,854,775,808"
-    # an Int above 2^53 keeps its last digit (it went through Float64 before)
-    @test occursin("9,007,199,254,740,993", Logjam.prt([9007199254740993 1; 2 3]; str = true))
-    @test occursin("10,000,000,000,000,000,000", Logjam.prt(DataFrame(s = ["a"], v = [1e19]); str = true))
-end
-
-@testset "[CR 32] prt on an all-numeric DataFrame with missing prints" begin
-    df = DataFrame(A = [1.0, missing, 3.5], B = [1, 2, 3])
-    @test _attempt(() -> Logjam.prt(df; str = true)) isa String
-    @test _attempt(() -> Logjam.prt(DataFrame(A = [1.0, 2.0], B = [1, 2]); str = true)) isa String   # control
-end
-
-@testset "prt prints missing as blank, like NaN, on every path (CR 32)" begin
-    df = DataFrame(A = [1.0, missing, 3.5], B = [1, 2, 3])
-    # missing is blank, like NaN, in the all-numeric, mixed, vector and matrix paths
-    @test Logjam.prt(df; str = true) == "      A  B\n1  1.00  1\n2        2\n3  3.50  3\n"
-    @test Logjam.prt(df; str = true) == Logjam.prt(DataFrame(A = [1.0, NaN, 3.5], B = [1, 2, 3]); str = true)
-    @test Logjam.prt(DataFrame(s = ["a", "b"], v = [1.5, missing]); str = true) ==
-          Logjam.prt(DataFrame(s = ["a", "b"], v = [1.5, NaN]); str = true)
-    @test !occursin("missing", Logjam.prt(DataFrame(s = ["a", "b"], v = [1.5, missing]); str = true))
-    @test Logjam.prt(Union{Missing,Float64}[1.0, missing, 3.5]; str = true) == Logjam.prt([1.0, NaN, 3.5]; str = true)
-    @test Logjam.prt(Union{Missing,Float64}[1.0 missing; 3.0 4.5]; str = true) == Logjam.prt([1.0 NaN; 3.0 4.5]; str = true)
-    @test Logjam.prt(DataFrame(a = [1, missing, 3]); str = true) == Logjam.prt(DataFrame(a = [1, NaN, 3]); str = true)
-end
-
-@testset "prt at fracdig or allfrac of 5 or more prints no scientific notation (N11)" begin
-    @test Logjam.prt([1.000001 2.5]; fracdig = 6, str = true) == "          1         2\n1  1.000001  2.500000\n"
-    @test occursin("12.00001", Logjam.prt([12.00001 2.5]; fracdig = 5, str = true))
-    s = Logjam.prt([0.00001 0.5; 0.25 0.125]; allfrac = 5, str = true)
-    @test occursin("0.00001", s)
-    @test !occursin('e', s)
-    @test occursin("0.0000123", Logjam.prt([0.0000123 0.5]; allfrac = 7, str = true))
-    for fd in 0:12
-        @test !occursin('e', Logjam.prt([1.0000000123 2.5; 1234.5 0.000000123]; fracdig = fd, allfrac = fd, str = true))
-    end
-    @test Logjam._formatfixed(1.000001, 6) == "1.000001"
-    @test Logjam._formatfixed(1234567.0000012, 7) == "1,234,567.0000012"
-    @test Logjam._formatfixed(0.5, 20) == "0.5" * "0"^19
-end
-
-@testset "prt rounding carries into the whole part and never prints a negative zero" begin
-    @test Logjam._formatfixed(1.996, 2) == "2.00"
-    @test Logjam._formatfixed(0.996, 2) == "1.00"
-    @test Logjam._formatfixed(999.9996, 3) == "1,000.000"
-    @test Logjam._formatfixed(1999.996, 2) == "2,000.00"
-    @test Logjam._formatfixed(-1.996, 2) == "-2.00"
-    @test Logjam._formatfixed(-0.001, 2) == "0.00"
-    @test Logjam._formatfixed(-0.0, 2) == "0.00"
-    @test Logjam._formatfixed(-0.4, 0) == "0"
-    @test Logjam._formatfixed(-0.5, 4) == "-0.5000"
-    @test Logjam._formatfixed(-999999.9999, 2) == "-1,000,000.00"
-    @test !occursin("-0.00", Logjam.prt([-0.001 0.5; 2.5 -0.4]; str = true))
-    @test !occursin("-0.00", Logjam.prt([-0.00001 0.00002; 0.5 0.25]; str = true))
-    @test Logjam.prt([1.996 0.99996; 2.5 0.5]; str = true) == "      1       2\n1  2.00  1.0000\n2  2.50  0.5000\n"
-end
-
-@testset "prt on text columns that are not String (N12)" begin
-    sym = DataFrame(ST = [:NC, :VA], POP = [1, 2])
-    @test Logjam.prt(sym; str = true) == Logjam.prt(DataFrame(ST = ["NC", "VA"], POP = [1, 2]); str = true)
-    @test occursin("NC", Logjam.prt(sym; str = true))
-    @test Logjam.prt(DataFrame(a = Union{Missing,String}["x", "y"], v = [1.5, 2.0]); str = true) ==
-          Logjam.prt(DataFrame(a = ["x", "y"], v = [1.5, 2.0]); str = true)
-    # a missing in a text column is blank
-    @test Logjam.prt(DataFrame(a = Union{Missing,String}["x", missing], v = [1.5, 2.0]); str = true) ==
-          "  a     v\n  x  1.50\n     2.00\n"
-    @test Logjam.prt(DataFrame(ST = [:NC, :VA]); str = true) == "  ST\n  NC\n  VA\n"
-    # text in a matrix or a vector
-    @test Logjam.prt(Any["a" 1.5; "b" 2.5]; str = true) == "   1     2\n1  a  1.50\n2  b  2.50\n"
-    @test occursin("b", Logjam.prt(["a", "b"]; str = true))
-end
-
-@testset "prt prints a Bool as true or false (S13)" begin
-    # 3.3 Code block 13: minTLC's isLTL column
-    @test Logjam.prt(DataFrame(x = [1.5, 2.25], isLTL = [true, false]); str = true) ==
-          "      x  isLTL\n1  1.50   true\n2  2.25  false\n"
-    @test Logjam.prt(DataFrame(s = ["a", "b"], f = [true, false]); str = true) == "  s      f\n  a   true\n  b  false\n"
-    @test Logjam.prt([true false; false true]; str = true) == "       1      2\n1   true  false\n2  false   true\n"
-    @test Logjam.prt([true, false, true]; str = true) == "        \n1   true\n2  false\n3   true\n"
-    # a Bool takes no part in digit detection: the other column's digits are its own
-    @test Logjam.prt(DataFrame(x = [3.14159, 2.0], b = [true, false]); str = true) ==
-          "      x      b\n1  3.14   true\n2  2.00  false\n"
-end
-
-@testset "prt keyword parity across the three methods" begin
-    df = DataFrame(site = ["a", "b"], v = [1.23456, 2.5], p = [0.123456, 0.5])
-    dn = DataFrame(a = [1.5, 2.5], b = [10, 20])
-    # fracdig and allfrac reach the mixed-frame path, which hard-coded 2 and 4
-    @test Logjam.prt(df; str = true) == "  site     v       p\n     a  1.23  0.1235\n     b  2.50  0.5000\n"
-    @test Logjam.prt(df; fracdig = 2, allfrac = 4, str = true) == Logjam.prt(df; str = true)
-    @test Logjam.prt(df; fracdig = 3, allfrac = 5, str = true) ==
-          "  site      v        p\n     a  1.235  0.12346\n     b  2.500  0.50000\n"
-    @test Logjam.prt(df; fracdig = 6, allfrac = 6, str = true) ==
-          "  site         v         p\n     a  1.234560  0.123456\n     b  2.500000  0.500000\n"
-    @test Logjam.prt(dn; fracdig = 3, str = true) == "       a   b\n1  1.500  10\n2  2.500  20\n"
-    # an all-numeric frame is numbered, a frame with text is not; rows and row_title apply to either
-    @test Logjam.prt(dn; str = true) == "      a   b\n1  1.50  10\n2  2.50  20\n"
-    @test Logjam.prt(dn; rows = ["u", "v"], row_title = "r", str = true) == "r     a   b\nu  1.50  10\nv  2.50  20\n"
-    @test Logjam.prt(df; rows = ["u", "v"], row_title = "r", str = true) ==
-          "r  site     v       p\nu     a  1.23  0.1235\nv     b  2.50  0.5000\n"
-    @test Logjam.prt(dn; title = "T", str = true) == "T\n" * Logjam.prt(dn; str = true)
-    # the vector method takes fracdig and allfrac
-    @test Logjam.prt([1.23456, 2.5]; fracdig = 3, str = true) == "        \n1  1.235\n2  2.500\n"
-    @test Logjam.prt([0.123456, 0.5]; allfrac = 5, str = true) == "          \n1  0.12346\n2  0.50000\n"
-    # every call form the course uses keeps working (the pinned corpus holds the exact output)
-    @test Logjam.prt([1.0, 2.0]; rows = ["a", "b"], row_title = "r", title = "t", str = true) isa String
-    @test Logjam.prt([1 2; 3 4]; rows = ["a", "b"], cols = ["X", "Y"], row_title = "ID", title = "t", fracdig = 3, allfrac = 5, str = true) isa String
-end
-
-@testset "thousands: the one thousands-and-money formatter (CR 8)" begin
-    # the amounts the lectures rendered wrongly, in one form (S12): 2 places, separators on the whole part
-    @test thousands(1357.2; digits = 2) == "1,357.20"          # 3.2 "$1357.2", 4.3 "$1,357.2"
-    @test thousands(57.4; digits = 2) == "57.40"               # 3.2 "$57.4"
-    @test thousands(600.8; digits = 2) == "600.80"             # 3.2 "$600.8"
-    @test thousands(64580.9; digits = 2) == "64,580.90"        # 4.4 "$64,580.9"
-    @test thousands(184.2; digits = 2) == "184.20"             # 4.4 "$184.2"
-    @test thousands(30.0; digits = 2) == "30.00"               # 4.4 "$30.0"
-    @test thousands(10529.75; digits = 2) == "10,529.75"       # 6.3 "$10529.75"
-    @test thousands(1124) == "1,124"                           # 2.5 "$1124"
-    @test thousands(114620) == "114,620"                       # 2.5 "$114620"
-    @test thousands(1124.0) == "1,124"
-    @test thousands(4441.7314; digits = 2) == "4,441.73"       # 3.3's own comment
-    @test thousands(300000000) == "300,000,000"                # 1.1's commafmt comment
-    @test thousands(1357.24; digits = 1) == "1,357.2"          # 4.1's commas(round(x, digits = 1))
-    @test thousands(5; digits = 2) == "5.00"
-    @test thousands(0; digits = 2) == "0.00"
-    @test thousands(999) == "999" && thousands(1000) == "1,000" && thousands(1234567890) == "1,234,567,890"
-    # the group separator on the whole part only, and "{,}" for math mode (1.1's mnum)
-    @test thousands(1234567; sep = "{,}") == "1{,}234{,}567"
-    @test thousands(1234567.891; digits = 2, sep = "{,}") == "1{,}234{,}567.89"
-    @test thousands(0.123456; digits = 5) == "0.12346"
-    # a correct sign
-    @test thousands(-1234.5; digits = 2) == "-1,234.50"
-    @test thousands(-0.5; digits = 2) == "-0.50"
-    @test thousands(-1234567) == "-1,234,567"
-    @test thousands(-999999.999; digits = 2) == "-1,000,000.00"
-    @test thousands(-0.001; digits = 2) == "0.00"              # never a negative zero
-    @test thousands(-0.0) == "0"
-    @test thousands(-64580.949; digits = 1) == "-64,580.9"
-    # a rounding carry
-    @test thousands(999.996; digits = 2) == "1,000.00"
-    @test thousands(1999.996; digits = 2) == "2,000.00"
-    @test thousands(0.9996; digits = 3) == "1.000"
-    # a huge value prints its own digits
-    @test thousands(BigInt(10)^30) == "1,000,000,000,000,000,000,000,000,000,000"
-    @test thousands(1e300; digits = 2) == Logjam._commasep(BigInt(1e300)) * ".00"
-    @test thousands(typemax(Int64)) == "9,223,372,036,854,775,807"
-    @test thousands(typemin(Int64)) == "-9,223,372,036,854,775,808"
-    @test thousands(1e15 + 0.5; digits = 1) == "1,000,000,000,000,000.5"       # past 2^50 / 10^digits the digits are exact
-    @test thousands(1e15 + 0.125; digits = 2) == "1,000,000,000,000,000.12"
-    @test thousands(2.0^60 + 256; digits = 3) == "1,152,921,504,606,847,232.000"
-    @test !occursin('e', thousands(1.5e-7; digits = 9))
-    @test thousands(1.5e-7; digits = 9) == "0.000000150"
-    # other number types, and what is not a number
-    @test thousands(Float32(1234.5); digits = 2) == "1,234.50"
-    @test thousands(12345 // 10; digits = 1) == "1,234.5"
-    @test thousands(big"1234567.5"; digits = 1) == "1,234,567.5"
-    @test thousands(NaN) == "NaN" && thousands(Inf) == "Inf" && thousands(-Inf; digits = 2) == "-Inf"
-    @test_throws ArgumentError thousands(1.5; digits = -1)
-    @test_throws MethodError thousands("1234")
-    # prt prints the same digits (one formatting core)
-    @test occursin(thousands(1234567.891; digits = 2), Logjam.prt([1234567.891 0.5; 2.5 0.25]; str = true))
-    # exported, and its name collides with nothing the course defines: a script that does `using Logjam`
-    # and then defines its own function of the name still runs
-    @test :thousands in names(Logjam)
-    m = Module(:ThousandsCollide)
-    Core.eval(m, :(using Logjam))
-    Core.eval(m, :(thousands(x) = string("local:", x)))
-    @test Core.eval(m, :(thousands(1234))) == "local:1234"
-    # and in the unfavorable order: the exported name called first, a local definition after it
-    m2 = Module(:ThousandsCollide2)
-    Core.eval(m2, :(using Logjam))
-    @test Core.eval(m2, :(thousands(1234))) == "1,234"
-    Core.eval(m2, :(thousands(x) = string("local:", x)))
-    @test Core.eval(m2, :(thousands(1234))) == "local:1234"
-end
-
-@testset "P8: mat2df is removed" begin
-    @test !isdefined(Logjam, :mat2df)
-    @test !(:mat2df in names(Logjam))
-    # what replaces it: the DataFrame constructor, and insertcols! for the row labels
-    @test DataFrame([1 2; 3 4], Symbol.(["A", "B"])) == DataFrame(A = [1, 3], B = [2, 4])
-    @test insertcols!(DataFrame([1 2; 3 4], [:A, :B]), 1, :ID => ["r1", "r2"]) ==
-          DataFrame(ID = ["r1", "r2"], A = [1, 3], B = [2, 4])
-end
-
-@testset "P8: snapvals(x, n, m) is removed; snapvals(x; atol) stays" begin
-    @test_throws MethodError snapvals([1.0, 2.0, 3.0, 4.0], 2, 2)
-    @test reshape(snapvals([1.0, 2.0, 3.0, 4.0]), 2, 2) == [1.0 3.0; 2.0 4.0]
-    @test snapvals([2.9999999997, 1e-12, 0.5]) == [3.0, 0.0, 0.5]
-    @test snapvals([2.9999, 1e-12]; atol = 1e-3) == [3.0, 0.0]
-end
-
 # C12 (PCV K11b): faf5nodes() and faf5links() read their file once per session and return copies. The values, the
 # column kinds and that each call returns a table of its own are pinned from the code before the change, in
 # test_map_line_pins.jl; these check the cache itself.
@@ -629,4 +189,319 @@ end
     # calls from tasks at once get the same table
     got = fetch.([Threads.@spawn(faf5links()) for _ in 1:4])
     @test all(g -> isequal(g, cl) && g !== cl, got)
+end
+
+# ==== moved from test/test_map_line_pins.jl, its lines 1-13, 187-247 ====
+# test_map_line_pins.jl -- what the course sees of `plotroads!`, the base-layer styles `makemap` draws, the FAF5
+# tables and `tracepath`, pinned from the code at 83c799b (PCV K11b, plan principle 9; K11a's own pins are
+# test_map_pins.jl). The values below were measured on the unchanged code, before K11b's C4 (`makemap`'s interface),
+# C8 (the line builders) and C12 (cached FAF5 tables) changed it. A call the course makes today keeps returning
+# what it returned then; only a case named in MLPIN_MOVED may differ, and each one is named in the commit that moves it.
+#
+# No case touches the network or a file outside the package, and none renders a picture.
+
+using Test
+using Logjam
+using DataFrames
+using CairoMakie
+using GeoMakie
+isdefined(@__MODULE__, :MLPIN_MOVED) || include(joinpath(@__DIR__, "map_line_pin_helpers.jl"))   # WP8: defined once
+
+# ---- the FAF5 tables -----------------------------------------------------------------------------------------
+# A checksum of a column: FNV-1a over the column's values in order (integers and floats by their 64 bits, strings by
+# their bytes, a missing by a marker), so a change to any value or to the order changes it.
+const _MLPIN_FNV_PRIME = 0x00000100000001b3
+_mlpin_mix(h::UInt64, x::UInt64) = (h ⊻ x) * _MLPIN_FNV_PRIME
+_mlpin_mix(h::UInt64, v::Integer) = _mlpin_mix(h, reinterpret(UInt64, Int64(v)))
+_mlpin_mix(h::UInt64, v::AbstractFloat) = _mlpin_mix(h, reinterpret(UInt64, Float64(v)))
+_mlpin_mix(h::UInt64, ::Missing) = _mlpin_mix(h, "<missing>")
+function _mlpin_mix(h::UInt64, s::AbstractString)
+    for b in codeunits(s)
+        h = _mlpin_mix(h, UInt64(b))
+    end
+    return _mlpin_mix(h, UInt64(0xff))
+end
+function _mlpin_colsum(col)
+    h = 0xcbf29ce484222325
+    for v in col
+        h = _mlpin_mix(h, v)
+    end
+    return string(h, base = 16)
+end
+# a column's kind: Int64, Float64 or String, with a "?" when it can hold a missing
+_mlpin_kind(T) = (nonmissingtype(T) <: AbstractString ? "String" : string(nonmissingtype(T))) * (Missing <: T ? "?" : "")
+_mlpin_table(df) = (size = size(df), names = names(df), kinds = [_mlpin_kind(eltype(c)) for c in eachcol(df)],
+                    sums = [_mlpin_colsum(c) for c in eachcol(df)], missings = [count(ismissing, c) for c in eachcol(df)])
+
+const MLPIN_FAF5NODES = (size = (344998, 10),
+    names = ["IDX", "LON", "LAT", "ENTRY_EXIT", "EXIT_NUM", "INTERCHANGE", "FACILITY_TYPE", "FACILITY_NAME", "STATEID", "FAFID"],
+    kinds = ["Int64", "Float64", "Float64", "String?", "String?", "String?", "String?", "String?", "Int64", "Int64"],
+    sums = ["6b3aebb8b846557d", "4a958dc40e2a898d", "84ff8720cb07404a", "60b10316d13d1d8d", "b2ba03681c6ce1ad", "9df270cb6fc10912", "a4add17fdde1bcda", "2b2d0ba73a38d503", "1267def9b11825bd", "1267def9b11825bd"],
+    missings = [0, 0, 0, 343440, 343928, 343434, 340054, 340052, 0, 0])
+const MLPIN_FAF5LINKS = (size = (483530, 25),
+    names = ["SRC", "DST", "DIST", "STFIP", "COFIP", "SPEED", "NHS", "SIGN", "NAME", "FCLASS", "URBAN", "AB_SPEED", "BA_SPEED", "AB_TIME", "BA_TIME", "AB_LANES", "BA_LANES", "DIR", "STRAHNET", "NHFN", "TOLL_TYPE", "TOLL_LINK", "BORDER_LINK", "FAFZONE", "STATUS"],
+    kinds = ["Int64", "Int64", "Float64", "Int64", "Int64", "Int64", "Int64", "String?", "String?", "Int64", "Int64?", "Float64", "Float64", "Float64", "Float64", "Int64", "Int64", "Int64", "Int64", "Int64", "Int64", "Int64", "Int64", "Int64", "Int64"],
+    sums = ["243c235cf38d51e8", "9002e4b393d3b973", "56d69e43bcb4bb3c", "5679e14f1251eae9", "6b291df2c012aaa1", "c1097f45a8cd0fc0", "c7119800158f324c", "48b68dea93374b0a", "ac1e14a791acf526", "d1ee499f29259c3a", "90727a59dccce0b9", "f8c837a2c4c4638f", "28acf4a8e83154", "9e08ff7d099f7387", "53bdeebb85c2b3b6", "a525fbd32be3e0a4", "cc579de8e90b930d", "336aeb10c85588e1", "6cd98b3bd6e9114f", "ce71afbc78865c4f", "239f9da6c6fd7c1f", "c3f8f56d007d5728", "55c050ace0ac4eca", "4cebd0932d71a30e", "ba15765f6cd9e71d"],
+    missings = [0, 0, 0, 0, 0, 0, 0, 247001, 38692, 0, 1758, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])
+
+@testset "faf5nodes() and faf5links() are pinned: sizes, column names, kinds, per-column checksums" begin
+    @testset "faf5nodes" begin
+        _mlpin_moved("faf5nodes") || @test _mlpin_table(faf5nodes()) == MLPIN_FAF5NODES
+    end
+    @testset "faf5links" begin
+        _mlpin_moved("faf5links") || @test _mlpin_table(faf5links()) == MLPIN_FAF5LINKS
+    end
+    @testset "each call returns a table of its own: changing one never changes the next" begin
+        if !_mlpin_moved("faf5_fresh_copies")
+            a = faf5links()
+            a.DIST .= -1.0
+            a.SIGN[1] = "changed"
+            deleteat!(a, 1:10)
+            b = faf5links()
+            @test _mlpin_table(b) == MLPIN_FAF5LINKS
+            @test a !== b
+            n = faf5nodes()
+            n.LON .= 0.0
+            select!(n, [:IDX, :LON])
+            @test _mlpin_table(faf5nodes()) == MLPIN_FAF5NODES
+        end
+    end
+end
+
+# ==== moved from test/test_k12_functions.jl, its lines 1-14, 156-214 ====
+# test_k12_functions.jl -- the small functions K12 adds, each tested against the course definition it takes the place of
+# (PCV K12, plan principles 8 and 9). The pins of what the course gets today are test_k12_pins.jl, whose case
+# values and lecture texts this file reuses: a function that equals the lecture's definition on the lecture's inputs
+# and seeds, and leaves the global stream where the lecture's leaves it, gives back every pinned value.
+
+using Test
+using Logjam
+using DataFrames
+using Random
+
+isdefined(@__MODULE__, :K12PIN_MOVED) || include("k12_helpers.jl")
+isdefined(@__MODULE__, :ORACLE_DIR) || include("oracle_helpers.jl")
+isdefined(@__MODULE__, :LECTURE51_SFC) || include("lecture51_code.jl")
+isdefined(@__MODULE__, :LECTURE42_COUNTY_BOX) || include("lecture42_code.jl")
+
+# ---- CR 12: usstate ----------------------------------------------------------------------------------------------
+@testset "[K12] CR 12: usstate is one row per state, aggregated from uscounty" begin
+    @test Base.isexported(Logjam, :usstate) && !occursin("No documentation found", string(Base.Docs.doc(Logjam.usstate)))
+    S = usstate()
+    C = uscounty()
+    @test names(S) == ["STFIP", "ST", "NAME", "LON", "LAT", "POP", "ALAND", "AWATER", "ISCUS"]
+    @test nrow(S) == 51 && issorted(S.STFIP) && allunique(S.ST) && allunique(S.STFIP)
+    @test eltype.(eachcol(S)) == [Int, Symbol, String, Float64, Float64, Int, Float64, Float64, Bool]
+    @test Set(S.ST) == Set(C.ST) && all(st -> st2fips(st) in S.STFIP, S.ST)
+    @test S.NAME[S.ST .== :NC] == ["North Carolina"] && S.NAME[S.ST .== :DC] == ["District of Columbia"]
+    @test S.NAME[S.ST .== :WV] == ["West Virginia"]
+    # the populations sum to the county total, state by state and overall; the areas likewise
+    @test sum(S.POP) == sum(C.POP)
+    @test all(r -> r.POP == sum(C.POP[C.STFIP .== r.STFIP]), eachrow(S))
+    @test isapprox(sum(S.ALAND), sum(C.ALAND); rtol = 1e-12) && isapprox(sum(S.AWATER), sum(C.AWATER); rtol = 1e-12)
+    @test all(r -> isapprox(r.ALAND, sum(C.ALAND[C.STFIP .== r.STFIP]); rtol = 1e-12), eachrow(S))
+    # the centroid is the geocoder's STATE tier (the population-weighted mean of the county centers), bit for bit
+    for st in (:NC, :NY, :TX, :DC, :AK)
+        g = Logjam._resolve_state(st)
+        r = S[S.ST .== st, :][1, :]
+        @test (r.LON, r.LAT) == (g.lon, g.lat) && isapprox(r.ALAND, g.aland; rtol = 1e-12)
+    end
+    # and the centroid aggregated from the block groups (a county's center is the mean of its block groups')
+    B = uscenblkgrp()
+    for st in (:NC, :CA, :NY, :TX, :FL, :DC, :CT)
+        b = B[B.STFIP .== st2fips(st), :]
+        r = S[S.ST .== st, :][1, :]
+        @test r.POP == sum(b.POP)
+        # within 2e-4 degrees (about 50 feet of latitude): the published county centers are rounded to six places
+        # and each is a mean of its block groups' rounded centers
+        @test isapprox(r.LON, sum(b.LON .* b.POP) / sum(b.POP); atol = 2e-4)
+        @test isapprox(r.LAT, sum(b.LAT .* b.POP) / sum(b.POP); atol = 2e-4)
+    end
+    # a copy: changing what a call returns does not change the next
+    S.POP .= 0; select!(S, :ST)
+    S2 = usstate()
+    @test sum(S2.POP) == sum(C.POP) && ncol(S2) == 9
+    @test usstate() !== usstate() && isequal(usstate(), usstate())
+end
+
+# ISCUS is "within continental U.S.": the box of CUS_LIMITS. The ZIP tables carry it too, and it is the ZIP prefix rule
+# (the 3-digit prefixes outside the continental U.S.: 006-009 Puerto Rico and the Virgin Islands, 967-968 Hawaii and the
+# Pacific, 995-999 Alaska): a guard on the shipped tables. (Both ZCTA tables carry 40 Puerto Rico ZCTAs, 009xx only,
+# although their docstrings say they exclude territories: a v0.3.1 data item.)
+@testset "[K12] ISCUS: the ZIP tables' flag is the prefix rule, and usstate's is false for Alaska and Hawaii only" begin
+    outside(p) = (6 <= p <= 9) || (967 <= p <= 968) || (995 <= p <= 999)
+    z5 = uszcta5()
+    @test z5.ISCUS == .!outside.(z5.ZCTA5 .÷ 100)
+    z3 = uszcta3()
+    @test z3.ISCUS == .!outside.(z3.ZCTA3)
+    @test any(z5.ISCUS) && any(.!z5.ISCUS) && any(z3.ISCUS) && any(.!z3.ISCUS)
+    S = usstate()
+    territories = [:AS, :GU, :MP, :PR, :VI]
+    nonus = S.ST[.!S.ISCUS]
+    @test sort(nonus) == sort(vcat([:AK, :HI], intersect(S.ST, territories)))     # Alaska, Hawaii and any territory the table carries
+    @test all(S.ISCUS[in.(S.ST, Ref(nonus)) .== false])                    # the 48 contiguous states and DC
+    @test count(S.ISCUS) == 49 && S.ISCUS[S.ST .== :DC] == [true]
+end
+
+# ==== moved from test/test_geodata_v031.jl, its lines 1-25, 619-639, 711-825 ====
+# test_geodata_v031.jl -- added by PCV WP5 of Logjam v0.3.1 (GC rest: review A's A4, A6 and A10; ZCTA: D4; X6). Test spec Sec. 5.
+# Equality is `==` (or `isequal`, where a column may hold `missing`) on every element, with the element types compared
+# as well; no tolerance is used anywhere in this file. The evidence:
+#   1. the batch driver (A4): v0.3.0's geocoder, its vector and DataFrame methods and the row resolver they call,
+#      copied below as text, against the current methods on the same inputs, column for column, with the log records
+#      (the progress line, the warnings) compared too; `_FAIL` and `_row` against the hand-written rows they replace;
+#      the vector method on any vector of strings;
+#   2. the column keywords (A6): each `*_col` gives what its old name gives; each old name is deprecated
+#      (`@test_deprecated`) and, in a fresh process run with --depwarn=no, prints nothing; a state column that is
+#      named and is not in the table is an `ArgumentError`, where v0.3.0 returned FAIL for every row; the literal
+#      `state = ...` calls of src/geocode.jl's docstrings give v0.3.0's values;
+#   3. the loader and the name index (A10): every census loader returns a copy that can be changed without reaching
+#      the next call; the index finds the row (or raises the error) v0.3.0's scan of the whole table finds, for every
+#      name of `usplace()` and `uscounty()`, with its state and with none, and for 200 variants of them, the scan
+#      itself checked against v0.3.0's text on a sample; the Puerto Rico rows the ZIP docstrings now name (X6);
+#   4. STFIP on the ZIP tables (MakePlan D4): the last column, an Int64, never missing; the columns before it v0.3.0's,
+#      by type and by the SHA-256 of v0.3.0's CSV files; the CSV files the script's output byte for byte and the .jls
+#      that CSV read back; Puerto Rico's 72; every cross-state ZCTA5 and every three-digit ZCTA recomputed by the rule
+#      from the committed extract of the Census relationship file (test/data/zcta_state_parts.csv).
+
+using Test
+using Logjam
+using DataFrames
+using CSV
+using Base.CoreLogging: with_logger, NullLogger    # Logging is not in the test environment (Pkg.test has no @stdlib)
+
+# ---- 3. one memoized loader and the name index (A10) ------------------------------------------------------------------
+@testset "[WP5 A10] every census loader returns a copy: a changed table does not reach the next call" begin
+    for f in (usplace, uscounty, uscentract, uscenblkgrp, uszcta5, uszcta3, uscbsa, uscsa, usstate)
+        a, b = f(), f()
+        @test a !== b && isequal(a, b) && all(c -> c[1] !== c[2], zip(eachcol(a), eachcol(b)))
+        n, cols = nrow(b), names(b)
+        a.LON .= 0.0                          # a column changed in place
+        a[1, :POP] = -1                       # a cell
+        a.NEWCOL = collect(1:n)               # a column added
+        deleteat!(a, 1)                       # a row removed
+        c = f()
+        @test isequal(c, b) && names(c) == cols && nrow(c) == n && c.LON == b.LON
+    end
+    # the memoized table is the file's: read once, kept unchanged by the copies and by the geocoder's lookups
+    loc2lonlat(["Raleigh", "Durham"]; state = :NC)
+    for name in ("usplace", "uscounty", "uszcta5")
+        @test isequal(Logjam._table(name), open(Logjam.deserialize, joinpath(pkgdir(Logjam), "data", name * ".jls")))
+        @test Logjam._table(name) === Logjam._table(name)
+    end
+end
+
+@testset "[WP5 X6] the ZIP tables hold Puerto Rico's 40 ZCTA5s that begin with 009, and their docstrings say so" begin
+    z5, z3 = uszcta5(), uszcta3()
+    pr = z5[z5.ZCTA5 .< 1000, :]
+    @test nrow(pr) == 40 && extrema(pr.ZCTA5) == (901, 987) && !any(pr.ISCUS)
+    @test z3.ZCTA3[z3.ZCTA3 .< 10] == [9] && !only(z3.ISCUS[z3.ZCTA3 .== 9])
+    @test only(z3.POP[z3.ZCTA3 .== 9]) == sum(pr.POP)
+    for f in (uszcta5, uszcta3)
+        d = string(Docs.doc(f))
+        @test occursin("Puerto Rico", d) && occursin("ISCUS = false", d) && !occursin("Does not include U.S. territories", d)
+    end
+end
+
+# ---- 4. STFIP on the ZIP tables (MakePlan D4, X6) ----------------------------------------------------------------------
+# SHA is in every environment Logjam is in (Random depends on it) but not a dependency of the test target, so it is
+# reached by its package id, as tools/v0_3_1/make_faf5net.jl reaches CodecZlib.
+const _GD_SHA = Base.require(Base.PkgId(Base.UUID("ea8e919c-243c-51af-8825-aaa63cd721ce"), "SHA"))
+_gd_sha(b) = bytes2hex(_GD_SHA.sha256(b))
+_gd_lf(path) = (b = read(path); b[b .!= UInt8('\r')])          # the file as committed: a Windows checkout may add CRs
+_gd_csv(df) = (io = IOBuffer(); CSV.write(io, df); take!(io))
+
+# the committed tables' SHA-256, printed by tools/v0_3_1/make_zcta_stfip.jl on two runs (Julia 1.12.6), and the
+# SHA-256 of the v0.3.0 tables (fd0f1f3's data/uszcta5.csv and uszcta3.csv), which CSV.write of their columns gives
+const _GD_ZCTA_SHA = Dict(
+    "uszcta5" => (new = "fee98453f863f4ac6e93eaf7cbabf8a6ad5431d72ff139af32f616ba173e1adc",
+                  old = "b3c56baefd7f08428a2158eaf9d45eedd798281ca4fee0adc2e4602b5a0b9752"),
+    "uszcta3" => (new = "7c60ed0ff6859b6b33c7e91a5c2e7f2688fb66c873a165450765f1897881dcac",
+                  old = "3e8a0f7af8fb1eb3dccddee63365572572ffb6795fb12889c6e12fb0c98a90c8"))
+const _GD_EXTRACT_SHA = "8c442f6d4577b9ccdde6cd7dbc0a5f2cbefcee309eabf786766062503ddcfbc6"
+const _GD_V030_TYPES = [Int64, Float64, Float64, Int64, Float64, Float64, Bool]
+
+# the rule, as the script states it: the most land, else the most water; a tie to the smaller FIPS code
+function _gd_pick(d::AbstractDict)
+    sts = sort!(collect(keys(d)))
+    k = sum(d[s][1] for s in sts) > 0 ? 1 : 2
+    best = sts[1]
+    for s in sts
+        d[s][k] > d[best][k] && (best = s)
+    end
+    return best
+end
+
+@testset "[WP5 D4] STFIP is the last column of uszcta5 and uszcta3, and nothing else moved" begin
+    data = joinpath(pkgdir(Logjam), "data")
+    for (name, f, code) in (("uszcta5", uszcta5, :ZCTA5), ("uszcta3", uszcta3, :ZCTA3))
+        df = f()
+        @test names(df) == [String(code), "LON", "LAT", "POP", "ALAND", "AWATER", "ISCUS", "STFIP"]
+        @test eltype(df.STFIP) == eltype(usplace().STFIP) == Int64
+        @test !any(ismissing, df.STFIP) && all(s -> s in keys(Logjam.fips_state), df.STFIP)
+        # the existing columns: v0.3.0's types, and the bytes of v0.3.0's CSV file
+        old = select(df, Not(:STFIP))
+        @test eltype.(eachcol(old)) == _GD_V030_TYPES
+        @test _gd_sha(_gd_csv(old)) == _GD_ZCTA_SHA[name].old
+        # the CSV is the script's output byte for byte, and the .jls is that CSV read back
+        csv = _gd_lf(joinpath(data, name * ".csv"))
+        @test _gd_sha(csv) == _GD_ZCTA_SHA[name].new
+        back = CSV.read(IOBuffer(csv), DataFrame; ntasks = 1)
+        @test isequal(back, df) && eltype.(eachcol(back)) == eltype.(eachcol(df))
+    end
+    # every ZIP of Puerto Rico in the tables, 009xx, is 72, outside the continental U.S.
+    z5, z3 = uszcta5(), uszcta3()
+    pr = filter(r -> 900 <= r.ZCTA5 <= 999, z5)
+    @test nrow(pr) == 40 && all(==(72), pr.STFIP) && !any(pr.ISCUS)
+    @test only(z3.STFIP[z3.ZCTA3 .== 9]) == 72
+    @test count(==(72), z5.STFIP) == 40 && count(==(72), z3.STFIP) == 1
+    # a few with no doubt: Raleigh's 27601, Cambridge's 02139, Beverly Hills' 90210
+    @test [only(z5.STFIP[z5.ZCTA5 .== z]) for z in (27601, 2139, 90210)] == [37, 25, 6]
+end
+
+@testset "[WP5 D4] each cross-state ZCTA and each three-digit ZCTA follows the rule, from the committed extract" begin
+    path = joinpath(@__DIR__, "data", "zcta_state_parts.csv")
+    @test _gd_sha(_gd_lf(path)) == _GD_EXTRACT_SHA
+    ex = CSV.read(path, DataFrame; comment = "#")
+    parts = Dict{Int, Dict{Int, NTuple{2, Int}}}()
+    for r in eachrow(ex)
+        get!(parts, r.ZCTA5, Dict{Int, NTuple{2, Int}}())[r.STFIP] = (r.ALAND_M2, r.AWATER_M2)
+    end
+    z5, z3 = uszcta5(), uszcta3()
+    st5 = Dict(zip(z5.ZCTA5, z5.STFIP))
+    @test all(z -> haskey(st5, z), keys(parts))
+    # five-digit: every ZCTA the extract shows in two or more states takes the state with the most land
+    cross = [z for (z, d) in parts if length(d) > 1]
+    @test length(cross) == 137
+    @test all(st5[z] == _gd_pick(parts[z]) for z in cross)
+    # a ZCTA in one state takes it
+    @test all(st5[z] == only(keys(d)) for (z, d) in parts if length(d) == 1)
+    # the rule's no-land branch and its tie, on made-up parts (the file has neither)
+    @test _gd_pick(Dict(6 => (0, 5), 4 => (0, 9))) == 4 && _gd_pick(Dict(6 => (0, 9), 4 => (0, 5))) == 6
+    @test _gd_pick(Dict(6 => (7, 0), 4 => (7, 0))) == 4 && _gd_pick(Dict(6 => (8, 0), 4 => (7, 99))) == 6
+    # three-digit: members in one state give that state; members in more than one, the state with the most land
+    # summed over the members' parts, every member of such a ZCTA being in the extract
+    members = Dict{Int, Vector{Int}}()
+    for z in z5.ZCTA5
+        push!(get!(members, z ÷ 100, Int[]), z)
+    end
+    one, mixed, incomplete, wrong = 0, 0, Int[], Int[]
+    for (c, s) in zip(z3.ZCTA3, z3.STFIP)
+        m = members[c]
+        if all(z -> !haskey(parts, z), m) && length(unique(st5[z] for z in m)) == 1
+            one += 1
+            s == st5[m[1]] || push!(wrong, c)
+        else
+            mixed += 1
+            all(z -> haskey(parts, z), m) || (push!(incomplete, c); continue)
+            agg = Dict{Int, NTuple{2, Int}}()
+            for z in m, (st, v) in parts[z]
+                a = get(agg, st, (0, 0)); agg[st] = (a[1] + v[1], a[2] + v[2])
+            end
+            s == _gd_pick(agg) || push!(wrong, c)
+        end
+    end
+    @test (one, mixed) == (799, 91)
+    @test isempty(incomplete)
+    @test isempty(wrong)
 end

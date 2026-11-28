@@ -1,3 +1,9 @@
+# test_LogjamMakieExt.jl -- the tests of ext/LogjamMakieExt.jl, one test file per source file (PCV WP8 of Logjam v0.3.1).
+# Each section below was moved verbatim from the test file its marker names, under that file's own header,
+# which says which component added it. No assertion changed. A testset taken out of a wrapper that held the
+# tests of several modules sits in a wrapper of the same name with this module's name before it.
+
+# ==== moved from test/test_aligntext_ax.jl, its lines 1-264 ====
 # test_aligntext_ax.jl -- added by PCV WP7a of Logjam v0.3.1 (D1, MAP1): `aligntext(ax, x, y, labels; ...)`, the label
 # placer that reads the drawn figure, in LogjamMakieExt (which Makie triggers, so CairoMakie alone loads it). Test spec
 # Sec. 9. Synthetic figures only: the course's label check on review D's 16 lecture figures is a report

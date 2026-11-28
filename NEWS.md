@@ -456,6 +456,11 @@ missed.
   `Logjam._countybox`, which `mapbbox(state)` shares; every county's box was saved before the change
   (`tools/v0_3_1/save_county_boxes.jl`, `test/data/county_boxes_f3f0c1b.csv`) and `test/test_boxes_v031.jl` checks
   each bit for bit.
+- **The suite is arranged by module (WP8).** `test/test_<name>.jl` holds the tests of `src/<name>.jl` or
+  `ext/<name>.jl` (`test_Logjam.jl` those of `src/Logjam.jl`); the files the components added, the `test_*_v031.jl`
+  files named above among them, are sections of those files now, each moved verbatim under its old header, and the
+  count is the same before and after. A helper that two files defined, and a pin-case or oracle file that several
+  included, is defined once, so a full run prints no method-redefinition warning.
 
 ## v0.3.0
 

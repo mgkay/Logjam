@@ -3,17 +3,9 @@
 using Test
 using Logjam
 using DataFrames
-# the NaN-separated line coordinates of a location sequence along shortest paths: what `Logjam.rte2lines`
-# computed until v0.3.0, kept here as a test-side helper (plotroute! traces its legs with `tracepath` itself)
-function _test_rte2lines(route, P, dfN)
-    x_out, y_out = Float64[], Float64[]
-    for k in 1:length(route)-1
-        path = tracepath(P[route[k]], route[k], route[k+1])
-        append!(x_out, dfN.LON[path]); push!(x_out, NaN)
-        append!(y_out, dfN.LAT[path]); push!(y_out, NaN)
-    end
-    return x_out, y_out
-end
+# `_test_rte2lines`, the line coordinates of a location sequence along shortest paths, is in
+# common_helpers.jl with its note, defined once for this file and test_roadtools.jl (WP8)
+isdefined(@__MODULE__, :_test_rte2lines) || include(joinpath(@__DIR__, "common_helpers.jl"))
 using Graphs
 
 @testset "NC Cities Routing Integration" begin

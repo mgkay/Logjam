@@ -1,19 +1,308 @@
+# test_roadtools.jl -- the tests of src/roadtools.jl, one test file per source file (PCV WP8 of Logjam v0.3.1).
+# Each section below was moved verbatim from the test file its marker names, under that file's own header,
+# which says which component added it. No assertion changed. A testset taken out of a wrapper that held the
+# tests of several modules sits in a wrapper of the same name with this module's name before it.
+
+# ==== moved from test/test_road_pins.jl, its lines 1-95 ====
+# test_road_pins.jl -- value equality of the course's road-network calls against the committed fixture
+# (PCV K8, plan principle 9). A call the course makes today keeps returning what it returned at v0.2.8
+# (the fixture was written from the code at b769154, whose roadtools.jl is unchanged from v0.2.8's).
+# Only a case listed in RDPIN_MOVED may differ, and each fixture update is named in its commit.
+# Regenerate with tools/v0_3_0/make_road_pins.jl. No case touches the network.
+
+using Test
+using Logjam
+using DataFrames
+
+include(joinpath(@__DIR__, "road_pin_helpers.jl"))
+
+@testset "road-network calls are pinned value for value" begin
+    fixture = rdpin_read()
+    cases = rdpin_cases()
+    @test length(fixture) == length(cases)
+    for (name, thunk) in cases
+        @testset "$name" begin
+            @test haskey(fixture, name)
+            haskey(fixture, name) || continue
+            got = rdpin_run(thunk)
+            if startswith(got, "SKIPPED")
+                @info "road pin $name skipped: $got"
+            else
+                @test got == fixture[name]
+            end
+        end
+    end
+end
+
+# Code block 30's draw is the one the cases take (on the Julia the course is pinned to)
+@testset "Lecture 4.2's Code block 30 draws the indices the OSM pins take" begin
+    bg = _rd_osm_bg()
+    @test nrow(bg) == 75 && all(<=(75), _RD_OSM_DRAW) && allunique(_RD_OSM_DRAW)
+    if VERSION < v"1.13"
+        Random.seed!(754)
+        @test randperm(nrow(bg))[1:22] == _RD_OSM_DRAW
+    else
+        @info "Random.seed!(754); randperm draws another set on Julia $VERSION: the pins take 1.12's"
+    end
+end
+
+# Lecture 4.2's committed OpenStreetMap cache, read back through osm_roads as the lecture's own calls read it, gives the
+# numbers the lecture prints (Code blocks 2 to 7 and 33; where its data folder is reachable). PCV K9, principle 9.
+@testset "Lecture 4.2's committed cache reads back as the lecture prints it" begin
+    if !_rd_have_osm()
+        @info "4.2's cache not reachable (LOGJAM_LECTURE_DATA): skipped"
+    else
+        x, y = _RD_OSM_X, _RD_OSM_Y
+        bb = _rd_osm_bb1()
+        @test round.(bb[1], digits = 3) == (-78.688, -78.657) && round.(bb[2], digits = 3) == (35.762, 35.796)
+        dfN0, dfL0 = _rd_osm_read(bb)
+        @test (nrow(dfN0), nrow(dfL0)) == (10674, 18927)                    # data/README-osm.md
+        dfN, dfL = cropnetwork(dfN0, dfL0, x, y; xexpand = 2, yexpand = 0.5)
+        @test (nrow(dfN), nrow(dfL)) == (4726, 8000)                         # Code block 2
+        # the same crop, asked of osm_roads (the box passed as mapbbox returns it, no splat)
+        cN, cL = Base.CoreLogging.with_logger(Base.CoreLogging.NullLogger()) do
+            osm_roads(bb; cache_dir = _RD_LECTURE_DATA, crop = true)
+        end
+        @test isequal(cN, dfN) && isequal(cL, dfL)
+        # Code block 4's class table: links, miles, speeds
+        S = [(f, count(==(f), dfL.FCLASS), round(sum(dfL.DIST[dfL.FCLASS .== f]), digits = 1),
+              join(sort(unique(dfL.SPEED[dfL.FCLASS .== f])), ", ")) for f in sort(unique(dfL.FCLASS))]
+        @test S == [(3, 863, 10.1, "30, 45"), (4, 1195, 13.5, "25, 35"), (5, 1321, 14.5, "20, 30"),
+                    (6, 754, 8.0, "25"), (7, 3867, 54.4, "25")]
+        # Code block 5
+        arcs = Set(zip(dfL.SRC, dfL.DST))
+        oneway = count(((s, d),) -> (d, s) ∉ arcs, zip(dfL.SRC, dfL.DST))
+        @test round(100 * count(==(7), dfL.FCLASS) / nrow(dfL), digits = 1) == 48.3
+        @test round(100 * oneway / nrow(dfL), digits = 1) == 23.8
+        @test round(Int, 5280 * _rd_median(dfL.DIST)) == 39
+        @test all(==(1), dfL.DIR)
+        # Code blocks 6 and 7: the two graphs, and each route's miles and minutes
+        Nc, Lc = addconnectors(dfN, dfL, x, y; add_nf_nf = false)
+        @test (nrow(Nc), nrow(Lc)) == (4728, 8006)
+        con = isequal.(Lc.SOURCE, "CONNECTOR")
+        tmin = [c ? 60d / 20 : 60d / v for (c, d, v) in zip(con, Lc.DIST, Lc.SPEED)]
+        gD, gT = _rd_graph(Lc, Lc.DIST), _rd_graph(Lc, tmin)
+        D, PD = shortestpaths(gD, 2)
+        T, PT = shortestpaths(gT, 2)
+        Wd, Wt = weights(gD), weights(gT)
+        R = [(round(round(sum(segcost(tracepath(P[i], i, j), Wd)), digits = 3), digits = 2),
+              round(sum(segcost(tracepath(P[i], i, j), Wt)), digits = 2)) for (i, j) in ((1, 2), (2, 1)) for P in (PD, PT)]
+        @test R == [(1.91, 4.08), (2.12, 3.87), (2.0, 3.9), (2.01, 3.89)]    # Out and Back, Shortest and Fastest
+        # Ex. 3, Code blocks 31 and 33: the 22 points' box, its cell pair, the driving minutes among them
+        U = _rd_osm_U()
+        NU, LU = cropnetwork(_rd_osm_read(_rd_osm_bb3())..., U.LON, U.LAT; xexpand = 0.1, yexpand = 0.1)
+        NU, LU = addconnectors(NU, LU, U.LON, U.LAT; add_nf_nf = false)
+        cU = isequal.(LU.SOURCE, "CONNECTOR")
+        tU = [c ? 60d / 20 : 60d / v for (c, d, v) in zip(cU, LU.DIST, LU.SPEED)]
+        TU, PU = shortestpaths(_rd_graph(LU, tU), nrow(U))
+        @test round(sum(TU[1:22, 1:22]) / (22 * 21), digits = 2) == 6.46
+        @test all(isfinite, TU[1:22, 1:22])
+    end
+end
+
+# ==== moved from test/test_line_builders.jl, its lines 1-155 ====
+# test_line_builders.jl -- the line builders as one family (PCV K11b, MAP, C8): x2ln(i, j, x), tracepath(P, i, j) and
+# tracepath(P, seq), each equal to what the course writes by hand today. The course's own calls of x2ln(g, x) and
+# tracepath(P[i], i, j) are pinned in test_road_pins.jl and test_map_line_pins.jl.
+
+using Test
+using Logjam
+using DataFrames
+using Random
+using SimpleWeightedGraphs
+using Graphs
+
+# a connected network of n nodes: a chain, then random extra links; DIR drawn from {0, 0, 0, 1, -1} so that some links are one-way
+function _lb_network(rng, n; extra = 2n)
+    SRC = collect(1:n-1); DST = collect(2:n)
+    for _ in 1:extra
+        a, b = rand(rng, 1:n), rand(rng, 1:n)
+        a == b && continue
+        push!(SRC, a); push!(DST, b)
+    end
+    DIST = round.(10 .* rand(rng, length(SRC)) .+ 1, digits = 3)
+    DIR = vcat(zeros(Int, n - 1), rand(rng, [0, 0, 0, 1, -1], length(SRC) - (n - 1)))
+    return DataFrame(SRC = SRC, DST = DST, DIST = DIST, DIR = DIR)
+end
+
+# the course's idiom, 5-rte-1.qmd:2682-2684 and 5-rte-3.qmd:3731-3734
+function _lb_idiom(P, seq)
+    legs = zip(seq[1:end-1], seq[2:end])
+    path = reduce(vcat, [tracepath(P[i], i, j)[1:end-1] for (i, j) in legs])
+    push!(path, seq[end])
+    return path
+end
+
+# the segments a NaN-separated coordinate vector draws, each as an unordered pair of endpoints
+function _lb_segments(xs, ys)
+    segs = Set{Tuple}()
+    for k in 1:3:length(xs)
+        a, b = (xs[k], ys[k]), (xs[k+1], ys[k+1])
+        push!(segs, a <= b ? (a, b) : (b, a))
+    end
+    return segs
+end
+
+@testset "[MAP, C8] the line builders as one family" begin
+
+    @testset "x2ln(i, j, x): the links' own index columns draw the lines" begin
+        @test isequal(x2ln([1, 2, 3], [2, 3, 1], [-78.0, -79.0, -80.0]), [-78.0, -79.0, NaN, -79.0, -80.0, NaN, -80.0, -78.0, NaN])
+        @test x2ln([1, 2], [2, 1], [1.0, 2.0]) isa Vector{Float64}
+        @test x2ln(1:2, 2:3, 1:3) isa Vector{Float64}                    # ranges and integer coordinates
+        @test isequal(x2ln(1:2, 2:3, 1:3), [1.0, 2.0, NaN, 2.0, 3.0, NaN])
+        @test x2ln(Int[], Int[], [1.0, 2.0]) == Float64[]
+        @test_throws ArgumentError x2ln([1, 2], [2], [1.0, 2.0])
+        @test_throws BoundsError x2ln([1], [3], [1.0, 2.0])
+        # Lecture 5.2's sh2ln(sh, x) (Code block 9, 5-rte-2.qmd:637-638), exactly
+        sh2ln(sh, x) = vcat(collect([x[b], x[e], NaN] for (b, e) in zip(sh.b, sh.e))...)
+        sh = DataFrame(b = [1, 2, 6, 3], e = [4, 5, 1, 2])
+        x = [-78.1, -79.3, -80.2, -81.0, -77.7, -82.4]
+        @test isequal(x2ln(sh.b, sh.e, x), sh2ln(sh, x))
+        @test isequal(x2ln(sh.b, sh.e, x .+ 1), sh2ln(sh, x .+ 1))
+    end
+
+    @testset "x2ln(i, j, x) draws the segments of x2ln(g, x), Lecture 4.1's drawing graph" begin
+        rng = Xoshiro(754)
+        for n in (6, 15), trial in 1:3
+            L = _lb_network(rng, n)
+            lon, lat = round.(-80 .+ 3 .* rand(rng, n), digits = 4), round.(35 .+ 2 .* rand(rng, n), digits = 4)
+            g = SimpleWeightedGraph(L.SRC, L.DST, L.DIST; combine = min)  # 4-net-1.qmd:1099, `gR`; 4-net-2.qmd:314, `street`
+            old = (x2ln(g, lon), x2ln(g, lat))
+            new = (x2ln(L.SRC, L.DST, lon), x2ln(L.SRC, L.DST, lat))
+            @test _lb_segments(new...) == _lb_segments(old...)           # the same lines; the graph has one edge for a pair
+            @test length(new[1]) == 3 * nrow(L) && length(old[1]) == 3 * ne(g)
+            @test all(isnan, new[1][3:3:end]) && all(isnan, new[2][3:3:end])
+        end
+        # where no pair is repeated and the links are in the graph's order, the two vectors are identical
+        L = DataFrame(SRC = [1, 1, 2, 3], DST = [2, 3, 4, 4], DIST = [1.0, 2.0, 3.0, 4.0])
+        lon = [-78.0, -79.0, -80.0, -81.0]
+        g = SimpleWeightedGraph(L.SRC, L.DST, L.DIST)
+        @test isequal(x2ln(L.SRC, L.DST, lon), x2ln(g, lon))
+        # the existing method is untouched
+        @test isequal(x2ln(g, lon), vcat(map(e -> [lon[Graphs.src(e)], lon[Graphs.dst(e)], NaN], Graphs.edges(g))...))
+    end
+
+    @testset "tracepath(P, i, j) is tracepath(P[i], i, j)" begin
+        rng = Xoshiro(41)
+        for n in (5, 12), trial in 1:3
+            L = _lb_network(rng, n)
+            D, P = shortestpaths(links2graph(L), n)
+            for i in 1:n, j in 1:n
+                if isfinite(D[i, j])
+                    @test tracepath(P, i, j) == tracepath(P[i], i, j)
+                else
+                    @test_throws ArgumentError tracepath(P, i, j)
+                    @test_throws ArgumentError tracepath(P[i], i, j)
+                end
+            end
+        end
+        P = [[0, 1, 2, 3], [2, 0, 2, 3], [2, 3, 0, 3], [2, 3, 4, 0]]
+        @test tracepath(P, 1, 4) == [1, 2, 3, 4] && tracepath(P, 4, 1) == [4, 3, 2, 1]
+        @test tracepath(P, 2, 2) == [2]
+        @test tracepath(P, 1, 4) isa Vector{Int}
+        # a parent vector of another integer type
+        P32 = [Int32.(p) for p in P]
+        @test tracepath(P32, 1, 4) == [1, 2, 3, 4] && tracepath(P32, 1, 4) isa Vector{Int}
+        @test_throws BoundsError tracepath(P, 5, 1)
+        @test_throws ArgumentError tracepath([[0, 0, 0]], 1, 3)          # unreachable: the parent is 0
+    end
+
+    @testset "tracepath(P, seq) is the course's reduce(vcat, ...) idiom plus the last node" begin
+        rng = Xoshiro(2026)
+        for n in (6, 14), trial in 1:4
+            L = _lb_network(rng, n)
+            D, P = shortestpaths(links2graph(L), n)
+            ok = findall(i -> all(isfinite, D[i, :]), 1:n)               # locations that reach all others
+            length(ok) >= 3 || continue
+            for _ in 1:10
+                seq = rand(rng, ok, rand(rng, 2:8))
+                all(k -> isfinite(D[seq[k], seq[k+1]]), 1:length(seq)-1) || continue
+                @test tracepath(P, seq) == _lb_idiom(P, seq)
+            end
+        end
+        P = [[0, 1, 2, 3, 4], [2, 0, 2, 3, 4], [2, 3, 0, 3, 4], [2, 3, 4, 0, 4], [2, 3, 4, 5, 0]]
+        @test tracepath(P, [1, 4, 2, 5]) == [1, 2, 3, 4, 3, 2, 3, 4, 5]
+        # a junction is one node, not two
+        @test tracepath(P, [1, 3, 5]) == [1, 2, 3, 4, 5]
+        @test tracepath(P, [1, 3, 5]) == vcat(tracepath(P, 1, 3), tracepath(P, 3, 5)[2:end])
+        # a leg from a location to itself adds no node; a location repeated in a row is one node
+        @test tracepath(P, [1, 1, 3]) == [1, 2, 3]
+        @test tracepath(P, [2, 2, 2]) == [2]
+        # one location is that node, none is no path; a closed tour starts and ends at its first location
+        @test tracepath(P, [3]) == [3] && tracepath(P, Int[]) == Int[]
+        @test tracepath(P, [1, 3, 1]) == [1, 2, 3, 2, 1]
+        @test tracepath(P, [1, 3, 1]) isa Vector{Int}
+        @test tracepath(P, 1:3) == [1, 2, 3]                             # any integer vector
+        @test_throws ArgumentError tracepath([[0, 0], [0, 0]], [1, 2])    # a leg that cannot be traced
+        # Lecture 5.1's tour: the closed sequence of Code block 37, whose push!(path, path[1]) is seq[end] = seq[1]
+        tour = [1, 4, 2, 5, 3, 1]
+        path = reduce(vcat, [tracepath(P[i], i, j)[1:end-1] for (i, j) in zip(tour[1:end-1], tour[2:end])])
+        push!(path, path[1])
+        @test tracepath(P, tour) == path
+    end
+
+    @testset "the methods are not ambiguous with one another" begin
+        ms = collect(methods(tracepath))
+        @test length(ms) == 3
+        for a in ms, b in ms
+            a === b && continue
+            @test !Base.isambiguous(a, b)
+        end
+        @test Base.which(tracepath, Tuple{Vector{Int}, Int, Int}).sig == Tuple{typeof(tracepath), Vector{Int}, Int, Int}
+        @test Base.which(tracepath, Tuple{Vector{Vector{Int}}, Int, Int}) != Base.which(tracepath, Tuple{Vector{Int}, Int, Int})
+        @test Base.which(tracepath, Tuple{Vector{Vector{Int}}, Vector{Int}}) != Base.which(tracepath, Tuple{Vector{Vector{Int}}, Int, Int})
+        ms = collect(methods(x2ln))
+        @test length(ms) == 2
+        @test !Base.isambiguous(ms[1], ms[2])
+    end
+end
+
+# ==== moved from test/test_map_line_pins.jl, its lines 1-13, 248-268 ====
+# test_map_line_pins.jl -- what the course sees of `plotroads!`, the base-layer styles `makemap` draws, the FAF5
+# tables and `tracepath`, pinned from the code at 83c799b (PCV K11b, plan principle 9; K11a's own pins are
+# test_map_pins.jl). The values below were measured on the unchanged code, before K11b's C4 (`makemap`'s interface),
+# C8 (the line builders) and C12 (cached FAF5 tables) changed it. A call the course makes today keeps returning
+# what it returned then; only a case named in MLPIN_MOVED may differ, and each one is named in the commit that moves it.
+#
+# No case touches the network or a file outside the package, and none renders a picture.
+
+using Test
+using Logjam
+using DataFrames
+using CairoMakie
+using GeoMakie
+isdefined(@__MODULE__, :MLPIN_MOVED) || include(joinpath(@__DIR__, "map_line_pin_helpers.jl"))   # WP8: defined once
+
+# ---- tracepath on the course's idiom -------------------------------------------------------------------------
+# `tracepath(P[i], i, j)` (4-net-1.qmd:1480, 1585; 4-net-2.qmd:271, 941) and the tour along the roads,
+# `reduce(vcat, [tracepath(P[i], i, j)[1:end-1] for (i, j) in legs])` then the last node (5-rte-1.qmd:2682-2684,
+# 5-rte-3.qmd:3731-3734), on a six-node network with no ties among its shortest paths.
+@testset "tracepath(P[i], i, j) on the course's idiom is pinned" begin
+    if !_mlpin_moved("tracepath_idiom")
+        links = DataFrame(SRC = [1, 2, 3, 4, 2, 5], DST = [2, 3, 4, 5, 5, 6], DIST = [10.0, 20.0, 15.0, 5.0, 41.0, 7.0], DIR = [0, 0, 0, 0, 0, 0])
+        D, P = shortestpaths(links2graph(links), 6)
+        @test P == [[0, 1, 2, 3, 4, 5], [2, 0, 2, 3, 4, 5], [2, 3, 0, 3, 4, 5], [2, 3, 4, 0, 4, 5], [2, 3, 4, 5, 0, 5], [2, 3, 4, 5, 6, 0]]
+        @test tracepath(P[1], 1, 6) == [1, 2, 3, 4, 5, 6]
+        @test tracepath(P[6], 6, 1) == [6, 5, 4, 3, 2, 1]
+        @test tracepath(P[3], 3, 3) == [3]                                  # origin == dest is the one node
+        @test tracepath(P[2], 2, 1) == [2, 1]
+        @test_throws ArgumentError tracepath([0, 1, 0], 1, 3)               # unreachable
+        legs = zip([1, 3, 6, 2], [3, 6, 2, 1])
+        path = reduce(vcat, [tracepath(P[i], i, j)[1:end-1] for (i, j) in legs])
+        push!(path, 1)
+        @test path == [1, 2, 3, 4, 5, 6, 5, 4, 3, 2, 1]
+    end
+end
+
+# ==== moved from test/test_roadtools.jl, its lines 1-792 ====
 # Tests for RoadTools functions
 
 using Test
 using Logjam
 using DataFrames
-# the NaN-separated line coordinates of a location sequence along shortest paths: what `Logjam.rte2lines`
-# computed until v0.3.0, kept here as a test-side helper (the extension carries the same body privately)
-function _test_rte2lines(route, P, dfN)
-    x_out, y_out = Float64[], Float64[]
-    for k in 1:length(route)-1
-        path = tracepath(P[route[k]], route[k], route[k+1])
-        append!(x_out, dfN.LON[path]); push!(x_out, NaN)
-        append!(y_out, dfN.LAT[path]); push!(y_out, NaN)
-    end
-    return x_out, y_out
-end
+# `_test_rte2lines`, the line coordinates of a location sequence along shortest paths, is in
+# common_helpers.jl with its note, defined once for this file and test_integration.jl (WP8)
+isdefined(@__MODULE__, :_test_rte2lines) || include(joinpath(@__DIR__, "common_helpers.jl"))
 using Graphs
 using SparseArrays
 using SimpleWeightedGraphs
@@ -789,4 +1078,618 @@ end
     # a fractional speed is allowed; the column then holds Float64
     _, L3 = addconnectors(dfN, withspeed, x′, y′; speed = 17.5)
     @test all(L3.SPEED[isequal.(L3.SOURCE, "CONNECTOR")] .== 17.5)
+end
+
+# ==== moved from test/test_connector_search.jl, its lines 1-108 ====
+# test_connector_search.jl -- addconnectors' exact local point location (PCV K8: C1, CR 62, CR 27).
+# Each new point's connectors are the corners of the triangle of the whole network's Delaunay triangulation
+# that holds it, found from the triangulation of its 16 nearest nodes (doubled as needed) and accepted only
+# when the triangle's circumcircle holds no other node. The properties below compare it with the
+# triangulation of the whole network, on seeded random nodes and on the crops the course makes.
+
+using Test
+using Logjam
+using DataFrames
+using Random
+import DelaunayTriangulation as DT
+
+# the connectors by the whole network's triangulation (v0.2.8's method)
+function _whole_nodes(x, y, qs)
+    tri = DT.triangulate(collect(zip(x, y)))
+    return [sort!(filter(v -> v > 0, collect(DT.brute_force_search(tri, q)))) for q in qs]
+end
+# the connectors by the local point location
+_local_nodes(x, y, qs) = (S = Logjam._ConnectorSearch(collect(Float64, x), collect(Float64, y));
+                          [Logjam._connector_nodes(S, (Float64(q[1]), Float64(q[2]))) for q in qs])
+
+@testset "addconnectors: exact local point location (CR 62, CR 27, C1)" begin
+    @testset "equals the whole triangulation on seeded random nodes, inside the hull and out" begin
+        for (seed, n, m) in ((1, 20, 60), (2, 200, 200), (3, 3000, 300), (4, 5000, 100))
+            rng = MersenneTwister(seed)
+            x, y = rand(rng, n), rand(rng, n)
+            qs = [(1.2 * rand(rng) - 0.1, 1.2 * rand(rng) - 0.1) for _ in 1:m]   # some outside the hull
+            @test _local_nodes(x, y, qs) == _whole_nodes(x, y, qs)
+        end
+    end
+
+    @testset "equals the whole triangulation on the crops of Lectures 4.1 and 5.1" begin
+        N, L = prune_reindex(faf5nodes(), faf5links())
+        cities = filter(r -> (r.STFIP == st2fips(:NC)) && (r.POP > 100_000), usplace())     # 4.1 Code block 47
+        counties = filter(r -> r.STFIP == st2fips(:NC), uscounty())                          # 5.1 Code block 35
+        for df in (cities, counties)
+            Nc, _ = cropnetwork(N, L, df.LON, df.LAT)
+            qs = collect(zip(df.LON, df.LAT))
+            @test _local_nodes(Nc.LON, Nc.LAT, qs) == _whole_nodes(Nc.LON, Nc.LAT, qs)
+        end
+    end
+
+    @testset "a network of fewer than 16 nodes, and a point outside it (4.1 Code block 40)" begin
+        x = [0.0, 1.0, 0.0, 1.0, 0.5]
+        y = [0.0, 0.0, 1.0, 1.0, 0.45]
+        qs = [(0.5, 0.2), (0.2, 0.5), (0.5, 0.8), (0.8, 0.5), (2.0, 0.5)]
+        @test _local_nodes(x, y, qs) == _whole_nodes(x, y, qs)
+        @test all(length.(_local_nodes(x, y, qs[1:4])) .== 3)                # a triangle's three corners
+        @test length(_local_nodes(x, y, qs[5:5])[1]) == 2                    # the two nodes of the hull edge
+    end
+
+    @testset "a lattice, where circles are shared by four nodes: the triangle holds the point and its circle is empty" begin
+        gx = [float(i) for i in 0:19 for j in 0:19]
+        gy = [float(j) for i in 0:19 for j in 0:19]
+        rng = MersenneTwister(5)
+        qs = [(19 * rand(rng), 19 * rand(rng)) for _ in 1:80]
+        kernel = DT.AdaptiveKernel()
+        for (q, t) in zip(qs, _local_nodes(gx, gy, qs))
+            @test length(t) == 3
+            a, b, c = ((gx[i], gy[i]) for i in t)
+            # the corners are counterclockwise or clockwise in index order, so test either way round
+            sgn = DT.is_positively_oriented(DT.triangle_orientation(kernel, a, b, c)) ? 1 : -1
+            for (u, v) in ((a, b), (b, c), (c, a))
+                o = DT.triangle_orientation(kernel, u, v, q)
+                @test sgn == 1 ? !DT.is_negatively_oriented(o) : !DT.is_positively_oriented(o)
+            end
+            p, r, s = sgn == 1 ? (a, b, c) : (a, c, b)
+            @test !any(m -> m != a && m != b && m != c &&
+                            DT.is_inside(DT.point_position_relative_to_circle(kernel, p, r, s, (gx[m], gy[m]))),
+                       eachindex(gx))
+        end
+    end
+
+    @testset "cocircular nodes: one answer on every run, and the caller's random stream is not advanced (build record K9 to K10)" begin
+        # a 2 by 5 lattice (every unit square has four nodes on a circle) and a 6 by 6 one (past the 16 nearest nodes'
+        # first pass); which diagonal a point's triangle takes used to depend on the global stream
+        for (nx, ny, qx, qy) in ((5, 2, [0.3, 1.3, 2.3, 3.3], fill(0.6, 4)),
+                                 (6, 6, [0.5, 1.5, 2.5, 3.5, 4.5], [0.5, 1.5, 2.5, 3.5, 4.5]))
+            x = Float64[i for j in 0:ny-1 for i in 0:nx-1]
+            y = Float64[j for j in 0:ny-1 for i in 0:nx-1]
+            N = DataFrame(IDX = 1:length(x), LON = x, LAT = y)
+            L = DataFrame(SRC = [1], DST = [2], DIST = [1.0])
+            conn(Lc) = [(r.SRC, r.DST) for r in eachrow(Lc[isequal.(Lc.SOURCE, "CONNECTOR"), :])]
+            answers = Set(conn(addconnectors(N, L, qx, qy)[2]) for _ in 1:40)
+            @test length(answers) == 1
+            # draw, call, draw equals draw, draw
+            Random.seed!(7)
+            a = rand(2)
+            Random.seed!(7)
+            b1 = rand()
+            addconnectors(N, L, qx, qy; add_nf_nf = true)
+            b2 = rand()
+            @test a == [b1, b2]
+        end
+    end
+
+    @testset "addconnectors takes a view, and gives the same links as the vectors" begin
+        N = DataFrame(IDX = 1:5, LON = [0.0, 1.0, 0.0, 1.0, 0.5], LAT = [0.0, 0.0, 1.0, 1.0, 0.45])
+        L = DataFrame(SRC = [1, 2, 3], DST = [2, 4, 4], DIST = [69.0, 69.0, 69.0])
+        px, py = [0.5, 0.2, 0.7], [0.2, 0.5, 0.8]
+        N1, L1 = addconnectors(N, L, px, py; add_nf_nf = false)
+        N2, L2 = addconnectors(N, L, view(px, :), view(py, :); add_nf_nf = false)
+        @test isequal(N1, N2) && isequal(L1, L2)
+        bigx, bigy = [9.0; px; 9.0], [9.0; py; 9.0]
+        N3, L3 = addconnectors(N, L, view(bigx, 2:4), view(bigy, 2:4); add_nf_nf = false)
+        @test isequal(N1, N3) && isequal(L1, L3)
+    end
+end
+
+# ==== moved from test/test_links2graph.jl, its lines 1-134 ====
+# test_links2graph.jl -- links2graph is the graph the lectures build by hand (PCV K8: CR 17, NW/C2, S17).
+# Lecture 4.1's Code block 45 (annotation 2) teaches the two rules: each link gives an arc in each direction it
+# can be traveled, and of parallel arcs the shorter is kept (`combine = min`); a link of zero length stays an
+# arc. Lectures 4.1, 4.2, 5.1 and 5.3 build the graph, by distance and by time, from the arc list. The
+# equality tests below build each by the lecture's own lines and require the same arcs and the same weights,
+# bit for bit.
+
+using Test
+using Logjam
+using DataFrames
+using Graphs
+using SimpleWeightedGraphs
+using SparseArrays
+
+# the lectures' inputs and their hand-built graphs (test/road_pin_cases.jl), loaded once
+isdefined(Main, :rdpin_cases) || include(joinpath(@__DIR__, "road_pin_helpers.jl"))
+
+# the same arcs, and the same weights to the last bit
+function _identical(g, h)
+    gw, hw = g.weights, h.weights
+    return nv(g) == nv(h) && ne(g) == ne(h) && gw.colptr == hw.colptr && gw.rowval == hw.rowval &&
+           reinterpret(UInt64, gw.nzval) == reinterpret(UInt64, hw.nzval)
+end
+
+@testset "[S17] links2graph equals the graph the lectures build by hand, by distance and by time (CR 17, C2)" begin
+    N, L = _rd_faf()                                           # 4.1 Code block 43
+
+    @testset "by distance: Wake County's two points (4.1 Code block 45)" begin
+        NW, LW = prune_reindex(N, filter(r -> r.STFIP == 37 && r.COFIP == 37183, L))
+        XY2 = [-78.75864529722959 35.74329140697632; -78.70352644371913 35.866083946889844]
+        NW2, LW2 = addconnectors(NW, LW, XY2[:, 1], XY2[:, 2]; add_nf_nf = false)
+        gh = _rd_graph(LW2, LW2.DIST)
+        g = links2graph(LW2)
+        @test _identical(g, gh)
+        @test shortestpaths(g, 2)[1] == shortestpaths(gh, 2)[1]
+    end
+
+    @testset "by distance and by time: the ten cities of 4.1 Code blocks 48 and 51" begin
+        df = _rd_cities()
+        Nc, Lc = cropnetwork(N, L, df.LON, df.LAT)
+        Nc, Lc = addconnectors(Nc, Lc, df.LON, df.LAT; add_nf_nf = false, speed = 20)
+        @test _identical(links2graph(Lc), _rd_graph(Lc, Lc.DIST))
+        tAB, tBA = _rd_times(Lc)
+        gt = links2graph(Lc; weight = :time)
+        @test _identical(gt, _rd_graph(Lc, tAB, tBA))
+        # the (forward, backward) pair of columns is the same graph where every time is positive
+        @test _identical(links2graph(Lc; weight = (tAB, tBA)), gt)
+    end
+
+    @testset "by distance and by time: the 100 NC county points of 5.1 Code block 35 and 5.3 Code block 64" begin
+        dfc = _rd_counties()
+        Nc, Lc = cropnetwork(N, L, dfc.LON, dfc.LAT)
+        Nc, Lc = addconnectors(Nc, Lc, dfc.LON, dfc.LAT; add_nf_nf = false, speed = 20)
+        @test _identical(links2graph(Lc), _rd_graph(Lc, Lc.DIST))
+        tAB, tBA = _rd_times(Lc)
+        @test _identical(links2graph(Lc; weight = :time), _rd_graph(Lc, tAB, tBA))
+    end
+
+    @testset "4.2's form on the OSM fixture: one link per direction, no time columns, a connector at 20 mph" begin
+        dfN, dfL = _rd_osm()
+        x = [minimum(dfN.LON) + 0.4 * (maximum(dfN.LON) - minimum(dfN.LON)),
+             minimum(dfN.LON) + 0.7 * (maximum(dfN.LON) - minimum(dfN.LON))]
+        y = [minimum(dfN.LAT) + 0.7 * (maximum(dfN.LAT) - minimum(dfN.LAT)),
+             minimum(dfN.LAT) + 0.45 * (maximum(dfN.LAT) - minimum(dfN.LAT))]
+        Nc, Lc = addconnectors(dfN, dfL, x, y; add_nf_nf = false, speed = 20)
+        con = _rd_isconn(Lc)
+        tmin = [c ? 60d / 20 : 60d / v for (c, d, v) in zip(con, Lc.DIST, Lc.SPEED)]      # 4.2 Code block 6
+        @test _identical(links2graph(Lc), _rd_graph(Lc, Lc.DIST))
+        @test _identical(links2graph(Lc; weight = :time), _rd_graph(Lc, tmin))
+        @test all(Lc.SPEED[con] .== 20)
+    end
+end
+
+@testset "links2graph: weight forms" begin
+    L = DataFrame(SRC = [1, 2], DST = [2, 3], DIST = [30.0, 10.0], MINUTES = [31.0, 12.0],
+                  AB_TIME = [28.0, 0.0], BA_TIME = [33.0, 0.0], SPEED = [60, 20], DIR = [0, 0])
+    @test weights(links2graph(L))[1, 2] == 30.0                                  # the third column
+    @test weights(links2graph(L; weight = :MINUTES))[2, 3] == 12.0               # a column by name
+    @test weights(links2graph(L; weight = 4))[1, 2] == 31.0                      # a column by position
+    g = links2graph(L; weight = (:AB_TIME, :BA_TIME))                            # FAF5's pair
+    @test weights(g)[1, 2] == 28.0 && weights(g)[2, 1] == 33.0
+    g = links2graph(L; weight = ([1.0, 2.0], [3.0, 4.0]))                        # a pair of vectors
+    @test weights(g)[1, 2] == 1.0 && weights(g)[2, 1] == 3.0 && weights(g)[2, 3] == 2.0 && weights(g)[3, 2] == 4.0
+    g = links2graph(L; weight = [7.0, 8.0])                                      # a vector
+    @test weights(g)[1, 2] == 7.0 && weights(g)[3, 2] == 8.0
+    g = links2graph(L; weight = :time)                                           # 4.1's rule, in minutes
+    @test weights(g)[1, 2] == 28.0 && weights(g)[2, 1] == 33.0                   # FAF5's free-flow times
+    @test weights(g)[2, 3] == 60 * 10.0 / 20 && weights(g)[3, 2] == 60 * 10.0 / 20   # 60 d / v where a time is 0
+    # the time rule needs a positive time or a speed, in each direction a link is traveled
+    miss = DataFrame(SRC = [1], DST = [2], DIST = [3.0], SPEED = [missing], AB_TIME = [missing], BA_TIME = [missing])
+    @test_throws ArgumentError links2graph(miss; weight = :time)
+    err = try links2graph(miss; weight = :time) catch e; e end
+    @test occursin("speed", sprint(showerror, err)) && occursin("addconnectors", sprint(showerror, err))
+    # a link traveled one way needs the time of that way only
+    one = DataFrame(SRC = [1], DST = [2], DIST = [3.0], SPEED = [60], AB_TIME = [0.0], BA_TIME = [0.0], DIR = [1])
+    @test weights(links2graph(one; weight = :time))[1, 2] == 60 * 3.0 / 60
+    # a network with no time columns has 60 d / v throughout
+    osm = DataFrame(SRC = [1, 2], DST = [2, 1], DIST = [0.5, 0.5], SPEED = [30, 15], DIR = [1, 1])
+    g = links2graph(osm; weight = :time)
+    @test weights(g)[1, 2] == 60 * 0.5 / 30 && weights(g)[2, 1] == 60 * 0.5 / 15
+    # a column by name that is not there, a bad pair, a bad DIR
+    @test_throws ArgumentError links2graph(L; weight = :NOPE)
+    @test_throws ArgumentError links2graph(L; weight = (:DIST, :DIST, :DIST))
+    @test_throws ArgumentError links2graph(L; weight = [1.0])
+    @test_throws ArgumentError links2graph(DataFrame(SRC = [1], DST = [2], DIST = [1.0], DIR = [2]))
+    @test_throws ArgumentError links2graph(DataFrame(SRC = [1], DST = [2], DIST = [-1.0]))
+    @test_throws ArgumentError links2graph(DataFrame(SRC = [1], DST = [2], DIST = [missing]))
+end
+
+@testset "links2graph: node IDs are 1:n and never renumbered; the removed options are gone" begin
+    # IDs with a gap (node 2 is on no link) are refused, with the fix named
+    sparse_ids = DataFrame(SRC = [1, 3], DST = [3, 4], DIST = [1.0, 2.0])
+    err = try links2graph(sparse_ids) catch e; e end
+    @test err isa ArgumentError && occursin("prune_reindex", sprint(showerror, err))
+    @test_throws ArgumentError links2graph(DataFrame(SRC = [0, 1], DST = [1, 2], DIST = [1.0, 1.0]))
+    @test_throws ArgumentError links2graph(DataFrame(SRC = ["a"], DST = ["b"], DIST = [1.0]))
+    # after prune_reindex the same links are a graph on 1:n
+    n, l = prune_reindex(DataFrame(IDX = [1, 3, 4], LON = [0.0, 1.0, 2.0], LAT = [0.0, 0.0, 0.0]), sparse_ids)
+    @test nv(links2graph(l)) == 3
+    # source and destination are columns 1 and 2, or named
+    swapped = DataFrame(DIST = [1.0, 2.0], B = [2, 3], A = [1, 2])
+    g = links2graph(swapped; src_col = :A, dst_col = :B, weight = 1)
+    @test weights(g)[1, 2] == 1.0 && weights(g)[3, 2] == 2.0
+    # the nine options of v0.2.8 are removed
+    L = DataFrame(SRC = [1], DST = [2], DIST = [1.0])
+    for kw in (:reindex, :return_map, :sparse_ratio, :max_id_threshold, :oneway_val, :dir_col, :ab_weight, :ba_weight)
+        @test_throws MethodError links2graph(L; (kw => 1,)...)
+    end
+    # a SimpleWeightedDiGraph comes back, and shortestpaths needs nothing more
+    g = links2graph(DataFrame(SRC = [1, 2], DST = [2, 3], DIST = [1.0, 2.0]))
+    @test g isa SimpleWeightedGraphs.SimpleWeightedDiGraph
+    D, P = shortestpaths(g, 3)
+    @test D[1, 3] == 3.0 && tracepath(P[1], 1, 3) == [1, 2, 3]
+end
+
+# ==== moved from test/test_thin.jl, its lines 1-172 ====
+# test_thin.jl -- thin on typed arcs: direction-aware, independent of the node labels, node IDs 1:n
+# (PCV K8: CR 18, CR 25, N6, C9). The degree-2 nodes of a road network are removed, the two arcs at each
+# replaced by one of their summed cost, the shorter kept where that leaves parallel arcs (Matlog's `thin`).
+
+using Test
+using Logjam
+using DataFrames
+using Graphs
+using SimpleWeightedGraphs
+using Random
+using CSV
+
+@testset "thin: typed arcs, direction-aware, label-independent" begin
+    @testset "a chain thins to one link, with the merge index as a column" begin
+        dfN = DataFrame(IDX = 1:4, LON = [-78.0, -79.0, -80.0, -81.0], LAT = fill(35.0, 4))
+        dfL = DataFrame(SRC = [1, 2, 3], DST = [2, 3, 4], DIST = [10.0, 15.0, 12.0], FCLASS = [1, 2, 3])
+        N, L = thin(dfN, dfL)
+        @test N isa DataFrame && L isa DataFrame
+        @test nrow(L) == 1 && nrow(N) == 2
+        @test N.IDX == [1, 2] && N.LON == [-78.0, -81.0]            # the nodes that remain, numbered 1:n
+        @test (L.SRC[1], L.DST[1]) == (1, 2) && L.DIST[1] == 37.0
+        @test L.MERGED == [[1, 2, 3]]                                # the rows of dfL, in order along the road
+        @test L.FCLASS == [1]                                        # another column is the first link's
+        @test names(L) == [names(dfL); "MERGED"]
+        @test dfL.DIST == [10.0, 15.0, 12.0] && ncol(dfL) == 4        # the input is untouched
+        # Lecture 4.1's Code block 32 integer costs stay integers
+        _, L0 = thin(dfN, DataFrame(SRC = [1, 2, 3], DST = [2, 3, 4], DIST = [10, 15, 12]))
+        @test L0.DIST == [37] && eltype(L0.DIST) == Int
+    end
+
+    @testset "a triangle makes no self-loop, and the shorter parallel arc is kept" begin
+        dfN = DataFrame(IDX = 1:3, LON = [-78.0, -79.0, -78.5], LAT = [35.0, 35.0, 35.5])
+        dfL = DataFrame(SRC = [1, 2, 3], DST = [2, 3, 1], DIST = [10.0, 10.0, 10.0])
+        N, L = thin(dfN, dfL)
+        @test all(L.SRC .!= L.DST)
+        @test nrow(N) == 2 && nrow(L) == 1 && L.DIST == [10.0]
+        # a longer way round does not replace a shorter direct link: node 1 goes first (the first row), and the
+        # link 2-3 of 4.0 beats the 4.0 + 5.0 around through node 1
+        dfL2 = DataFrame(SRC = [1, 2, 3], DST = [2, 3, 1], DIST = [4.0, 4.0, 5.0])
+        N2, L2 = thin(dfN, dfL2)
+        @test nrow(L2) == 1 && L2.DIST == [4.0] && L2.MERGED == [[2]]
+        @test (N2.LON, N2.LAT) == ([-79.0, -78.5], [35.0, 35.5])         # nodes 2 and 3 remain, numbered 1 and 2
+    end
+
+    @testset "the keywords of v0.2.8 are gone, and the return is always (N, L)" begin
+        dfN = DataFrame(IDX = 1:3, LON = [0.0, 1.0, 2.0], LAT = [0.0, 0.0, 0.0])
+        dfL = DataFrame(SRC = [1, 2], DST = [2, 3], DIST = [1.0, 1.0])
+        for kw in (:agg, :must_match, :keep_index, :verbose)
+            @test_throws MethodError thin(dfN, dfL; (kw => nothing,)...)
+        end
+        r = thin(dfN, dfL)
+        @test r isa Tuple && length(r) == 2
+        @test thin(view(dfN, :, :), view(dfL, :, :)) isa Tuple          # views are accepted
+    end
+
+    @testset "one-way chains are merged one-way, two-way chains two-way, mixed nodes are kept" begin
+        # a -> v -> b, one-way: v goes, the link a -> b is one-way
+        dfN = DataFrame(IDX = 1:4, LON = 0.0:3.0, LAT = zeros(4))
+        L1 = DataFrame(SRC = [1, 2, 3], DST = [2, 3, 4], DIST = [1.0, 2.0, 3.0], DIR = [1, 1, 1])
+        N1, M1 = thin(dfN, L1)
+        @test nrow(M1) == 1 && (M1.SRC[1], M1.DST[1], M1.DIST[1], M1.DIR[1]) == (1, 2, 6.0, 1)
+        # the same chain traveled the other way (DIR = -1): the link keeps its orientation and DIR -1
+        L2 = DataFrame(SRC = [1, 2, 3], DST = [2, 3, 4], DIST = [1.0, 2.0, 3.0], DIR = [-1, -1, -1])
+        _, M2 = thin(dfN, L2)
+        @test nrow(M2) == 1 && M2.DIR[1] == 1 && (M2.SRC[1], M2.DST[1]) == (2, 1)   # 4 -> 1 is the arc, now new nodes 2 -> 1
+        # two-way links (DIR 0) merge to a two-way link
+        L3 = DataFrame(SRC = [1, 2, 3], DST = [2, 3, 4], DIST = [1.0, 2.0, 3.0], DIR = [0, 0, 0])
+        _, M3 = thin(dfN, L3)
+        @test nrow(M3) == 1 && M3.DIR == [0] && M3.DIST == [6.0] && (M3.SRC[1], M3.DST[1]) == (1, 2)
+        # a node that is two-way to one neighbor and one-way to the other is not a pass-through: it stays
+        L4 = DataFrame(SRC = [1, 2], DST = [2, 3], DIST = [1.0, 1.0], DIR = [0, 1])
+        N4, M4 = thin(DataFrame(IDX = 1:3, LON = 0.0:2.0, LAT = zeros(3)), L4)
+        @test nrow(M4) == 2 && nrow(N4) == 3
+        # a one-way sink (two links into a node) stays too
+        L5 = DataFrame(SRC = [1, 3], DST = [2, 2], DIST = [1.0, 1.0], DIR = [1, 1])
+        N5, M5 = thin(DataFrame(IDX = 1:3, LON = 0.0:2.0, LAT = zeros(3)), L5)
+        @test nrow(M5) == 2 && nrow(N5) == 3
+    end
+
+    @testset "OpenStreetMap's form, a link per direction, thins each direction apart (CR 25)" begin
+        dfN = DataFrame(IDX = 1:4, LON = 0.0:3.0, LAT = zeros(4))
+        dfL = DataFrame(SRC = [1, 2, 3, 4, 3, 2], DST = [2, 3, 4, 3, 2, 1],
+                        DIST = [1.0, 2.0, 3.0, 3.5, 2.5, 1.5], DIR = fill(1, 6))
+        N, L = thin(dfN, dfL)
+        @test nrow(N) == 2 && nrow(L) == 2
+        @test sort(L.DIST) == [6.0, 7.5] && all(L.DIR .== 1)             # 1 -> 4 by 6.0 and 4 -> 1 by 7.5
+        @test Set(zip(L.SRC, L.DST)) == Set([(1, 2), (2, 1)])
+        @test sort(sort.(L.MERGED)) == [[1, 2, 3], [4, 5, 6]]
+        # a two-way street in one direction only elsewhere on the network
+        dfL2 = DataFrame(SRC = [1, 2, 3], DST = [2, 3, 4], DIST = [1.0, 2.0, 3.0], DIR = [1, 1, 1])
+        N2, L2 = thin(dfN, dfL2)
+        @test nrow(L2) == 1 && L2.DIR == [1]
+    end
+
+    @testset "node IDs: any integers in, 1:n out; a bad table is refused" begin
+        dfN = DataFrame(IDX = [10, 20, 30, 40], LON = 0.0:3.0, LAT = zeros(4))
+        dfL = DataFrame(SRC = [10, 20, 30], DST = [20, 30, 40], DIST = [1.0, 1.0, 1.0])
+        N, L = thin(dfN, dfL)
+        @test N.IDX == 1:2 && sort([L.SRC[1], L.DST[1]]) == [1, 2]
+        @test_throws ArgumentError thin(DataFrame(IDX = [1, 1, 2], LON = 0.0:2.0, LAT = zeros(3)),
+                                       DataFrame(SRC = [1], DST = [2], DIST = [1.0]))      # an ID twice
+        @test_throws ArgumentError thin(dfN, DataFrame(SRC = [10], DST = [99], DIST = [1.0]))  # an unknown node
+        @test_throws ArgumentError thin(DataFrame(IDX = ["a", "b"], LON = 0.0:1.0, LAT = zeros(2)),
+                                       DataFrame(SRC = ["a"], DST = ["b"], DIST = [1.0]))   # IDs that are not integers
+        @test_throws ArgumentError thin(dfN[:, 1:2], dfL)
+        @test_throws ArgumentError thin(dfN, dfL[:, 1:2])
+    end
+
+    @testset "a thinned network keeps the distances between its nodes, on seeded random networks" begin
+        for seed in 1:6
+            rng = MersenneTwister(seed)
+            n = 60
+            N = DataFrame(IDX = 1:n, LON = rand(rng, n), LAT = rand(rng, n))
+            m = 90
+            src = rand(rng, 1:n, m)
+            dst = [mod1(a + rand(rng, 1:4), n) for a in src]                  # short hops: many degree-2 nodes
+            dir = rand(rng, [0, 0, 0, 1, -1], m)
+            L = DataFrame(SRC = src, DST = dst, DIST = round.(10 .* rand(rng, m); digits = 2), DIR = dir)
+            L = L[L.SRC .!= L.DST, :]
+            # the nodes on a link, in the graph's own numbering: prune_reindex first
+            N0, L0 = prune_reindex(N, L)
+            Nt, Lt = thin(N0, L0)
+            @test Nt.IDX == 1:nrow(Nt)
+            g0 = links2graph(L0)
+            gt = links2graph(Lt)
+            # a kept node is identified by its coordinates (random, so unique)
+            where0 = Dict(zip(zip(N0.LON, N0.LAT), N0.IDX))
+            kept = [where0[(lo, la)] for (lo, la) in zip(Nt.LON, Nt.LAT)]
+            D0 = [Graphs.dijkstra_shortest_paths(g0, k).dists[kept] for k in kept]
+            Dt = [Graphs.dijkstra_shortest_paths(gt, i).dists for i in 1:nrow(Nt)]
+            @test all(isapprox.(reduce(hcat, D0), reduce(hcat, Dt); atol = 1e-9))
+            # no node of the result is a pass-through, so it is thinned as far as it goes
+            @test nrow(Nt) <= nrow(N0)
+            Nt2, Lt2 = thin(Nt, Lt)
+            @test nrow(Nt2) == nrow(Nt) && sort(Lt2.DIST) == sort(Lt.DIST)
+        end
+    end
+
+    @testset "the result does not depend on how the nodes are labeled (CR 18)" begin
+        for seed in 1:4
+            rng = MersenneTwister(100 + seed)
+            n = 40
+            N = DataFrame(IDX = 1:n, LON = rand(rng, n), LAT = rand(rng, n))
+            m = 70
+            src = rand(rng, 1:n, m)
+            dst = [mod1(a + rand(rng, 1:3), n) for a in src]
+            L = DataFrame(SRC = src, DST = dst, DIST = round.(10 .* rand(rng, m); digits = 2),
+                          DIR = rand(rng, [0, 0, 1, -1], m))
+            L = L[L.SRC .!= L.DST, :]
+            ref = nothing
+            for _ in 1:4
+                perm = randperm(rng, n)                                     # node k is labeled perm[k]
+                Np = DataFrame(IDX = perm, LON = N.LON, LAT = N.LAT)
+                Lp = DataFrame(SRC = perm[L.SRC], DST = perm[L.DST], DIST = L.DIST, DIR = L.DIR)
+                Nt, Lt = thin(Np, Lp)
+                shape = (Nt.LON, Nt.LAT, sort(collect(zip(Lt.DIST, Lt.DIR))))
+                ref === nothing ? (ref = shape) : @test shape == ref
+            end
+        end
+    end
+
+    @testset "Lecture 4.1's Interstates around Raleigh (a committed cut of the lecture's data)" begin
+        dfN = DataFrame(CSV.File(joinpath(@__DIR__, "data", "interstate_raleigh_nodes.csv")))
+        dfL = DataFrame(CSV.File(joinpath(@__DIR__, "data", "interstate_raleigh_links.csv")))
+        N, L = thin(dfN, dfL)                                              # Code block 35: IDs in the whole network
+        @test N.IDX == 1:nrow(N) && maximum(L.SRC) <= nrow(N) && maximum(L.DST) <= nrow(N)
+        @test sum(L.DIST) ≈ sum(dfL.DIST) atol = 1e-9                      # the miles are the same road
+        @test (nrow(N), nrow(L)) == (11, 12)
+        @test sum(length, L.MERGED) == nrow(dfL)                           # every original link is in one
+        @test sort(vcat(L.MERGED...)) == 1:nrow(dfL)
+    end
+end
+
+# ==== moved from test/test_pathroads.jl, its lines 1-121 ====
+# test_pathroads.jl -- pathroads, the roads along a path (PCV K8: CR 30). It is Lecture 4.2's `streets`
+# (4-net-2.qmd, Code block 8), made to work on FAF5 and OpenStreetMap links alike: a numbered row for each run
+# of one road name, with the steps it covers.
+
+using Test
+using Logjam
+using DataFrames
+using Graphs
+using SimpleWeightedGraphs
+
+isdefined(Main, :rdpin_cases) || include(joinpath(@__DIR__, "road_pin_helpers.jl"))
+
+# Lecture 4.2, Code block 8, verbatim
+function _streets42(p, L)
+    k = Dict(zip(zip(L.SRC, L.DST), 1:nrow(L)))   # link of (SRC, DST)
+    lk(u, v) = get(k, (u, v), get(k, (v, u), 0))  # either direction
+    nm = [L.NAME[lk(u, v)] for (u, v) in zip(p, p[2:end])]
+    t = findall(!ismissing, nm)                   # the steps with a name
+    a = [i for i in eachindex(t) if i == 1 || nm[t[i]] != nm[t[i-1]]]
+    b = [a[2:end] .- 1; length(t)]                # each run's first, last
+    return DataFrame(Seg = eachindex(a), Street = nm[t[a]],
+                     Steps = string.(t[a], "-", t[b]))
+end
+_same_roads(a, b) = a.Seg == b.Seg && a.Street == b.Street && a.Steps == b.Steps
+
+@testset "pathroads: the roads along a path (CR 30)" begin
+    @testset "equals Lecture 4.2's streets on 4.2's own form, by distance and by time" begin
+        dfN, dfL = _rd_osm()
+        lo, hi = extrema(dfN.LON); la, ha = extrema(dfN.LAT)
+        npaths = 0
+        for (fx, fy) in (([0.3, 0.7], [0.7, 0.45]), ([0.15, 0.85], [0.25, 0.75]), ([0.5, 0.2], [0.8, 0.3]),
+                         ([0.9, 0.1], [0.5, 0.5]))
+            x = lo .+ fx .* (hi - lo)
+            y = la .+ fy .* (ha - la)
+            Nc, Lc = addconnectors(dfN, dfL, x, y; add_nf_nf = false, speed = 20)
+            for w in (:DIST, :time)
+                g = links2graph(Lc; weight = w)
+                for (i, j) in ((1, 2), (2, 1))
+                    ds = Graphs.dijkstra_shortest_paths(g, i)
+                    isfinite(ds.dists[j]) || continue
+                    p = tracepath(ds.parents, i, j)
+                    # two points joined to the same street nodes have a path of connectors only: no street to
+                    # name, and Lecture 4.2's code has no answer there (it indexes an empty list). Where the
+                    # fixture's lattice has four nodes on a circle, the triangle a point joins is a choice between
+                    # two diagonals: addconnectors makes it the same on every run (K10, its triangulations take a
+                    # generator of their own), but the shuffle that generator drives can differ from one Julia to
+                    # the next, so which pair has no street is not asserted and the count of the others is a floor
+                    nrow(pathroads(p, Lc)) == 0 && continue
+                    @test _same_roads(_streets42(p, Lc), pathroads(p, Lc))
+                    npaths += 1
+                end
+            end
+        end
+        @test npaths >= 8
+    end
+
+    @testset "a path along two roads, connectors at the ends passed over; Steps and Miles" begin
+        L = DataFrame(SRC = [1, 2, 3, 4, 5, 6], DST = [2, 3, 4, 5, 6, 7], DIST = [0.5, 1.0, 2.0, 0.25, 0.75, 0.5],
+                      NAME = [missing, "Varsity Dr", "Varsity Dr", "Western Blvd", "Western Blvd", missing],
+                      DIR = [0, 1, 1, 1, 1, 0])
+        R = pathroads(1:7, L)
+        @test R.Seg == [1, 2] && R.Street == ["Varsity Dr", "Western Blvd"] && R.Steps == ["2-3", "4-5"]
+        @test names(R) == ["Seg", "Street", "Steps"]
+        R2 = pathroads([1, 2, 3, 4, 5, 6, 7], L; miles = true)
+        @test names(R2) == ["Seg", "Street", "Steps", "Miles"] && R2.Miles == [3.0, 1.0]
+        # a run continues across a step with no name
+        L2 = DataFrame(SRC = [1, 2, 3], DST = [2, 3, 4], DIST = [1.0, 1.0, 1.0],
+                       NAME = ["Main St", missing, "Main St"], DIR = [0, 0, 0])
+        @test pathroads([1, 2, 3, 4], L2).Steps == ["1-3"]
+        @test pathroads([1, 2, 3, 4], L2; miles = true).Miles == [3.0]
+        # the same name twice, apart, is two runs
+        L3 = DataFrame(SRC = [1, 2, 3], DST = [2, 3, 4], DIST = [1.0, 1.0, 1.0], NAME = ["A St", "B St", "A St"])
+        @test pathroads([1, 2, 3, 4], L3).Street == ["A St", "B St", "A St"]
+    end
+
+    @testset "a link in either direction; parallel links: the one of least weight; DIR is respected" begin
+        # FAF5's form: one link per road, a path may run against its SRC to DST
+        L = DataFrame(SRC = [1, 2], DST = [2, 3], DIST = [1.0, 1.0], NAME = ["First", "Second"], DIR = [0, 0])
+        @test pathroads([3, 2, 1], L).Street == ["Second", "First"]
+        # two links between the same nodes: the shorter's name, whichever row comes last
+        P = DataFrame(SRC = [1, 1], DST = [2, 2], DIST = [5.0, 3.0], NAME = ["Long Way", "Short Way"], DIR = [0, 0])
+        @test pathroads([1, 2], P).Street == ["Short Way"]
+        @test pathroads([1, 2], P[[2, 1], :]).Street == ["Short Way"]
+        # a one-way link cannot be used against its direction: the parallel two-way link is the one
+        D = DataFrame(SRC = [1, 1], DST = [2, 2], DIST = [1.0, 4.0], NAME = ["One Way", "Two Way"], DIR = [1, 0])
+        @test pathroads([1, 2], D).Street == ["One Way"]
+        @test pathroads([2, 1], D).Street == ["Two Way"]
+        # DIR = -1 is traveled from DST to SRC
+        M = DataFrame(SRC = [1], DST = [2], DIST = [1.0], NAME = ["Back Street"], DIR = [-1])
+        @test pathroads([2, 1], M).Street == ["Back Street"]
+        @test_throws ArgumentError pathroads([1, 2], M)
+    end
+
+    @testset "name, fallback and blank names (FAF5's SIGN, a cached CSV's missing)" begin
+        L = DataFrame(SRC = [1, 2, 3], DST = [2, 3, 4], DIST = [1.0, 1.0, 1.0],
+                      NAME = ["Capital Blvd", "", missing], SIGN = ["US 1", "I 440", "I 440"], DIR = [0, 0, 0])
+        @test pathroads(1:4, L).Street == ["Capital Blvd"]                                  # no fallback: blank and missing pass
+        R = pathroads(1:4, L; fallback = :SIGN)
+        @test R.Street == ["Capital Blvd", "I 440"] && R.Steps == ["1-1", "2-3"]
+        @test pathroads(1:4, L; name = :SIGN).Street == ["US 1", "I 440"]
+        @test pathroads(1:4, L; name = "SIGN").Steps == ["1-1", "2-3"]
+    end
+
+    @testset "weight picks among parallel links by the named column; a step with no link is refused" begin
+        L = DataFrame(SRC = [1, 1], DST = [2, 2], DIST = [1.0, 9.0], MINUTES = [9.0, 1.0], NAME = ["Short", "Fast"])
+        @test pathroads([1, 2], L).Street == ["Short"]
+        @test pathroads([1, 2], L; weight = :MINUTES).Street == ["Fast"]
+        @test pathroads([1, 2], L; weight = 4).Street == ["Fast"]
+        err = try pathroads([1, 3], L) catch e; e end
+        @test err isa ArgumentError && occursin("step 1", sprint(showerror, err))
+    end
+
+    @testset "an empty path, a path with no named road" begin
+        L = DataFrame(SRC = [1], DST = [2], DIST = [1.0], NAME = [missing])
+        for p in ([1], Int[], [1, 2])
+            R = pathroads(p, L)
+            @test nrow(R) == 0 && names(R) == ["Seg", "Street", "Steps"]
+        end
+        @test names(pathroads([1, 2], L; miles = true)) == ["Seg", "Street", "Steps", "Miles"]
+    end
+end
+
+# ==== moved from test/test_plottools.jl, its lines 1-4, 141-205 ====
+using Test
+using DataFrames
+using Graphs
+using SparseArrays
+
+# ---------------------------------------------------------------------------
+# x2ln — pure geometry, no rendering
+# ---------------------------------------------------------------------------
+@testset "x2ln tests" begin
+
+    @testset "simple directed graph" begin
+        g = SimpleDiGraph(3)
+        add_edge!(g, 1, 2)
+        add_edge!(g, 2, 3)
+        x = [-78.0, -79.0, -80.0]
+        result = x2ln(g, x)
+        # 2 edges × 3 values = 6
+        @test length(result) == 6
+        @test isequal(result, [-78.0, -79.0, NaN, -79.0, -80.0, NaN])
+    end
+
+    @testset "undirected graph has two directed edges per link" begin
+        g = SimpleGraph(2)
+        add_edge!(g, 1, 2)
+        x = [10.0, 20.0]
+        result = x2ln(g, x)
+        # SimpleGraph edge iteration yields 1 edge for (1,2)
+        @test length(result) == 3
+        @test isequal(result, [10.0, 20.0, NaN])
+    end
+
+    @testset "disconnected graph" begin
+        g = SimpleDiGraph(4)
+        add_edge!(g, 1, 2)
+        add_edge!(g, 3, 4)
+        x = [1.0, 2.0, 3.0, 4.0]
+        result = x2ln(g, x)
+        @test length(result) == 6
+        @test count(isnan, result) == 2
+    end
+
+    @testset "paired x2ln for lon/lat" begin
+        g = SimpleDiGraph(3)
+        add_edge!(g, 1, 2)
+        add_edge!(g, 2, 3)
+        lon = [-78.0, -79.0, -80.0]
+        lat = [35.0, 36.0, 37.0]
+        xline = x2ln(g, lon)
+        yline = x2ln(g, lat)
+        @test length(xline) == length(yline)
+        # NaN positions align
+        @test findall(isnan, xline) == findall(isnan, yline)
+    end
+
+    @testset "single edge" begin
+        g = SimpleDiGraph(2)
+        add_edge!(g, 1, 2)
+        x = [5.0, 10.0]
+        result = x2ln(g, x)
+        @test isequal(result, [5.0, 10.0, NaN])
+    end
+
+    @testset "no edges returns empty" begin
+        g = SimpleDiGraph(3)
+        x = [1.0, 2.0, 3.0]
+        result = x2ln(g, x)
+        @test isempty(result)
+    end
 end

@@ -18,7 +18,7 @@
 using Logjam
 using DataFrames
 
-include(joinpath(@__DIR__, "oracle_helpers.jl"))   # _readoracle, _ivec, _fvec, _sc, _cells
+isdefined(@__MODULE__, :ORACLE_DIR) || include(joinpath(@__DIR__, "oracle_helpers.jl"))   # _readoracle, _ivec, _fvec, _sc, _cells
 
 # ---- encoding ------------------------------------------------------------------------------
 _rp(x::Missing) = "missing"

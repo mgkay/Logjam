@@ -11,7 +11,7 @@ using DataFrames
 using CairoMakie
 using GeoMakie
 
-include(joinpath(@__DIR__, "map_pin_cases.jl"))       # mmpin_nc, mmpin_describe
+isdefined(@__MODULE__, :mmpin_cases) || include(joinpath(@__DIR__, "map_pin_cases.jl"))       # mmpin_nc, mmpin_describe
 
 # Lecture 2.5's `extent` (2-loc-5.qmd:160-164): the larger of the north-south and the east-west great-circle extents
 # through the center of the box, in miles

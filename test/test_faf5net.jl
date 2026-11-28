@@ -1,3 +1,9 @@
+# test_faf5net.jl -- the tests of src/faf5net.jl, one test file per source file (PCV WP8 of Logjam v0.3.1).
+# Each section below was moved verbatim from the test file its marker names, under that file's own header,
+# which says which component added it. No assertion changed. A testset taken out of a wrapper that held the
+# tests of several modules sits in a wrapper of the same name with this module's name before it.
+
+# ==== moved from test/test_faf5net.jl, its lines 1-937 ====
 # test_faf5net.jl -- the derived FAF5 road network (CR 19), on synthetic cases and on FAF5 as Logjam ships it. Part one
 # (PCV N1): route keys, the Interstate flag, the ramp rule and the junctions (his rulings RN3 to RN10, RN17). Part two
 # (PCV N2): the derivation (RN13 to RN19). Part three (PCV N3): the shipped data and its accessors (D7, RD1, RD2) and

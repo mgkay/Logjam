@@ -1,3 +1,9 @@
+# test_loctools.jl -- the tests of src/loctools.jl, one test file per source file (PCV WP8 of Logjam v0.3.1).
+# Each section below was moved verbatim from the test file its marker names, under that file's own header,
+# which says which component added it. No assertion changed. A testset taken out of a wrapper that held the
+# tests of several modules sits in a wrapper of the same name with this module's name before it.
+
+# ==== moved from test/test_loctools.jl, its lines 1-918 ====
 using Test
 using Logjam
 using SparseArrays
@@ -915,4 +921,540 @@ end
 
 @testset "majority is not in Logjam (IN2)" begin
     @test !isdefined(Logjam, :majority)
+end
+
+# ==== moved from test/test_properties.jl, its lines 1-16, 27-122, 282-283 ====
+# Property tests (test spec Sec. 3; PCV K2a). Seeded random instances, small enough to run in seconds.
+#
+# What is proved for every function that returns a solution: the cost it returns is the cost of the
+# solution it returns, index sets come back sorted, sequences come back in route order, local
+# optimality holds where the docstring claims it, a caller's input is not mutated, and zero in gives
+# zero out. A property the current code fails is `@test_broken` with a comment naming the change
+# request (CR) or finding (N) that fixes it and the component (K3-K9) whose commit flips it to `@test`.
+#
+# Tolerances (test spec rule 4, fixed in advance): exact equality for integer and index results;
+# relative 1e-9 for costs computed from the same input.
+
+using Test
+using Logjam
+using Random
+using SparseArrays
+using DataFrames
+isdefined(@__MODULE__, :_ufl_cost) || include(joinpath(@__DIR__, "property_helpers.jl"))   # WP8: defined once
+
+@testset "loctools: properties" begin
+
+# ---------------------------------------------------------------------------------------------
+@testset "UFL family: returned cost = cost recomputed from the returned solution" begin
+    rng = Random.Xoshiro(20261119)
+    allok = Dict(f => true for f in (:add, :drop, :xchg, :ufl, :pmedian))
+    sorted = Dict(f => true for f in (:add, :drop, :xchg, :ufl, :pmedian))
+    addmut = xchgmut = dropmut = locopt = true
+    for _ in 1:25
+        n, m = rand(rng, 4:7), rand(rng, 4:8)
+        C = float.(rand(rng, 1:40, n, m))
+        k = float.(rand(rng, 20:120, n))
+
+        ya, TCa, Wa = ufladd(k, C)
+        allok[:add] &= _close(TCa, _ufl_cost(k, C, ya)) && _close(TCa, sum(k[ya]) + sum(Wa .* C))
+        sorted[:add] &= issorted(ya)
+
+        yd, TCd, Wd = ufldrop(k, C)
+        allok[:drop] &= _close(TCd, _ufl_cost(k, C, yd)) && _close(TCd, sum(k[yd]) + sum(Wd .* C))
+        sorted[:drop] &= issorted(yd)
+
+        y0 = sort(randperm(rng, n)[1:rand(rng, 2:n)])
+        ycopy = copy(y0)
+        yx, TCx, Wx = uflxchg(k, C, y0)
+        allok[:xchg] &= _close(TCx, _ufl_cost(k, C, yx)) && _close(TCx, sum(k[yx]) + sum(Wx .* C))
+        sorted[:xchg] &= issorted(yx)
+        xchgmut &= (y0 == ycopy)
+        # local optimality (N24's documented exception: no swap is tried with one open site)
+        if length(yx) > 1
+            locopt &= !any(_ufl_cost(k, C, replace(yx, i => j)) < TCx - 1e-9
+                           for i in yx for j in setdiff(1:n, yx))
+        end
+        # never worse than the start
+        allok[:xchg] &= TCx <= _ufl_cost(k, C, y0) + 1e-9
+
+        # ADD from a caller's set; the set must come back untouched
+        ys = [rand(rng, 1:n)]
+        yscopy = copy(ys)
+        ufladd(k, C; y = ys)
+        addmut &= (ys == yscopy)
+        # DROP from a caller's set
+        yd0 = collect(1:n); yd0copy = copy(yd0)
+        ufldrop(k, C; y = yd0)
+        dropmut &= (yd0 == yd0copy)
+
+        yu, TCu, Wu = _mute_stdout(() -> ufl(k, C; verbose = false))
+        allok[:ufl] &= _close(TCu, _ufl_cost(k, C, yu)) && _close(TCu, sum(k[yu]) + sum(Wu .* C))
+        sorted[:ufl] &= issorted(yu)
+
+        p = rand(rng, 1:n)
+        yp, TCp, Wp = pmedian(p, C; verbose = false)
+        allok[:pmedian] &= length(yp) == p && _close(TCp, sum(minimum(C[yp, :], dims = 1))) &&
+                           _close(TCp, sum(Wp .* C))
+        sorted[:pmedian] &= issorted(yp)
+    end
+    @test allok[:add]
+    @test allok[:drop]
+    @test allok[:xchg]
+    @test allok[:ufl]
+    @test allok[:pmedian]
+    @test sorted[:drop]                       # ufldrop's setdiff happens to sort
+    @test dropmut
+    @test xchgmut
+    # index sets returned sorted: CR 6 (decided 2026-08-29), fixed in K3 (pmedian sorts because uflxchg does)
+    @test sorted[:add]
+    @test sorted[:xchg]
+    @test sorted[:ufl]
+    @test sorted[:pmedian]
+    # ufladd mutated the caller's y: CR 5, fixed in K3
+    @test addmut
+    # FINDING F1 = N32 (found by this test): v0.2.8's uflxchg moved elements of y to the end (swap!/revert!)
+    # while `for i′ in y` was iterating over y, so candidate swaps were skipped and the returned set was
+    # not a 1-swap local optimum, which its docstring promises. Fixed in K3 (scan the set as it stands).
+    @test locopt
+end
+
+# ---------------------------------------------------------------------------------------------
+@testset "ala: returned cost = cost of the returned X; start not mutated" begin
+    rng = Random.Xoshiro(754)
+    ok = true
+    nomut = true
+    for _ in 1:12
+        m = rand(rng, 6:14)
+        P = rand(rng, m, 2) .* 40
+        w = rand(rng, m) .* 20 .+ 1
+        n = rand(rng, 2:3)
+        X0 = randX(P, n)
+        X0copy = copy(X0)
+        X, TC, W = _mute_stdout(() -> ala(X0, w, P; dist = 2))
+        D = dists(X, P, 2)
+        ok &= _close(TC, sum(W .* D))
+        nomut &= (X0 == X0copy)
+    end
+    @test ok                                   # TC is computed at the X returned (true on main since PR #13)
+    @test nomut
+end
+
+end  # properties
+
+# ==== moved from test/test_oracles.jl, its lines 1-31, 38-134, 748-749 ====
+# Oracle tests (test spec Sec. 4; PCV K2b). The data in test/oracles/*.csv is written by
+# tools/v0_3_0/make_oracles.m (MATLAB R2025a, Matlog V18 on the path), each file headed by the MATLAB call
+# that produced it. Nothing here is computed by MATLAB at test time.
+#
+# Tolerances (test spec rule 4, fixed in advance, never chosen after a result):
+#   - exact equality for integer and index results (sites, routes, route positions, flags);
+#   - relative 1e-9 for costs computed from the same inputs (`_oclose`; an absolute floor of 1e-12 only
+#     guards comparisons with an exact zero);
+#   - a great-circle distance in miles or kilometers against Matlog's only as the documented difference (D7):
+#     Logjam's dgc keeps the sphere (DST1, DST2) where Matlog's `dists` uses a latitude-dependent radius, so the
+#     two agree within the named tolerance GC_RADIUS_RTOL (relative 1e-3, oracle_helpers.jl; charge SC 4) and
+#     are asserted to differ at 1e-9; the arc (radians), and Matlog's arc times the sphere's radius, at 1e-9.
+# Routing oracles take MATLAB's distance matrix as input, so they compare independent of distance formulas.
+#
+# A comparison the current code fails, or cannot make because the function does not exist yet, is
+# `@test_broken` with a comment naming its ID (CR n, N n, D n, S n) and the K component whose commit flips
+# it to `@test`. A Matlog output the plan deliberately departs from is NOT an oracle for that quantity: the
+# departure is asserted as its own test and named (DEPARTURE).
+#
+# Skipped, with the reason (the generator's header lists the same): Matlog ala Examples 3-4 (the `trans`
+# transportation solver has no Logjam counterpart); makeRouting4 route-mode minTLC and Example 3 (CR 44,
+# declined; Shapley allocation); makeFrghtTrans3 Example C (random multistart sweep) and Example B parts
+# 4-6 (an optimizer's argmin is not compared: the cost functions are compared AT the saved MATLAB argmin);
+# rtenorm (no Logjam port is planned under that name).
+
+using Test
+using Logjam
+using DataFrames
+using SparseArrays
+
+isdefined(@__MODULE__, :ORACLE_DIR) || include(joinpath(@__DIR__, "oracle_helpers.jl"))   # _readoracle, _oclose, _try, _has, _transcharge, ...
+
+@testset "loctools: oracles" begin
+
+# =============================================================================================
+@testset "oracle: UFL family, Example 8.8 (Matlog help text)" begin
+    d = _readoracle("ufl_ex88")
+    k, C = _fvec(d, "k"), d["C"]
+    cmp(pre, y, TC, W) = (set = sort(y) == _ivec(d, pre * "_y"),
+                          order = y == _ivec(d, pre * "_y"),
+                          TC = _oclose(TC, _sc(d, pre * "_TC")),
+                          X = (Matrix(W) .> 0) == (d[pre * "_X"] .> 0))
+    r = cmp("ufl", _oquiet(() -> ufl(k, C; verbose = false))...)
+    @test r.set; @test r.TC; @test r.X; @test r.order
+    r = cmp("ufladd", ufladd(k, C)...)
+    @test r.set; @test r.TC; @test r.X
+    r = cmp("ufladd45", ufladd(k, C; y = [4, 5])...)
+    @test r.set; @test r.TC; @test r.X
+    r = cmp("ufldrop", ufldrop(k, C)...)
+    @test r.set; @test r.TC; @test r.X
+    r = cmp("ufldrop36", ufldrop(k, C; y = collect(3:6))...)
+    @test r.set; @test r.TC; @test r.X
+    r = cmp("uflxchg", uflxchg(k, C, _ivec(d, "xchg_y0"))...)
+    @test r.set; @test r.TC; @test r.X
+    r = cmp("pmedian2", pmedian(2, C; verbose = false)...)
+    @test r.set; @test r.TC; @test r.X
+end
+
+# =============================================================================================
+@testset "oracle: UFL family, 12 seeded random instances (rng(20261119) in MATLAB, inputs saved)" begin
+    d = _readoracle("ufl_random")
+    ninst = Int(_sc(d, "ninst"))
+    fns = (:ufl, :ufladd, :ufldrop, :uflxchg, :pmedian)
+    # per function and per quantity, did every instance agree?
+    res = Dict((f, q) => Bool[] for f in fns for q in (:set, :order, :TC, :X))
+    bad = Dict((f, q) => Int[] for f in fns for q in (:set, :order, :TC, :X))
+    for i in 1:ninst
+        k, C, y0 = _fvec(d, "k_$i"), d["C_$i"], _ivec(d, "y0_$i")
+        p = Int(_sc(d, "p_$i"))
+        out = Dict(:ufl => _oquiet(() -> ufl(k, C; verbose = false)),
+                   :ufladd => ufladd(k, C), :ufldrop => ufldrop(k, C),
+                   :uflxchg => uflxchg(k, C, copy(y0)), :pmedian => pmedian(p, C; verbose = false))
+        for f in fns
+            y, TC, W = out[f]
+            pre = "$(f)_$i"
+            vals = (set = sort(y) == _ivec(d, pre * "_y"), order = y == _ivec(d, pre * "_y"),
+                    TC = _oclose(TC, _sc(d, pre * "_TC")),
+                    X = (Matrix(W) .> 0) == (d[pre * "_X"] .> 0))
+            for q in (:set, :order, :TC, :X)
+                push!(res[(f, q)], vals[q])
+                vals[q] || push!(bad[(f, q)], i)
+            end
+        end
+    end
+    ok(f, q) = all(res[(f, q)])
+    @test ok(:ufl, :set) && ok(:ufl, :TC) && ok(:ufl, :X)
+    @test ok(:ufladd, :set) && ok(:ufladd, :TC) && ok(:ufladd, :X)
+    @test ok(:ufldrop, :set) && ok(:ufldrop, :TC) && ok(:ufldrop, :X) && ok(:ufldrop, :order)
+    @test ok(:pmedian, :set) && ok(:pmedian, :TC)
+    # The sites come back in MATLAB's sorted order only by luck: ufl, ufladd, uflxchg and pmedian return
+    # them in the order they were added or swapped in (instances 3 and 9 for ufl, 2 and 8 for ufladd,
+    # 3, 4, 6, 7, 10, 11 for uflxchg, 4-11 for pmedian). CR 6 (decided 2026-08-29: sort), K3.
+    @test ok(:ufl, :order)                     # flipped in K3 (CR 6)
+    @test ok(:ufladd, :order)                  # flipped in K3 (ufladd commit)
+    @test ok(:uflxchg, :order)
+    @test ok(:pmedian, :order)
+    # pmedian's allocation matrix differs in instance 7 only, where two open sites tie for an EF and the
+    # unsorted site vector breaks the tie differently from MATLAB's sorted one: the same cause, CR 6, K3
+    @test all(res[(:pmedian, :X)][i] for i in 1:ninst if i != 7)
+    @test res[(:pmedian, :X)][7]               # flipped in K3 (CR 6): sorted sites break the tie as MATLAB does
+    # uflxchg agrees with MATLAB on 11 of 12 instances. Instance 6 (start y0 = [1, 3]) ends at
+    # TC 122 where MATLAB reaches 113: uflxchg swaps and reverts inside `for i′ in y`, so `deleteat!` and
+    # `push!` reorder the vector being iterated and candidate swaps are skipped (K2a finding F1, now N32).
+    # A copy-scanning uflxchg reproduces MATLAB's set and cost on all 12 instances (checked in K2b).
+    # N32, flipped in K3: all twelve instances agree with MATLAB.
+    for q in (:set, :TC, :X)
+        @test all(res[(:uflxchg, q)][i] for i in 1:ninst if i != 6)
+        @test res[(:uflxchg, q)][6]
+    end
+end
+
+# =============================================================================================
+@testset "oracle: ala, help Example 1 (three NFs for the NC cities, start saved)" begin
+    d = _readoracle("ala_nc")
+    P, w, X0 = d["P"], _fvec(d, "w"), d["X0"]
+    # p = 2 (Euclidean): the same metric, so a cost oracle at 1e-9. The locate step is a different solver
+    # (Optim here, Matlog's minisumloc there), so the NF coordinates agree only to about 1e-6 and are not
+    # compared; the allocation (an index result) and the cost are.
+    X, TC, W = _oquiet(() -> ala(X0, w, P; dist = 2, verbose = false))
+    @test (Matrix(W) .> 0) == (d["e2_W"] .> 0)
+    @test _oclose(TC, _sc(d, "e2_TC"))
+    # p = 'mi': DEPARTURE (D7). Logjam's constant radius 3958.75 mi against Matlog's latitude-dependent
+    # 3963.34 - 13.35|sin(lat)| gives a cost that differs by up to the 0.08% of N15; the allocation is the
+    # same and the cost is asserted within GC_RADIUS_RTOL (relative 1e-3), not at 1e-9.
+    X, TC, W = _oquiet(() -> ala(X0, w, P; dist = :mi, verbose = false))
+    @test (Matrix(W) .> 0) == (d["mi_W"] .> 0)
+    @test _oclose(TC, _sc(d, "mi_TC"); rtol = GC_RADIUS_RTOL)
+    @test !_oclose(TC, _sc(d, "mi_TC"))        # and it is a difference, not agreement (D7)
+end
+
+end # oracles
+
+# ==== moved from test/test_location_v031.jl, its lines 1-28, 133-133, 210-463 ====
+# test_location_v031.jl -- added by PCV WP3 of Logjam v0.3.1 (DK: review A's A5, A7 and A8): the metric kernel
+# shared by dists, ala's locate step and dgca; ala's call forms; and the point-set and table alignments of
+# wcentroid, uflxchg, lonlat2loc, loc2lonlat and dgca. Test spec Sec. 4. Equality is `==` on every element, or
+# `===` where marked bit-identical; no tolerance is used anywhere in this file. The evidence:
+#   1. the kernel (A5): v0.3.0's distance bodies, copied below as text, against the current functions bit for bit
+#      (`===`) on every metric and on seeded sets of 1 to 20 dimensions; ala's locate step against v0.3.0's with
+#      `_aladist` (also for the real 1.0 and 2.0, which locate by d1 and d2). The full record, 333 cases and
+#      40,784,366 elements up to 3000 points saved before the kernel was wired in, is
+#      tools/v0_3_1/kernel_identity.jl's; this file keeps a fast part of it in the suite;
+#   2. ala's metric (A5): `dist = 3` and `1.5` now locate (they were an error), and `unit` is `dist`'s synonym;
+#   3. ala's call forms (A7), each `==` to the call the course writes today, on the course's inputs:
+#      `ala(X0, alloc, P)` on Lecture 2.3's contract (Code block 16), 3.4's Lowe's network (Code block 30) and
+#      2.4's centroids (Code block 21); `ala(n, w, P)` on 2.3's Code block 14, 2.4's Code block 24 and the HW 1
+#      key's Q6(b); `ala(x, w, P)` on 2.2's Examples 3 and 4 (Code blocks 25 and 32) and the HW 1 key's Q6(a);
+#      no ambiguity, and every existing call keeps its method;
+#   4. the alignments (A8): wcentroid(P, w) on 2.2's and 2.5's points; uflxchg on a range and on Int32 indices on
+#      2.4's corridor and EMCA and 2.6's Kudde; lonlat2loc(xy) on 3.4's points; a view of a table where a
+#      DataFrame was required;
+#   5. dgca(x, Xa, a) against the matrix method's row, on 2.5's North Carolina ZIP codes and EMCA's.
+# A lecture's definition is copied here as text, with its .qmd file and line; no companion script is run.
+
+using Test
+using Logjam
+using DataFrames
+using SparseArrays
+using Random
+import Optim
+using Optim: optimize
+_dk_sameala(a, b) = a[1] == b[1] && a[2] == b[2] && a[3] == b[3]              # X, TC and W
+
+@testset "WP3 (A5): ala resolves its metric as dists does" begin
+    P = [0.0 0.0; 1.0 0.0; 0.0 1.0; 1.0 1.0; 0.4 0.7]
+    w = [1.0, 2.0, 1.0, 3.0, 2.0]
+    X0 = [0.2 0.2; 0.8 0.8]
+    for p in (3, 1.5, 3.0)                        # an error at v0.3.0 ("`dist` must be ... 1, 2, or Inf")
+        X, TC, W = ala(X0, w, P; dist = p, verbose = false)
+        @test TC == sum(W .* dists(X, P, p))      # the cost at the X returned, in the metric asked for
+        # the locate step is the minisum of `dists`' own lₚ distance, one pair at a time
+        Wl = sparse([1, 1, 2, 2, 2], 1:5, w, 2, 5)
+        ref = copy(X0)
+        for i in 1:2
+            J = findall(!iszero, Wl[i, :])
+            fl(x) = sum(Wl[i, J[t]] * dists(reshape(x, 1, :), P[J[t]:J[t], :], p)[1] for t in eachindex(J))
+            ref[i, :] = optimize(fl, X0[i, :]).minimizer
+        end
+        @test Logjam._ala_locate(Wl, X0, Logjam._alakernel(p), P) == ref
+    end
+    # integer p is the real p, as in dists (N19)
+    @test _dk_sameala(ala(X0, w, P; dist = 3, verbose = false), ala(X0, w, P; dist = 3.0, verbose = false))
+    # `unit` is `dist`'s synonym for a great-circle unit; both, or a unit that is not one, is an error
+    Pnc = [-78.64 35.78; -80.84 35.23; -79.79 36.07; -77.94 34.23]
+    wnc = [469.0, 897.0, 299.0, 123.0]
+    X0nc = [-78.6 35.8; -80.0 35.5]
+    @test _dk_sameala(ala(X0nc, wnc, Pnc; unit = :km, verbose = false), ala(X0nc, wnc, Pnc; dist = :km, verbose = false))
+    @test _dk_sameala(ala(X0nc, wnc, Pnc; verbose = false), ala(X0nc, wnc, Pnc; dist = :mi, verbose = false))
+    @test_throws ArgumentError ala(X0nc, wnc, Pnc; dist = :mi, unit = :km, verbose = false)
+    @test_throws ArgumentError ala(X0nc, wnc, Pnc; unit = 2, verbose = false)
+    @test_throws ErrorException ala(X0, w, P; dist = 0.5, verbose = false)
+    @test_throws ErrorException ala(X0, w, P; dist = :ft, verbose = false)
+    # a caller's own allocate and locate never read the metric (as at v0.3.0)
+    Wf = sparse([1, 1, 2, 2, 2], 1:5, w, 2, 5)
+    @test ala(X0, w, P; dist = "unused", alloc = X -> (Wf, 1.0), locate = (W, X) -> X, verbose = false)[1] == X0
+end
+
+@testset "WP3 (A7): ala(X0, alloc, P), ala(n, w, P), ala(x, w, P) equal the calls the course writes" begin
+    # 2.3's allocation (2-loc-3.qmd:180-185)
+    function allocate(D, w)
+        n, m = size(D)
+        α = [argmin(c) for c in eachcol(D)]
+        W = sparse(α, 1:m, w, n, m)
+        return α, sum(W .* D)
+    end
+    # Lecture 2.3, Code blocks 13, 14 and 16 (2-loc-3.qmd:1460-1464, 1473-1474, 1505-1514)
+    df = filter(r -> r.STFIP in st2fips.([:NC, :SC]) && r.POP > 10_000, usplace())
+    select!(df, :NAME, :ST, :LAT, :LON, :POP)
+    P = hcat(df.LON, df.LAT)
+    w = float(df.POP)
+    nef = size(P, 1)
+    function alloc36(X)
+        D = dists(X, P, :mi)
+        α, = allocate(D, w)
+        α[1:3] .= 1
+        α[4:6] .= 2
+        Wc = sparse(α, 1:nef, w, size(X, 1), nef)
+        return Wc, sum(Wc .* D)
+    end
+    Random.seed!(8345); c_kw = ala(randX(P, 2), w, P; alloc = alloc36, nruns = 5, verbose = false)
+    Random.seed!(8345); c_pos = ala(randX(P, 2), alloc36, P; nruns = 5, verbose = false)
+    Random.seed!(8345); c_n = ala(2, alloc36, P; nruns = 5, verbose = false)
+    @test _dk_sameala(c_pos, c_kw)                      # (i): the allocate function in w's place
+    @test _dk_sameala(c_n, c_kw)                        # (i) with (ii)
+    Random.seed!(8345); o_idiom = ala(randX(P, 2), w, P; nruns = 5, verbose = false)
+    Random.seed!(8345); o_n = ala(2, w, P; nruns = 5, verbose = false)
+    @test _dk_sameala(o_n, o_idiom)                     # (ii): the random start, the global stream
+    @test _dk_sameala(ala(2, w, P; nruns = 5, rng = Xoshiro(8345), verbose = false),
+                  (r = Xoshiro(8345); ala(randX(P, 2; rng = r), w, P; nruns = 5, rng = r, verbose = false)))
+    @test _dk_sameala(ala(Int32(2), w, P; rng = Xoshiro(1), verbose = false), ala(2, w, P; rng = Xoshiro(1), verbose = false))
+    # the trace is the idiom's too
+    out(f) = mktemp() do path, io
+        redirect_stdout(f, io); flush(io); close(io); read(path, String)
+    end
+    @test out(() -> (Random.seed!(8345); ala(2, w, P; nruns = 2))) == out(() -> (Random.seed!(8345); ala(randX(P, 2), w, P; nruns = 2)))
+    @test out(() -> ala(randX(P, 2; rng = Xoshiro(3)), alloc36, P)) == out(() -> ala(randX(P, 2; rng = Xoshiro(3)), w, P; alloc = alloc36))
+
+    # Lecture 3.4, Code blocks 20, 29 and 30 (3-tran-4.qmd:1300, 1617-1630, 1636-1655): the first three of its
+    # twenty runs, with the allocate function in w's place and with the count as the start (P3 is CXY3 twice, so
+    # randX(P3, n) draws in CXY3's box exactly as the lecture's randX(CXY3, n))
+    ppiTL = 131.0
+    z3 = filter(r -> r.ISCUS && r.POP > 100_000, uszcta3())
+    CXY3 = Matrix(z3[:, [:LON, :LAT]])
+    SXY3 = CXY3
+    COGS = 44.04e9
+    v3 = 7000
+    f3 = COGS/v3
+    s3 = 10
+    tr3 = (r = 2ppiTL/102.7, Kwt = 25, Kcu = 2750, ppi = ppiTL)
+    qmax3 = maxpayld(s3; Kwt = tr3.Kwt, Kcu = tr3.Kcu)
+    fC3 = f3*(z3.POP/sum(z3.POP))
+    fS3 = fill(f3/size(SXY3, 1), size(SXY3, 1))
+    DCh(XY) = dists(XY, CXY3, :mi)*1.2
+    function FC(XY)
+        i = [argmin(c) for c in eachcol(DCh(XY))]
+        return sparse(i, 1:length(fC3), fC3, size(XY, 1), length(fC3))
+    end
+    FS(XY) = (vec(sum(FC(XY), dims = 2))/sum(fC3)) * fS3'
+    W3(XY) = [FS(XY) FC(XY)]*(tr3.r/qmax3)
+    TCh(XY) = sum(W3(XY) .* [dists(SXY3, XY, :mi)'*1.2 DCh(XY)])
+    alloc_h(XY) = (W3(XY), TCh(XY))
+    P3 = [SXY3; CXY3]
+    Random.seed!(9348567)
+    lect = [ala(randX(CXY3, n), ones(size(P3, 1)), P3; alloc = alloc_h, nruns = 5, verbose = false) for n in 1:3]
+    Random.seed!(9348567)
+    pos = [ala(randX(CXY3, n), alloc_h, P3; nruns = 5, verbose = false) for n in 1:3]
+    Random.seed!(9348567)
+    cnt = [ala(n, alloc_h, P3; nruns = 5, verbose = false) for n in 1:3]
+    @test all(_dk_sameala(pos[n], lect[n]) for n in 1:3)
+    @test all(_dk_sameala(cnt[n], lect[n]) for n in 1:3)
+
+    # Lecture 2.4, Code blocks 21 and 24 (2-loc-4.qmd:1176-1180, 1215-1216): the random multi-start
+    zr = filter!(r -> r.ISCUS == true && r.POP > 0, uszcta3())
+    select!(zr, :ZCTA3, :LAT, :LON, :POP)
+    Pr = hcat(zr.LON, zr.LAT)
+    wr = zr.POP
+    Random.seed!(4161); Xa_idiom = ala(randX(Pr, 9), float(wr), Pr; nruns = 3, verbose = false)
+    Random.seed!(4161); Xa_n = ala(9, float(wr), Pr; nruns = 3, verbose = false)
+    @test _dk_sameala(Xa_n, Xa_idiom)
+    # ... and an allocate function on the same centroids: 2.3's nearest allocation, held to a run of nine
+    function near(X)
+        α, TC = allocate(dists(X, Pr, :mi), float(wr))
+        return sparse(α, 1:size(Pr, 1), float(wr), size(X, 1), size(Pr, 1)), TC
+    end
+    X0r = randX(Pr, 9; rng = Xoshiro(4161))
+    @test _dk_sameala(ala(X0r, near, Pr; verbose = false), ala(X0r, float(wr), Pr; alloc = near, verbose = false))
+
+    # the HW 1 key, Q6 (hw1-solution.jl:195-207, 212-222, 242, 251-252): one NF from Roanoke Rapids, and forty
+    # random starts of two
+    function name2lonlat(namein, df)
+        nm = split(namein, ", ")
+        idx = length(nm) == 1 ? findfirst(r -> r.NAME == nm[1], eachrow(df)) :
+              findfirst(r -> r.NAME == nm[1] &&
+                            r.ST == Symbol(nm[2]), eachrow(df))
+        idx === nothing && error("'$namein' not found")
+        collect(df[idx, [:LON, :LAT]])
+    end
+    xyChar = name2lonlat("Charlottesville, VA", usplace())
+    xyRR   = name2lonlat("Roanoke Rapids, NC", usplace())
+    stores = filter(r -> any(i -> r.STFIP == i, st2fips.([:NC, :SC, :VA])) &&
+                         r.POP > 10_000 && r.LAT <= xyChar[2], usplace())
+    Ph = hcat(stores.LON, stores.LAT)
+    TD0, TC0 = sum(stores.POP .* [dgc(xyRR, p) for p in eachrow(Ph)]), 6.7e6
+    rate = TC0 / TD0
+    wh = rate .* stores.POP
+    @test _dk_sameala(ala(xyRR, wh, Ph; verbose = false), ala(reshape(xyRR, 1, 2), wh, Ph; verbose = false))   # (iii)
+    Random.seed!(754); runs_idiom = [ala(randX(Ph, 2), wh, Ph; verbose = false) for _ in 1:40]
+    Random.seed!(754); runs_n = [ala(2, wh, Ph; verbose = false) for _ in 1:40]
+    @test all(_dk_sameala(runs_n[i], runs_idiom[i]) for i in 1:40)
+
+    # Lecture 2.2, Example 3 (2-loc-2.qmd:1271-1275) and Example 4 (1413-1415, 1548-1549, 1561): one NF from the
+    # weighted centroid
+    nc = filter(r -> r.STFIP == st2fips(:NC), usplace())
+    c = wcentroid(nc.LON, nc.LAT, nc.POP)
+    Pn = hcat(nc.LON, nc.LAT)
+    @test _dk_sameala(ala([c.LON, c.LAT], nc.POP, Pn; verbose = false), ala(reshape([c.LON, c.LAT], 1, :), nc.POP, Pn; verbose = false))
+    Detroit     = [-83.1022, 42.3830]
+    Gainesville = [-82.3492, 29.6807]
+    Memphis     = [-89.9666, 35.1090]
+    P22 = permutedims(hcat(Detroit, Gainesville, Memphis))
+    wTL = [40.0, 25.0, 35.0]
+    c0 = wcentroid(P22[:, 1], P22[:, 2], wTL)
+    @test _dk_sameala(ala([c0.LON, c0.LAT], wTL, P22; verbose = false), ala(reshape([c0.LON, c0.LAT], 1, :), wTL, P22; verbose = false))
+    @test _dk_sameala(ala([c0.LON, c0.LAT], X -> (sparse(ones(Int, 3), 1:3, wTL, 1, 3), 0.0), P22; verbose = false),
+                  ala(reshape([c0.LON, c0.LAT], 1, :), wTL, P22; alloc = X -> (sparse(ones(Int, 3), 1:3, wTL, 1, 3), 0.0), verbose = false))
+
+    # no ambiguity among ala's methods or the other functions given methods here, and every existing call keeps
+    # the method it had (the general one: X0 a matrix, w not a function)
+    touched = (:ala, :wcentroid, :uflxchg, :lonlat2loc, :loc2lonlat, :dgca, :dists, :dgc)
+    @test isempty(filter(a -> a[1].name in touched || a[2].name in touched, Test.detect_ambiguities(Logjam)))
+    general = which(ala, Tuple{Any,Any,Any})
+    for T in (Tuple{Matrix{Float64},Vector{Float64},Matrix{Float64}}, Tuple{Matrix{Float64},Vector{Int},Matrix{Int}},
+              Tuple{typeof([100 300]'),Vector{Int},typeof([50 150 190]')}, Tuple{SubArray{Float64,2},Vector{Float64},Matrix{Float64}})
+        @test which(ala, T) === general
+    end
+    @test which(ala, Tuple{Matrix{Float64},typeof(alloc36),Matrix{Float64}}) !== general
+    @test which(wcentroid, Tuple{Vector{Float64},Vector{Float64},Vector{Float64}}).nargs == 4
+    # what was an error at v0.3.0 and is a call form now
+    @test_throws ErrorException ala(2, w[1:1], P[1:1, :]; verbose = false)   # still: more NFs than EFs
+    @test_throws TypeError ala(2, w, P; rng = 7, verbose = false)            # rng typed, as LOC8
+    @test_throws TypeError ala([-79.0, 35.0], w, P; rng = 7, verbose = false)
+end
+
+@testset "WP3 (A8): wcentroid(P, w) and uflxchg on any integer vector" begin
+    # wcentroid(P, w) is wcentroid(P[:, 1], P[:, 2], w): Lecture 2.2's and 2.6's three cities (2-loc-2.qmd:1548-1549,
+    # 1561; 2-loc-6.qmd:338-339, 351), 2.2's North Carolina places (1271, 1275), 2.5's block groups (2-loc-5.qmd:602,
+    # 605)
+    P22 = permutedims(hcat([-83.1022, 42.3830], [-82.3492, 29.6807], [-89.9666, 35.1090]))
+    wTL = [40.0, 25.0, 35.0]
+    @test wcentroid(P22, wTL) == wcentroid(P22[:, 1], P22[:, 2], wTL)
+    nc = filter(r -> r.STFIP == st2fips(:NC), usplace())
+    Pn = hcat(nc.LON, nc.LAT)
+    @test wcentroid(Pn, nc.POP) == wcentroid(Pn[:, 1], Pn[:, 2], nc.POP) == wcentroid(nc.LON, nc.LAT, nc.POP)
+    bg = filter(r -> r.STFIP == st2fips(:NC), uscenblkgrp())
+    Pb = hcat(bg.LON, bg.LAT)
+    @test wcentroid(Pb, bg.POP) == wcentroid(bg.LON, bg.LAT, bg.POP)
+    @test wcentroid(Pb, bg.POP) isa NamedTuple{(:LON, :LAT)}
+    @test_throws ArgumentError wcentroid(Pb[:, 1:1], bg.POP)
+
+    # uflxchg on a range and on Int32 indices is the Vector{Int} call. Lecture 2.4's corridor (2-loc-4.qmd:459-463,
+    # 775, 788-789), with ADD's {1, 3} as a step range
+    P = reshape([50, 150, 220, 295, 420], :, 1)
+    k = [150, 200, 150, 150, 200]
+    r, f = 1, 1
+    w = r * f
+    C = w * dists(P, P, 1)
+    yadd, _, _ = ufladd(k, C)
+    @test yadd == [1, 3]                       # ADD's {3, 1}, returned sorted
+    ref = uflxchg(k, C, yadd)
+    @test uflxchg(k, C, 1:2:3) == ref
+    @test uflxchg(k, C, Int32[1, 3]) == ref
+    @test uflxchg(k, C, 3:-2:1) == uflxchg(k, C, [3, 1])
+    @test uflxchg(k, C, 1:2) == uflxchg(k, C, [1, 2])
+    # 2.4's EMCA (2-loc-4.qmd:964-975, 985-989)
+    zip = [270, 271, 272, 273, 274, 275, 276, 277, 278, 279, 280, 281, 282, 283,
+           284, 285, 286, 287, 290, 291, 292, 293, 294, 295, 296, 297, 298, 299]
+    ncust = [7, 5, 6, 3, 5, 8, 5, 1, 3, 2, 8, 4, 9, 6, 1, 2, 3, 3, 4, 3, 3, 2, 11, 5, 7, 2, 4, 2]
+    ud, uwt = 12e6, 15 / 2000
+    fz = ud .* ncust ./ sum(ncust) .* uwt
+    z = uszcta3()
+    idx = [findfirst(==(zi), z.ZCTA3) for zi in zip]
+    Pz = hcat(z.LON[idx], z.LAT[idx])
+    Cz = (fz .* 0.25)' .* (1.2 .* dists(Pz, Pz, :mi))
+    kz = 100_000.0
+    yz, _, _ = ufladd(kz, Cz)
+    @test uflxchg(kz, Cz, Int32.(yz)) == uflxchg(kz, Cz, yz)
+    @test uflxchg(kz, Cz, UInt16.(yz)) == uflxchg(kz, Cz, yz)
+    @test uflxchg(kz, Cz, 1:4) == uflxchg(kz, Cz, [1, 2, 3, 4])
+    @test uflxchg(kz, Cz, view([9, 2, 14, 5], 1:3)) == uflxchg(kz, Cz, [9, 2, 14])
+    # 2.6's Kudde (2-loc-6.qmd:493-501, 510-511, 541-551): ADD's start at the first fixed cost the lecture fits
+    ubox = 24
+    uwt6 = 35 / ubox
+    udem = 1 / 100
+    rton = 2.5523
+    g = 1.2
+    zk = filter(r -> r.ISCUS && r.POP > 0, uszcta3())
+    Pk = hcat(zk.LON, zk.LAT)
+    fk = float.(zk.POP) .* (udem * uwt6 / 2000)
+    D = g .* dgca(Pk, Pk, zk.ALAND)
+    Ck = rton .* (fk' .* D)
+    f0 = 1e6 * uwt6 / 2000
+    TPC0 = 2e6
+    β = 0.85
+    TPC(x) = TPC0 .* (x ./ f0) .^ β
+    function fitk(fmax, fmin)
+        x = collect(range(fmin, fmax; length = 2000))
+        y = TPC(x)
+        p = optimize(p -> sum((y .- (p[1] .+ p[2] .* x)) .^ 2), [0.0, 1.0])
+        return Optim.minimizer(p)[1]   # the intercept is the fixed cost
+    end
+    kk = fill(fitk(sum(fk), minimum(fk)), size(Ck, 1))
+    yk, _, _ = ufladd(kk, Ck)
+    @test uflxchg(kk, Ck, Int32.(yk)) == uflxchg(kk, Ck, yk)
+    @test uflxchg(kk, Ck, 1:3) == uflxchg(kk, Ck, [1, 2, 3])
+    @test which(uflxchg, Tuple{Vector{Float64},Matrix{Float64},Vector{Int}}) === which(uflxchg, Tuple{Any,Any,UnitRange{Int}})
 end

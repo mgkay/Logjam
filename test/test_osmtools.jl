@@ -1,3 +1,9 @@
+# test_osmtools.jl -- the tests of src/osmtools.jl, one test file per source file (PCV WP8 of Logjam v0.3.1).
+# Each section below was moved verbatim from the test file its marker names, under that file's own header,
+# which says which component added it. No assertion changed. A testset taken out of a wrapper that held the
+# tests of several modules sits in a wrapper of the same name with this module's name before it.
+
+# ==== moved from test/test_joinroads.jl, its lines 1-310 ====
 # test_joinroads.jl -- an OpenStreetMap network joined to the U.S. road network at its box's edge (CR 19, his ruling
 # RD3, PCV N3b; the box a required argument and the routes to Greensboro and Winston-Salem by his rulings RN22 and
 # RN21). T4.6 on synthetic networks (a national road crossing the box edge, a road ending inside, a one-way pair, a link
@@ -307,4 +313,230 @@ end
             end
         end
     end
+end
+
+# ==== moved from test/test_osm.jl, its lines 1-12, 98-169, 192-323, 541-547 ====
+# =============================================================================
+# Offline tests of osm_roads and its translation (no network): a small committed OpenStreetMap
+# extract, test/data/osm_fixture.osm, translated by the extension's own `_osm_tables_from_xml`, which is the
+# step `osm_roads` runs on an Overpass response, and a stand-in for the Overpass server (the extension's
+# `_post_impl` and `_sleep_impl`). The networked tests are in test_osm_network.jl (LOGJAM_NETWORK_TESTS).
+# Tagged [ID]; see tools/v0_3_0/run_against.jl. (K2a, test spec Sec. 2; K9.)
+# =============================================================================
+using Test
+using LightOSM
+using HTTP, JSON3
+using Logjam
+using DataFrames, CSV, Graphs
+isdefined(@__MODULE__, :_OSM_EXT) || include(joinpath(@__DIR__, "osm_helpers.jl"))   # WP8: defined once
+
+@testset "[CR 23] [CR 35] [C6] the box osm_roads takes, the crop, and the box methods" begin
+    dfN, dfL = _fixture_tables()
+    flat = (-78.641, -78.636, 35.779, 35.784)
+    box = ((-78.641, -78.636), (35.779, 35.784))
+
+    @testset "osm_roads takes mapbbox's box, and still the four numbers" begin
+        mktempdir() do tmp
+            _save_pair(tmp, flat, dfN, dfL)
+            bb = mapbbox([-78.641, -78.636], [35.779, 35.784])
+            @test bb == box
+            a = _quiet(() -> osm_roads(bb; cache_dir = tmp))
+            b = _quiet(() -> osm_roads(flat; cache_dir = tmp))
+            @test nrow(a[2]) == nrow(dfL) && nrow(a[1]) == nrow(dfN)
+            @test isequal(a[1], b[1]) && isequal(a[2], b[2])         # the same call either way
+        end
+    end
+
+    @testset "crop = true is the box asked for, as 4.2 and a homework crop it by hand" begin
+        mktempdir() do tmp
+            _save_pair(tmp, flat, dfN, dfL)
+            x, y = [-78.6396, -78.6384], [35.7803, 35.7817]            # points inside the fixture's tile
+            bb = mapbbox(x, y; xexpand = 0.5, yexpand = 0.5)
+            hand = cropnetwork(dfN, dfL, x, y; xexpand = 0.5, yexpand = 0.5)       # Lecture 4.2, Code block 2
+            got = _quiet(() -> osm_roads(bb; cache_dir = tmp, crop = true))
+            @test isequal(got[1], hand[1]) && isequal(got[2], hand[2])
+            @test 0 < nrow(got[1]) < nrow(dfN)                                     # control: it cropped
+            @test all(bb[1][1] .<= got[1].LON .<= bb[1][2]) && all(bb[2][1] .<= got[1].LAT .<= bb[2][2])
+            whole = _quiet(() -> osm_roads(bb; cache_dir = tmp))                   # crop = false: the tile
+            @test nrow(whole[1]) == nrow(dfN)
+        end
+    end
+
+    @testset "cropnetwork(N, L, bb) and mapbbox(bb; xexpand, yexpand)" begin
+        N = DataFrame(IDX = 1:4, LON = [0.0, 1.0, 2.0, 3.0], LAT = [0.0, 0.0, 0.0, 0.0])
+        L = DataFrame(SRC = [1, 2, 3], DST = [2, 3, 4], DIST = [1.0, 1.0, 1.0])
+        N2, L2 = cropnetwork(N, L, ((0.5, 2.5), (-1.0, 1.0)))
+        @test (N2.LON, L2.SRC, L2.DST) == ([1.0, 2.0], [1], [2])
+        # the box is the box: no expansion unless asked, and the asked expansion is mapbbox's
+        N3, L3 = cropnetwork(N, L, ((1.0, 2.0), (-1.0, 1.0)); xexpand = 0.5)
+        @test N3.LON == [1.0, 2.0] && nrow(L3) == 1
+        N3, L3 = cropnetwork(N, L, ((1.0, 2.0), (-1.0, 1.0)); xexpand = 1.5)
+        @test N3.LON == [0.0, 1.0, 2.0, 3.0] && nrow(L3) == 3
+        @test cropnetwork(N, L, ((0.5, 2.5), (-1.0, 1.0))) == cropnetwork(N, L, [0.5, 2.5], [-1.0, 1.0]; xexpand = 0, yexpand = 0)
+        # the column keywords stay
+        Nr = rename(N, :IDX => :id, :LON => :x, :LAT => :y)
+        Lr = rename(L, :SRC => :a, :DST => :b)
+        N4, L4 = cropnetwork(Nr, Lr, ((0.5, 2.5), (-1.0, 1.0)))
+        @test N4.x == [1.0, 2.0]
+        @test mapbbox(((-80.0, -78.0), (35.0, 36.0)); xexpand = 0.5, yexpand = 0.25) == ((-81.0, -77.0), (34.75, 36.25))
+        @test mapbbox(((-80.0, -78.0), (35.0, 36.0))) == ((-80.0, -78.0), (35.0, 36.0))
+        x, y = [-78.6758, -78.6696], [35.7706, 35.7876]
+        bb = mapbbox(x, y)
+        @test mapbbox(bb; xexpand = 2, yexpand = 0.5) == mapbbox(x, y; xexpand = 2, yexpand = 0.5)   # 4.2's Code block 2
+    end
+
+    @testset "the grid snap keeps an edge on a grid line, and widens any other outward" begin
+        for onbox in ((-78.70, -78.60, 35.70, 35.85), (-78.65, -78.55, 35.75, 35.80), (-79.0, -78.0, 35.0, 36.0))
+            @test all(isapprox.(Logjam._osm_snap_bbox(onbox), onbox; atol = 1e-9))
+        end
+        @test all(isapprox.(Logjam._osm_snap_bbox((-78.60, -78.60, 35.75, 35.75)), (-78.6, -78.55, 35.75, 35.8); atol = 1e-9))  # a point is one tile
+        @test Logjam._osm_snap_bbox(((-78.70, -78.60), (35.70, 35.85))) == Logjam._osm_snap_bbox((-78.70, -78.60, 35.70, 35.85))
+        # an edge just off a line is widened to the next line, as before
+        @test all(isapprox.(Logjam._osm_snap_bbox((-78.6999, -78.5999, 35.7001, 35.8499)), (-78.7, -78.55, 35.7, 35.85); atol = 1e-9))
+        # Lecture 4.2's two boxes (Ex. 1: the two buildings, xexpand 2, yexpand 0.5) are off the grid and give the
+        # tiles of the committed cache
+        b1 = mapbbox([-78.6758457, -78.6695716], [35.7706306, 35.7875615]; xexpand = 2, yexpand = 0.5)
+        @test all(isapprox.(Logjam._osm_snap_bbox(b1), (-78.7, -78.65, 35.75, 35.8); atol = 1e-9))
+        @test basename(Logjam._osm_cache_path(b1, "data")[1]) == "osm_w-78.7_e-78.65_s35.75_n35.8_nodes.csv"
+        @test basename(Logjam._osm_cache_path(b1, "data")[2]) == "osm_w-78.7_e-78.65_s35.75_n35.8_links.csv"
+    end
+end
+
+@testset "[C3] [R9] [S18] a saved pair reads in core, silently, and nothing is written unless asked" begin
+    dfN, dfL = _fixture_tables()
+    flat = (-78.641, -78.636, 35.779, 35.784)
+    bb = ((-78.641, -78.636), (35.779, 35.784))
+
+    # Reading needs no LightOSM; the extension is loaded in this process, so what a miss says without it (a
+    # MethodError of `_osm_download` that carries the hint "Run: using LightOSM") is tested in a fresh process, in
+    # "[K10] the OSM extension loads on LightOSM alone" below.
+    @testset "a saved pair is read, and nothing is downloaded" begin
+        mktempdir() do tmp
+            _save_pair(tmp, flat, dfN, dfL)
+            _with_overpass([_ok()]) do queries, waits
+                a = _quiet(() -> osm_roads(bb; cache_dir = tmp))
+                @test nrow(a[1]) == nrow(dfN) && nrow(a[2]) == nrow(dfL)
+                @test isempty(queries)
+            end
+        end
+    end
+
+    @testset "the default writes nothing; cache_dir is a folder, as the lectures pass it" begin
+        mktempdir() do tmp
+            cd(tmp) do
+                _with_overpass([_ok()]) do queries, waits
+                    a = _quiet(() -> osm_roads(bb))
+                    @test length(queries) == 1 && nrow(a[1]) > 0
+                    @test isempty(readdir(tmp))                                       # v0.2.8 wrote the pair here
+                    _quiet(() -> osm_roads(bb))
+                    @test length(queries) == 2                                        # and so no cache was read
+                end
+            end
+        end
+    end
+
+    @testset "a call is silent unless verbose = true" begin
+        mktempdir() do tmp
+            _with_overpass([_ok()]) do queries, waits
+                @test_logs osm_roads(bb; cache_dir = tmp)                             # a download
+                @test_logs osm_roads(bb; cache_dir = tmp)                             # a read: 4.2 printed this twice
+                @test_logs (:info, r"Loading cached OSM data") osm_roads(bb; cache_dir = tmp, verbose = true)
+                @test_logs (:info, r"Downloading OSM roads") match_mode = :any osm_roads(bb; cache_dir = tmp, verbose = true,
+                                                                                         force_download = true)
+            end
+        end
+    end
+
+    @testset "the saved pair is written, read back, and force_download goes again" begin
+        mktempdir() do tmp
+            _with_overpass([_ok()]) do queries, waits
+                a = _quiet(() -> osm_roads(bb; cache_dir = tmp))
+                @test length(queries) == 1
+                b = _quiet(() -> osm_roads(bb; cache_dir = tmp))
+                @test length(queries) == 1                                            # read, not downloaded
+                @test nrow(b[1]) == nrow(a[1]) && nrow(b[2]) == nrow(a[2])
+                _quiet(() -> osm_roads(bb; cache_dir = tmp, force_download = true))
+                @test length(queries) == 2
+                @test_throws ArgumentError osm_roads(((-78.636, -78.641), (35.779, 35.784)); cache_dir = tmp)
+            end
+        end
+    end
+
+    @testset "a pair saved before v0.3.0 reads back as it did; the types are declared (CR 24)" begin
+        mktempdir() do tmp
+            old8 = dfL[:, 1:8]                                  # a pair as v0.2.8 saved it: eight columns
+            _save_pair(tmp, flat, dfN, old8)
+            a = _quiet(() -> osm_roads(bb; cache_dir = tmp))
+            @test names(a[1]) == ["IDX", "LON", "LAT", "SOURCE"]
+            @test names(a[2]) == ["SRC", "DST", "DIST", "SPEED", "FCLASS", "DIR", "NAME", "SOURCE"]
+            @test eltype.(eachcol(a[1])) == [Int, Float64, Float64, String]
+            @test eltype.(eachcol(a[2])) == [Int, Int, Float64, Int, Int, Int, Union{Missing,String}, String]
+            @test a[2] == old8
+            # SOURCE read as String, not String3, and a blank name is `missing`, as 4.2 tests with ismissing
+            L2 = copy(old8)
+            L2[1, :NAME] = ""
+            np, lp = _save_pair(tmp, (-70.0, -69.9, 40.0, 40.1), dfN, L2)
+            b = _quiet(() -> osm_roads((-70.0, -69.9, 40.0, 40.1); cache_dir = tmp))
+            @test ismissing(b[2].NAME[1]) && !any(ismissing, b[2].NAME[2:end])
+            # a pair saved by v0.3.0 has the three columns more, with their types
+            _save_pair(tmp, (-71.0, -70.9, 40.0, 40.1), dfN, dfL)
+            c = _quiet(() -> osm_roads((-71.0, -70.9, 40.0, 40.1); cache_dir = tmp))
+            @test names(c[2]) == names(dfL) && eltype.(eachcol(c[2])) == eltype.(eachcol(dfL))
+            @test isequal(c[2], dfL)
+        end
+    end
+
+    @testset "a box over the size limit warns before a download, and a read does not" begin
+        big = ((-85.0, -80.0), (25.0, 30.0))
+        # the extension's request stands in for the server, as everywhere here: its answer is the fixture, whatever the box
+        _with_overpass([_ok()]) do queries, waits
+            @test_logs (:warn, r"Large bounding box") match_mode = :any osm_roads(big)
+            @test length(queries) == 1
+            @test_logs osm_roads(bb)                                                  # a small box: no warning
+            mktempdir() do tmp
+                _save_pair(tmp, (-85.0, -80.0, 25.0, 30.0), dfN, dfL)
+                @test_logs osm_roads(big; cache_dir = tmp)                           # read from a saved pair: none
+            end
+        end
+        @test Logjam._OSM_AREA_WARN_MI2 == 300
+        # Raleigh's 4.2 tiles (0.2 by 0.15 degrees: about 115 sq mi) and its whole city (about 150) are under it
+        @test 100 < Logjam._osm_area_mi2((-78.75, -78.55, 35.7, 35.85)) < 130
+    end
+
+    @testset "one class table makes the speeds, the classes and the docstring's table" begin
+        @test Logjam.OSM_SPEED_DEFAULTS == Dict(c[1] => c[2] for c in Logjam.OSM_CLASSES)
+        @test Logjam.OSM_FCLASS == Dict(c[1] => c[3] for c in Logjam.OSM_CLASSES)
+        @test length(Logjam.OSM_CLASSES) == 14 && length(Logjam.OSM_SPEED_DEFAULTS) == 14
+        # the values of v0.2.8, which 4.2's class table prints
+        for (hw, mph, fc) in (("motorway", 65, 1), ("primary_link", 30, 3), ("secondary", 35, 4),
+                              ("tertiary_link", 20, 5), ("living_street", 15, 7), ("road", 25, 6))
+            @test Logjam.OSM_SPEED_DEFAULTS[hw] == mph && Logjam.OSM_FCLASS[hw] == fc
+        end
+        rows = split(Logjam._osm_class_table(), "\n")
+        @test length(rows) == 2 + length(Logjam.OSM_CLASSES)
+        for (row, c) in zip(rows[3:end], Logjam.OSM_CLASSES)
+            @test row == "| $(c[1]) | $(c[2]) | $(c[3]) | $(c[4]) |"
+        end
+        doc = sprint(show, MIME("text/plain"), @doc(osm_roads))
+        @test all(c -> occursin(c[1], doc) && occursin(c[4], doc), Logjam.OSM_CLASSES)    # the docstring prints the table
+        src = read(joinpath(pkgdir(Logjam), "src", "osmtools.jl"), String)
+        @test occursin("\$(_osm_class_table())", src)                                # ... by generating it
+    end
+
+    @testset "the generator's two helpers are public" begin
+        @test Base.ispublic(Logjam, :_osm_cache_path) && Base.ispublic(Logjam, :_osm_snap_bbox)
+        # the arguments make_osm_raleigh.jl passes: the flat box and a folder
+        b1 = mapbbox([-78.6758457, -78.6695716], [35.7706306, 35.7875615]; xexpand = 2, yexpand = 0.5)
+        np, lp = Logjam._osm_cache_path((b1[1]..., b1[2]...), "data")
+        @test np == joinpath("data", "osm_w-78.7_e-78.65_s35.75_n35.8_nodes.csv")
+        @test lp == joinpath("data", "osm_w-78.7_e-78.65_s35.75_n35.8_links.csv")
+        @test all(isapprox.(Logjam._osm_snap_bbox((b1[1]..., b1[2]...)), (-78.7, -78.65, 35.75, 35.8); atol = 1e-9))
+    end
+end
+
+@testset "[P8] stitchnetworks is removed (0 course calls)" begin
+    @test !isdefined(Logjam, :stitchnetworks)
+    @test !(:stitchnetworks in names(Logjam))
+    @test !isdefined(Logjam, :_osm_stitch)
+    @test !isdefined(Base.get_extension(Logjam, :LogjamOSMExt), :_stitchnetworks_impl)
 end
