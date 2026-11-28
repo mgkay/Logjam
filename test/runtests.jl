@@ -26,6 +26,7 @@ _runfile("test_disttools.jl")      # distances; their properties and oracles; WP
 _runfile("test_transtools.jl")     # transport costing; the K6 pins; properties and oracles; WP4's tables and contract
 _runfile("test_maptools.jl")       # mapbbox, aligntext(x, y), usstates; K12's county box; WP10's place and state boxes
 _runfile("test_datatools.jl")      # the census and FAF5 tables; K11b's FAF5 table pins; K12's usstate; WP5's loaders and STFIP
+_runfile("test_place_labels.jl")   # PL: usplace()'s LABEL column and datatools.jl's _place_label, a file of its own (PL's brief)
 _runfile("test_displaytools.jl")   # prt, snapvals, thousands; the K4 prt pins and K14's decimals per column
 _runfile("test_geomtools.jl")      # alloclines
 _runfile("test_roadtools.jl")      # road networks; the K8 pins; the line builders; connectors, links2graph, thin, pathroads

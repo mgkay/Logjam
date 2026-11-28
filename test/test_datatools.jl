@@ -12,7 +12,7 @@ using DataFrames
     df = usplace()
     @test isa(df, DataFrame)
     @test !isempty(df)
-    @test all(issubset(names(df), ["STFIP", "PLFIP", "NAME", "ST", "LAT", "LON", "POP", "ALAND", "AWATER", "LSAD", "FUNCSTAT", "CBSA", "ISCUS"]))
+    @test all(issubset(names(df), ["STFIP", "PLFIP", "NAME", "ST", "LAT", "LON", "POP", "ALAND", "AWATER", "LSAD", "FUNCSTAT", "CBSA", "ISCUS", "LABEL"]))   # LABEL appended in v0.3.1 (PL)
 end
 
 # Test for uscounty function
@@ -115,8 +115,9 @@ end
         df = loader()
         @test "ISCUS" in names(df)
         @test eltype(df.ISCUS) == Bool
-        # ISCUS ends the v0.2.9 schema; on the ZIP tables v0.3.1 appends STFIP after it (D4)
-        @test names(df)[end] == "ISCUS" || (loader in (uszcta5, uszcta3) && names(df)[end-1:end] == ["ISCUS", "STFIP"])
+        # ISCUS ends the v0.2.9 schema; on the ZIP tables v0.3.1 appends STFIP after it (D4), on usplace LABEL (PL)
+        @test names(df)[end] == "ISCUS" || (loader in (uszcta5, uszcta3) && names(df)[end-1:end] == ["ISCUS", "STFIP"]) ||
+              (loader === usplace && names(df)[end-1:end] == ["ISCUS", "LABEL"])
     end
 end
 

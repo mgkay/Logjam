@@ -183,6 +183,31 @@ missed.
   codes by their codes' range (`27000 <= ZCTA5 <= 28999`, `270 <= ZCTA3 <= 289`); `STFIP == 37` selects them by the
   state that holds them. Code that checks the tables' exact columns, or that `ISCUS` is last, sees the new column, as
   four checks in v0.3.0's own `test/test_datatools.jl` do. **No migration** for code that reads columns by name.
+- **`LABEL` on `usplace()`: each place's short name, for a map label (PL; his request on seeing "Athens-Clarke County
+  unified government (balance)" on a map, round `v031pl`, rulings PL-1 to PL-4).** Appended as the last column, a
+  `String`, in the data itself; `NAME` keeps the Census name, so every lookup by name (`loc2lonlat`, `lonlat2loc`,
+  `mapbbox`, the name index) and every column before `LABEL` keep their names, places, types and values. A label is
+  `NAME` without the designation the Census writes after it: a trailing "CDP", "village", "borough", "municipality",
+  "metroship", "corporation", "urban county", or "unified", "consolidated", "metropolitan" or "metro government" (and
+  "and borough", what Alaska's "city and borough" leaves once `NAME` has dropped " city": "Juneau"), and "(balance)";
+  "County" in a consolidated city-county name, the city and the county joined by a hyphen or a slash ("Athens-Clarke",
+  "Louisville/Jefferson"; "Echols County" keeps it); after a comma only the city ("Lynchburg"); and for a name with a
+  second name in parentheses, that name ("San Buenaventura (Ventura)" is "Ventura", 17 names). The small words inside
+  a name stay ("Coeur d'Alene", "Isle of Palms"), and nothing is cut for length: 46 labels are longer than 25
+  characters, most of them university and campus CDPs ("Rochester Institute of Technology"). 17,085 of the 31,617
+  names change. A label need not be unique within its state where the `NAME` is (in California "Burbank" is both
+  Burbank and Burbank CDP; 117 labels are shared by places whose `NAME`s differ), so a lookup still takes `NAME`. **Made by Logjam's own
+  processing of the Census files** (his direction, so that a new Census release goes through the same steps):
+  `tools/data/make_usplace.jl` reads the 2020 Gazetteer places, the 2020 P.L. 94-171 table P1 and the 2023 list of
+  principal cities (each file's URL and SHA-256 in its header, checked before it is read), does every step the table
+  was made by (the place cells of `makeAggDemandData_good.ipynb`, then v0.2.8's `Symbol` state and LON-first order),
+  and appends `LABEL` by the internal `_place_label`, whose docstring, with `usplace`'s, states the rules. With the
+  label step off (`--nolabel`) its CSV is v0.3.0's `data/usplace.csv` byte for byte (SHA-256 `48a74278…`); with it,
+  `6029f48b…`, the same on two runs, and the `.jls` is the CSV read back. `test/test_place_labels.jl` checks the rules
+  on his examples and on every name, and the columns before `LABEL` against v0.3.0's file. **Lectures served:** every
+  map that labels places (2.2, 2.3, 2.7, 3.4 and the Routing lectures, 5.x), whose labels can read `LABEL` at the
+  re-pin; nothing changes before it. Code that checks the table's exact columns, or that `ISCUS` is last, sees the new
+  column, as two checks in v0.3.0's own `test/test_datatools.jl` do. **No migration.**
 - **`mapbbox(name; state, place = false)`: the box of a city, town or census-designated place, offline (X7, MakePlan
   D3; `place` provisional, D7).** A name that matches a county of the state still gives the county's box, exactly as
   before (every county of `uscounty()` gives the box it gave, bit for bit, or the same error); a name that matches no

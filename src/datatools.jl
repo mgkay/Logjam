@@ -50,9 +50,34 @@ Geographic and population data for each place in the U.S., where each place is a
 - `FUNCSTAT`: String representing functional status of place (e.g., A for active).
 - `CBSA`: Integer or None representing Core-Based Statistical Area code associated with place.
 - `ISCUS`: Boolean indicating whether place is within continental U.S. (true or false).
+- `LABEL`: String holding the place's short name, for labeling the place on a map (added in v0.3.1): `NAME` without
+  the designation the Census writes after it and its other long forms, by the rules below (`"Athens-Clarke"` for
+  `"Athens-Clarke County unified government (balance)"`). `NAME` keeps the Census name, and every lookup by name
+  (`loc2lonlat`, `lonlat2loc`, `mapbbox`) reads `NAME`, so none changes.
+
+# Short names (`LABEL`)
+`LABEL` is part of the data, made from `NAME` when the table is made (`tools/data/make_usplace.jl`), not when a label is
+drawn. The rules (round `v031pl`, rulings PL-2 to PL-4):
+1. A trailing designation is dropped: "CDP", "village", "borough", "municipality", "metroship", "corporation", "urban
+   county", and "unified", "consolidated", "metropolitan" or "metro government" ("Schaumburg village" is "Schaumburg",
+   "Urban Honolulu CDP" "Urban Honolulu", "Lexington-Fayette urban county" "Lexington-Fayette"). "City" and "town" are
+   already absent from `NAME`, which drops them; for Alaska's "city and borough" that leaves "and borough", which is
+   dropped as one ("Juneau and borough" is "Juneau").
+2. "(balance)" is dropped ("Indianapolis (balance)" is "Indianapolis"), and so is "County" in a consolidated
+   city-county name, the city and the county joined by a hyphen or a slash ("Macon-Bibb County" is "Macon-Bibb",
+   "Louisville/Jefferson County metro government (balance)" "Louisville/Jefferson"); a place named for its county
+   alone keeps it ("Echols County consolidated government" is "Echols County").
+3. After a comma only the city is kept ("Lynchburg, Moore County metropolitan government" is "Lynchburg").
+4. The small words inside a name stay ("Coeur d'Alene", "Isle of Palms", "Carmel-by-the-Sea").
+5. A name with a second name in parentheses takes the one in parentheses ("San Buenaventura (Ventura)" is "Ventura").
+A name no rule applies to is its own label (`LABEL == NAME`), and a label longer than 25 characters is left as the
+rules give it ("Rochester Institute of Technology"). Labels are not unique within a state: in California "Burbank" is
+the label of both Burbank (a city) and Burbank CDP, whose `NAME`s differ.
 
 # Sources
-Geographic data derived from [1], population data from [2], and `CBSA` from [3]. `ISCUS` determined from `LAT` and `LON`.
+Geographic data derived from [1], population data from [2], and `CBSA` from [3]. `ISCUS` determined from `LAT` and
+`LON`, and `LABEL` from `NAME`. The table is made from the three files by `tools/data/make_usplace.jl`, which records
+each file's SHA-256.
 
 1.  U.S. Census Bureau, 2020 Gazetteer Files, [2020_Gaz_place_national.txt](https://www2.census.gov/geo/docs/maps-data/data/gazetteer/2020_Gazetteer/2020_Gaz_place_national.zip)
 
@@ -63,12 +88,89 @@ Geographic data derived from [1], population data from [2], and `CBSA` from [3].
 # Example
 ```julia
 df = usplace()
-names(df)   # => ["STFIP", "PLFIP", "NAME", "ST", "LON", "LAT", "POP", "ALAND", "AWATER", "LSAD", "FUNCSTAT", "CBSA", "ISCUS"]  (LON precedes LAT)
+names(df)   # => ["STFIP", "PLFIP", "NAME", "ST", "LON", "LAT", "POP", "ALAND", "AWATER", "LSAD", "FUNCSTAT", "CBSA", "ISCUS", "LABEL"]  (LON precedes LAT)
 filter(r -> r.ST == :NC, df)    # => 776 places in North Carolina
+```
+A map's labels read `LABEL` (with `using CairoMakie, GeoMakie`):
+```julia
+ga = filter(r -> r.ST == :GA && r.POP > 100_000, usplace())
+fig, ax = makemap(ga.LON, ga.LAT)
+scatter!(ax, ga.LON, ga.LAT)
+text!(ax, ga.LON, ga.LAT; aligntext(ax, ga.LON, ga.LAT, ga.LABEL)...)   # "Athens-Clarke", not its NAME
+fig
 ```
 """
 function usplace()
     return copy(_table("usplace"))
+end
+
+# The designations `_place_label` drops from the end of a name, longest first where one ends another. "and borough"
+# is what Alaska's "city and borough" leaves once `NAME` has dropped " city" (Juneau, Sitka, Wrangell).
+const _PLACE_LABEL_DESIGNATIONS = ("CDP", "village", "and borough", "borough", "municipality", "metroship",
+    "corporation", "urban county", "unified government", "consolidated government", "metropolitan government",
+    "metro government")
+
+"""
+    _place_label(name::AbstractString; applied = nothing) -> String
+
+The short name of a place for a map label, `usplace()`'s `LABEL` for the place whose `NAME` is `name` (round `v031pl`,
+rulings PL-2 to PL-4). `name` is the name as `usplace()` holds it, so " city" and " town" are already gone. The rules,
+applied in this order, each to what the one before left:
+1. **Designations:** a trailing designation in `_PLACE_LABEL_DESIGNATIONS` (case and the space before it included) or
+   " (balance)" is dropped, repeatedly, until none ends the name ("Athens-Clarke County unified government (balance)"
+   becomes "Athens-Clarke County").
+2. **Comma:** after a comma only the city is kept ("Lynchburg, Moore County" becomes "Lynchburg").
+3. **County:** a trailing " County" is dropped where the rest joins a city and its county with a hyphen or a slash, a
+   consolidated city-county ("Athens-Clarke County" becomes "Athens-Clarke"); a name with neither keeps it ("Echols
+   County").
+4. **Parentheses:** a name ending in a second name in parentheses becomes that name ("San Buenaventura (Ventura)"
+   becomes "Ventura").
+Nothing else changes: the small words inside a name stay ("Coeur d'Alene"), nothing is shortened for length, and a
+name no rule applies to is returned unchanged. A rule that would leave nothing is not applied. If `applied` is a
+vector, the name of each rule that changes the name is pushed to it: the designation dropped (`"CDP"`, `"(balance)"`,
+...), `"comma"`, `"County"` or `"parentheses"`, so `tools/data/make_usplace.jl` can count them.
+"""
+function _place_label(name::AbstractString; applied::Union{Nothing, AbstractVector} = nothing)
+    note(rule) = applied === nothing || push!(applied, rule)
+    s = String(name)
+    # 1. designations and "(balance)", until none ends the name
+    while true
+        t = s
+        if endswith(t, " (balance)") && ncodeunits(t) > ncodeunits(" (balance)")
+            t = String(chopsuffix(t, " (balance)"))
+            note("(balance)")
+        end
+        for d in _PLACE_LABEL_DESIGNATIONS
+            suf = " " * d
+            if endswith(t, suf) && ncodeunits(t) > ncodeunits(suf)
+                t = String(chopsuffix(t, suf))
+                note(d)
+            end
+        end
+        t == s && break
+        s = t
+    end
+    # 2. after a comma, only the city
+    i = findfirst(',', s)
+    if i !== nothing && i > firstindex(s)
+        s = String(rstrip(s[firstindex(s):prevind(s, i)]))
+        note("comma")
+    end
+    # 3. "County" in a consolidated city-county name: the city and the county joined by a hyphen or a slash
+    if endswith(s, " County")
+        rest = chopsuffix(s, " County")
+        if occursin('-', rest) || occursin('/', rest)
+            s = String(rest)
+            note("County")
+        end
+    end
+    # 4. a second name in parentheses
+    m = match(r"^.*\S\s+\(([^()]+)\)$", s)
+    if m !== nothing
+        s = String(m.captures[1])
+        note("parentheses")
+    end
+    return s
 end
 
 """
