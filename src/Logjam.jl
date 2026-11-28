@@ -137,7 +137,23 @@ include("invtools.jl")     # the inventory measures of Lectures 6.2 and 6.3 (E1)
 """
     dcf()
 
-Display current figure. Requires `using CairoMakie, GeoMakie`.
+Display the current figure, as `display(current_figure())` does. Requires `using CairoMakie, GeoMakie`.
+
+!!! warning "Deprecated"
+    `dcf` is deprecated in v0.3.1 and is removed in v0.4.0. End a notebook or VS Code cell with the figure itself,
+    `fig`, which displays it, or call `display(current_figure())` where a figure is shown from inside a loop or a
+    function. `dcf()` still displays the figure and calls `Base.depwarn`, whose message prints only when Julia runs
+    with `--depwarn=yes` (as `Pkg.test` does).
+
+# Example
+In place of `dcf()`:
+
+```julia
+using CairoMakie, GeoMakie, Logjam
+fig, ax = makemap(region = :CUS)
+fig                              # the cell's last value: the figure is displayed
+display(current_figure())        # the same, from inside a loop or a function
+```
 """
 function dcf end
 

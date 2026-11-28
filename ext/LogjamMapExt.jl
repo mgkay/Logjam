@@ -15,7 +15,11 @@ import Logjam: makemap, plotroads!, dcf
 # =============================================================================
 # dcf: display the current figure
 # =============================================================================
+# Deprecated in v0.3.1 (WP9, MAP17), removed in v0.4.0: it still displays the current figure, and `Base.depwarn` prints
+# its message only when Julia runs with `--depwarn=yes` (as `Pkg.test` does), so a script's output is unchanged.
 function dcf()
+    Base.depwarn("`dcf()` is deprecated and is removed in Logjam v0.4.0: end the cell with the figure, `fig`, " *
+                 "or call `display(current_figure())`.", :dcf)
     display(Makie.current_figure())
     return nothing
 end

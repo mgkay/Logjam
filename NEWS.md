@@ -8,9 +8,23 @@ divided road one two-way link, each interchange and each divided-highway interse
 and an Interstate flag on each link, so the Interstates are a subset of one network rather than a second dataset (CR
 19). It adds `joinroads`, which joins an OpenStreetMap network to it at the edge of the OpenStreetMap network's box.
 And `makemap` draws its road layer from it on a map more than 150 miles across. FAF5 as published (`faf5nodes`,
-`faf5links`) is unchanged. **No migration:** every call a course makes returns what it returned at v0.3.0; the
-pictures of maps over 150 miles across change, and those of smaller maps only where FAF5 has ramps v0.3.0's name rule
-missed.
+`faf5links`) is unchanged.
+
+It also adds, for the lectures to call at the re-pin, what they now write for themselves or call in a longer form:
+the Poisson inventory measures of Lectures 6.2 and 6.3 (`Logjam.poissoncdf`, `Logjam.pi0`, `Logjam.qbar`,
+`Logjam.poissarr`); Lecture 5.1's TSP formulation and Lecture 2.7's bin packing model (`Logjam.TSP`,
+`Logjam.binpack`), with `snapvals` on a solved model's variables, in an optimization extension that JuMP and HiGHS
+load; the table forms of `maxpayld` and `minTLC`, and the charge of one truckload, `charge_tl(d, tr)`; `ala`'s call
+forms and `wcentroid(P, w)`; Lecture 2.5's empirical aggregate distance (`dgca(...; method = :empirical)`); and the
+traces of Lectures 5.1 and 5.2 (`twoopt` and `mincostinsert` with `verbose`). `mapbbox` gives the box of a city, town
+or other Census place, and of a state, offline. The ZIP tables gain each ZCTA's state (`STFIP`), and the place table
+each place's short name for a map label (`LABEL`). A Makie extension, which CairoMakie loads, places labels clear of
+everything drawn in an axis (`aligntext(ax, x, y, labels)`). `dcf` is deprecated.
+
+**No migration:** every call a course makes returns what it returned at v0.3.0, the ZIP and place tables with one
+column appended (`STFIP`, `LABEL`), which code that reads its columns by name does not see; `dcf()` still works, and
+is removed in v0.4.0 (end a cell with `fig`). The pictures of maps over 150 miles across change, and those of smaller
+maps only where FAF5 has ramps v0.3.0's name rule missed.
 
 ### New
 
@@ -102,8 +116,8 @@ missed.
   mode of the row form works (TL only, LTL only, both; positional or keyword), and a `qᵒ`, `TLCᵒ` or `isLTL` column
   already there is replaced in its place. A table given to `minTLC` was an error before, so no call changes.
   **Lectures served:** 3.3 Code block 13 and 3.4 Code blocks 21 and 22, which add the three columns with
-  `transform!(sh, AsTable(:) => ByRow(r -> minTLC(r, tr, ppiLTL)) => AsTable)`, and the homework keys' row-by-row
-  calls, can call it at the re-pin. **No migration.**
+  `transform!(sh, AsTable(:) => ByRow(r -> minTLC(r, tr, ppiLTL)) => AsTable)`, and the released HW 3 key's
+  row-by-row calls, can call it at the re-pin. **No migration.**
 - **`charge_tl(d::Real, tr)`: the charge of one truckload over `d` miles (B9).** `max(r·d, MC_TL)`, with `r` read
   from `tr.r` or, when `tr` has none, derived from `tr.ppi` as the shipment form derives it (D5), and the minimum
   `mincharge_tl(tr)`. It is the shipment form `charge_tl(q, s, d; ...)` whenever `q` fills at most one truck and
@@ -166,7 +180,9 @@ missed.
   these keywords; the names align the geocoder with the package's other column keywords. **No migration.**
 - **`loc2lonlat(v)` takes any vector of strings (A4).** A view, a vector of `SubString`s or a column read from a file
   that is not a `Vector`, where a `Vector` was required (a `MethodError` otherwise); the result is the table the
-  `Vector` of the same strings gives, its `INPUT` column a `Vector`. **No migration.**
+  `Vector` of the same strings gives, its `INPUT` column a `Vector`. **Served:** a column of queries read from a file,
+  which CSV.jl may return as a `PooledArray`, geocodes as it is; no lecture passes one (Lecture 4.2's Code block 1
+  passes a `Vector`, which runs as before). **No migration.**
 - **`STFIP` on `uszcta5()` and `uszcta3()`: the state of each ZIP Code Tabulation Area (D4).** Appended as the last
   column, an `Int64` as `usplace().STFIP` is, so every column before it keeps its name, place, type and values (D2's
   reading of an appended column). A ZCTA5 takes the state holding the largest share of its land, its county parts'
@@ -469,6 +485,13 @@ missed.
 - **The ZIP tables' docstrings say which territories they hold (X6).** `uszcta5()` and `uszcta3()` said they held no
   U.S. territory; they hold Puerto Rico's 40 ZCTA5s whose codes begin with 009 (`ZCTA5` 901 to 987) and its ZCTA3
   `9`, with `ISCUS = false`, and none of its 006xx and 007xx ZCTA5s. The docstrings now say so; no data changed.
+- **`dcf()` is deprecated, and is removed in v0.4.0 (WP9; the warning's wording provisional, D7).** It still
+  displays the current figure, as `display(current_figure())` does, and now calls `Base.depwarn`, whose message
+  prints only when Julia runs with `--depwarn=yes` (as `Pkg.test` does), so a script's output is unchanged. Its
+  docstring says what to write instead. **Migration:** end a notebook or VS Code cell with the figure itself, `fig`,
+  as the course's lectures end their figure cells, or call `display(current_figure())` where a figure is shown from
+  inside a loop or a function. The README and the example notebook end their four map examples with `fig`.
+  **Lecture served:** none calls `dcf`, so none changes.
 - **Every example in `src/routetools.jl` shows its output and runs as a doctest (DOC, verifier issue 4).** The
   examples of `segcost`, `isorigin`, `rte2loc`, `twoopt` (the cost-handle and matrix methods), `mincostinsert`,
   `pairwisesavings` and `savings` gave their output in a comment, or `twoopt`'s not at all, and nothing ran them;

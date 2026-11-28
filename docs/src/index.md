@@ -331,8 +331,10 @@ usrdnodemap
 
 ## Map Functions
 
-Functions for creating geographical maps and visualizing road networks using the Makie ecosystem. They need
-the map extension (`using CairoMakie, GeoMakie`), so the manual lists them without running them.
+Functions for creating geographical maps and visualizing road networks using the Makie ecosystem. `makemap` and
+`plotroads!` need the map extension (`using CairoMakie, GeoMakie`) and `aligntext(ax, x, y, labels)` the Makie
+extension (`using CairoMakie`), so the manual lists them without running them; `mapbbox` and `aligntext(x, y)` need
+neither.
 
 ### Constants
 
@@ -392,7 +394,8 @@ ldlabel
 
 ## Display and Formatting
 
-Functions for formatted output and figure display.
+Functions for formatted output and figure display. `dcf` is deprecated and is removed in v0.4.0: end a cell with the
+figure itself (`fig`), or call `display(current_figure())`.
 
 ```@docs
 prt

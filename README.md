@@ -12,7 +12,7 @@ Logjam is a Julia package for logistics engineering, providing tools for:
 * **Spatial Data**: A gazetteer of U.S. administrative boundaries and points, including Cities, Counties, ZIP codes (3- and 5-digit), Census tracts, and CBSA/CSA definitions.
 * **Geocoding**: Forward (`loc2lonlat`) and reverse (`lonlat2loc`) geocoding with tiered resolution — street addresses via Nominatim, city/place names, postal codes, and counties from built-in reference data.
 * **Distance Metrics**: Unified distance calculation utilities supporting Rectilinear (*L*₁), Euclidean (*L*₂), Minkowski (*L_p*), Chebyshev (*L*∞), Great Circle (Haversine), and area-adjusted great-circle (`dgca`) metrics.
-* **Plotting**: Display helper (`dcf`) via the map extension (GeoMakie).
+* **Plotting**: Plotting on any Makie axis, a plain `Axis` with CairoMakie alone or a map from `makemap`. Label placement (`aligntext(ax, x, y, labels)`) reads the figure as drawn and puts each label beside its point, clear of the lines, markers and other labels already in the axis.
 * **Mapping**: Plotting recipes and helper functions for mapping spatial data using GeoMakie.
 * **Data Helpers**: Formatted printing (`prt`), thousands separators (`thousands`), floating-point snapping (`snapvals`), the 51-row state table (`usstate`), and a table's or a geocoded place's coordinates as the distance functions take them (`lonlat`).
 
@@ -40,9 +40,11 @@ Logjam uses Julia package extensions to keep its core lightweight. Features acti
 | `using` statement | Features enabled |
 |---|---|
 | `using Logjam` | Core: facility location, costing, distances, road networks, routing, spatial data, geocoding, data helpers. |
-| `using Logjam, CairoMakie, GeoMakie` | + mapping and display: `makemap`, `plotroads!`, `plotroute!`, `aligntext`, `dcf`. GeoMakie loads the map extension; CairoMakie draws. |
+| `using Logjam, CairoMakie` | + plotting on any Makie axis: `aligntext(ax, x, y, labels)`, which places labels clear of what is drawn. CairoMakie loads Makie, which loads the Makie extension. |
+| `using Logjam, CairoMakie, GeoMakie` | + the above, and mapping: `makemap`, `plotroads!`, `plotroute!`. GeoMakie loads the map extension; CairoMakie draws. |
 | `using LightOSM; using Logjam` | + OSM roads: `osm_roads` (downloading; a saved copy reads without it). |
 | `using HTTP, JSON3; using Logjam` | + address geocoding: `loc2lonlat` address tier via Nominatim. |
+| `using JuMP, HiGHS; using Logjam` | + optimization models: `Logjam.TSP`, `Logjam.binpack`, and `snapvals` on a solved model's variables. JuMP and HiGHS together load the optimization extension. |
 
 ## Worked Examples
 
@@ -127,7 +129,7 @@ ax.title = "North Carolina Cities with Population > 100,000"
 scatter!(ax, x, y, color=:red, markersize=12)
 text!(ax, x, y, text=name; aligntext(x, y)...)
 
-dcf()
+fig
 ```
 
 ![NC Cities Plot](docs/assets/nc_cities_plot.png)
@@ -189,7 +191,7 @@ scatter!(ax, hub_xy[:, 1], hub_xy[:, 2], color=colors, markersize=18,
 text!(ax, hub_xy[:, 1], hub_xy[:, 2], text=hubs.NAME; aligntext(hub_xy[:, 1], hub_xy[:, 2])...)
 
 ax.title = "Optimal Facility Locations (P-Median)\nSelected from 3-Digit ZIP Code Centroids (Population-Weighted)"
-dcf()
+fig
 ```
 
 ![Facility Location Plot](docs/assets/facloc_pmedian_plot.png)
@@ -296,7 +298,7 @@ scatter!(ax, x, y, color=:blue, markersize=10)
 text!(ax, x, y, text=cities.NAME; aligntext(x, y)...)
 
 ax.title = "Multi-Stop PDP: Savings + 2-Opt\n(5 Shipments, 10 NC Cities, FAF5 Network)"
-dcf()
+fig
 ```
 
 ![NC Routing Plot](docs/assets/nc_routing_plot.png)
@@ -358,7 +360,7 @@ scatter!(ax, [x[1]], [y[1]], color=:green, markersize=16, marker=:rect)
 text!(ax, [x[1]], [y[1]], text=["Depot"]; aligntext(x, y; idx=1)...)
 
 ax.title = "Multi-Vehicle VRP: Savings + 2-Opt\n(9 Deliveries, 3 Vehicles, Gainesville FL)"
-dcf()
+fig
 ```
 
 ![Gainesville VRP Plot](docs/assets/gnv_osm_vrp_plot.png)

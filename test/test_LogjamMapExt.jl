@@ -1810,6 +1810,19 @@ using SparseArrays
     @test true
 end
 
+# WP9 (v0.3.1, MAP17): dcf is deprecated and removed in v0.4.0. It still displays the current figure and returns
+# nothing; its Base.depwarn names the replacements and the version, and prints only under --depwarn=yes (Pkg.test's
+# setting, so here `@test_deprecated` sees the warning; under --depwarn=no it only runs the call).
+@testset "[WP9] dcf is deprecated: it still displays, and its warning names fig and v0.4.0" begin
+    fig = Figure()
+    Axis(fig[1, 1])
+    @test (@test_deprecated r"`dcf\(\)` is deprecated and is removed in Logjam v0\.4\.0" dcf()) === nothing
+    @test (@test_deprecated r"end the cell with the figure, `fig`, or call `display\(current_figure\(\)\)`" dcf()) === nothing
+    @test current_figure() === fig
+    doc = string(@doc dcf)
+    @test occursin("deprecated", doc) && occursin("v0.4.0", doc) && occursin("display(current_figure())", doc)
+end
+
 # ---------------------------------------------------------------------------
 # makemap — code paths not covered in test_maptools.jl
 # ---------------------------------------------------------------------------
