@@ -410,8 +410,8 @@ _wp7b_place(tp) = ([Tuple(_WP7B_MK.sv_getindex(tp.align[], i)) for i in eachinde
         kw(T) = Base.kwarg_decl(which(plotroute!, T))
         @test Base.kwarg_decl(first(methods(plotroute!))) ==
               [:color, :linewidth, :linestyle, :arrows, :arrow_at, :arrow_size, :arrow_every]
-        # (WP7c appends its keywords to this method's and to plotshmt!'s first method's lists below: a deviation, to
-        # his ruling; WP7b's own keywords keep their places)
+        # (WP7c, D3, appends its keywords to this method's and to plotshmt!'s first method's lists below, as its brief
+        # asks; WP7b's own keywords keep their places)
         @test kw(Tuple{Axis, Vector{Int}, DataFrame, Matrix{Float64}}) ==
               [:tr, :P, :color, :linewidth, :linestyle, :arrows, :arrow_at, :arrow_size, :arrow_every, :names, :loads,
                :bend, :bend_at, :node_numbers, :node_size, :label]
