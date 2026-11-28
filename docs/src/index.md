@@ -18,7 +18,7 @@ The sections below follow the order of the course: location, transportation, dis
 
 ## Extensions
 
-Logjam draws maps with GeoMakie and the Makie backend the caller loads, CairoMakie in the course (`makemap` leaves the active backend's settings as the caller set them). Four optional extensions are available:
+Logjam draws maps with GeoMakie and the Makie backend the caller loads, CairoMakie in the course (`makemap` leaves the active backend's settings as the caller set them). Five optional extensions are available:
 
 ### Map Extension
 
@@ -26,6 +26,15 @@ Logjam draws maps with GeoMakie and the Makie backend the caller loads, CairoMak
 
 ```julia
 using CairoMakie, GeoMakie        # Triggers LogjamMapExt extension
+using Logjam
+```
+
+### Makie Extension
+
+`aligntext(ax, x, y, labels)`, which places labels clear of everything drawn in an axis, is the Makie extension's, which Makie loads: CairoMakie alone is enough, and GeoMakie loads it too. It works on a plain `Axis` and on the `GeoAxis` of `makemap`.
+
+```julia
+using CairoMakie                  # Triggers LogjamMakieExt extension
 using Logjam
 ```
 
@@ -343,6 +352,12 @@ of its 2020 polygon), or of a state (the extent of its counties' boxes). Raleigh
 using Logjam
 mapbbox("Raleigh"; state = :NC), mapbbox(:NC)
 ```
+
+`aligntext` has two methods. `aligntext(x, y)` chooses each label's side from the points alone, by the angles to
+its neighbors, and needs no extension. `aligntext(ax, x, y, labels)` reads the figure as drawn, each label's ink and
+every line, marker and other label in the axis, places the labels clear of them, and returns the keyword arguments
+`text!` splats; it needs Makie (the Makie extension), and names any label it could not place clear of everything
+when called with `verbose = true`.
 
 ```@docs
 makemap

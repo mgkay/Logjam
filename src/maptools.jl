@@ -522,6 +522,105 @@ function aligntext(x::Union{Real, AbstractVector{<:Real}, Tuple{Vararg{Real}}},
     end
 end
 
+# aligntext(ax, ...) is declared here, with its docstring, and given its method by the Makie extension
+# (ext/LogjamMakieExt.jl, which Makie triggers, so CairoMakie alone loads it, as GeoMakie does), since an axis exists only
+# once Makie is loaded. aligntext(x, y) above is core's and unchanged.
+"""
+    aligntext(ax, x, y, labels; fontsize, font, lineheight, justification, rotation, maxgap = 30, fix = nothing,
+              prefer = :outward, verbose = false) -> Tuple of Pairs
+
+Place `labels` beside the points `x`, `y` of the axis `ax`, clear of everything already drawn in it, and return the
+keyword arguments of `text!` that draw them there, to be splatted into it:
+
+```julia
+text!(ax, x, y; color = ink, aligntext(ax, x, y, names; fontsize = 18)...)
+```
+
+Requires Makie: the method is the Makie extension's, which CairoMakie loads, with or without GeoMakie. It works on a
+plain `Axis` and on the `GeoAxis` of `makemap`. Where `aligntext(x, y)` sees only the points, this method reads the
+figure as it is drawn: each label's ink at its font and size, and, in the axis's pixels, every line (at its width),
+every marker and every other label in the axis, and a legend inside it.
+
+# Arguments
+- `ax`: the axis, an `Axis` or a `GeoAxis`, with everything the labels must clear already drawn in it.
+- `x`, `y`: the points' coordinates, one per label, as `text!` takes them.
+- `labels`: the strings, one per point; a label may have several lines (`"Asheville\\n(L2)"`), placed as one block
+  whose lines are justified to the side away from the point.
+- `fontsize`, `font`, `lineheight`, `justification`, `rotation`: the keywords that set a label's size and shape. Give
+  them here and not to `text!`: each one given comes back in the returned pairs, so the labels are drawn at the size
+  they were placed at (giving one to both is Julia's repeated-keyword error). Any other keyword of `text!`, such as
+  `color`, goes to `text!`.
+- `maxgap`: the ordinary search radius, in pixels (default `30`). A label may go beyond it, to twice `maxgap`, only at a
+  steep cost, and so only to clear a data line, a marker or another label; touching a base layer within `maxgap` is
+  preferred to drifting farther.
+- `fix`: labels pinned by hand, as pairs `label => (align, offset)`, the label named by its string or its index:
+  `fix = ["Charlotte" => ((:right, :center), (-12, 4))]`. A pinned label is drawn exactly there, and the others are
+  placed around it. `align` is one of `(:left, :center)`, `(:left, :bottom)`, `(:center, :bottom)`,
+  `(:right, :bottom)`, `(:right, :center)`, `(:right, :top)`, `(:center, :top)`, `(:left, :top)` and
+  `(:center, :center)`; `offset` is in pixels.
+- `prefer`: which side of its point a label prefers when several are clear. `:outward` (default) the side
+  `aligntext(x, y)` chooses from the points' arrangement; `:imhof` the cartographic order northeast, northwest,
+  southwest, southeast, east, north, west, south (Imhof; Christensen, Marks and Shieber 1995, Fig. 1); `:near` no side,
+  and no cost for sitting nearer another labeled point, for labels such as a link's miles.
+- `verbose`: print one line per flagged label (below), naming it, its placement as the `align` and `offset` that `fix`
+  takes, and what it touches. Default `false`, which prints nothing.
+
+# Returns
+A tuple of pairs for `text!`: `:text => labels`, `:align => A`, `:offset => O`, and each of the size-setting keywords
+given, in the order listed above. `A` is a vector of `(horizontal, vertical)` alignments and `O` a vector of
+`(dx, dy)` offsets in pixels, one per label.
+
+# How a label is placed
+Each label is tried at the eight sides of its point (east, northeast, north, and so on, the alignment following the
+side) at radii from 3 pixels out to twice `maxgap`. A candidate costs its distance (more steeply past 20 pixels, and
+again past `maxgap`), its side's rank under `prefer`, and what it touches: a data line, a marker or another label 1000
+each, a base layer 40, any part outside the axis 5000; a label nearer another labeled point than its own costs 30,
+since it would read as that point's. The base layers are `makemap`'s, recognized by the labels the map extension
+gives them ("FAF5 Roads" with the close tier's other road classes, "Major Roads", "Interstate Roads", "US State
+Borders", "Country Borders"); on a map, a line fainter than opacity 0.35 is the muted background and no obstacle. A
+label none of whose sides within `maxgap` is clear of everything, base layers included, then searches every offset on
+a 1-pixel grid within `maxgap`, nearest first, and is offered the first six that clear everything by 1 pixel. Every
+label then moves in turn to its best position given the others, until none moves.
+
+A label left touching something, or beyond `maxgap`, is **flagged**: nothing within reach was clear. The placement is
+still returned; `verbose = true` names each flagged label, which can then be pinned with `fix`, the map widened, or the
+label shortened.
+
+# Behavior
+- **Deterministic.** No random number is drawn, so the same figure gives the same placement on every run, with
+  `verbose` on or off.
+- **Call it last,** after everything the labels must clear is drawn and the figure has its final size: the placement
+  is in the pixels of the figure as laid out, and a later `resize!` or plot moves what it was placed against.
+- The axis is left as it was: the labels are laid out in a temporary plot, deleted before the method returns.
+- `aligntext(x, y)` is unchanged and still returns only `:align` and `:offset`, from the points alone.
+
+# Examples
+North Carolina's places of more than 100,000 people on a map, each named clear of the borders, the dots and the
+other names (Lecture 2.2's map of its population-weighted minisum draws these):
+
+```julia
+using CairoMakie, GeoMakie, Logjam
+df = filter(r -> r.STFIP == st2fips(:NC) && r.POP > 100_000, usplace())
+fig, ax = makemap(df.LON, df.LAT)
+scatter!(ax, df.LON, df.LAT; markersize = 11, color = :red)
+text!(ax, df.LON, df.LAT; color = :black, aligntext(ax, df.LON, df.LAT, df.NAME; fontsize = 18)...)
+fig
+```
+
+On a plain axis, with one label pinned by hand; `verbose = true` prints a line for each label left touching something,
+here none:
+
+```julia
+using CairoMakie, Logjam
+fig = Figure(size = (400, 300)); ax = Axis(fig[1, 1])
+x, y = [0.0, 1.0, 2.0, 3.0], [0.0, 1.0, 0.0, 1.0]
+lines!(ax, x, y); scatter!(ax, x, y)
+text!(ax, x, y; aligntext(ax, x, y, ["A", "B", "C", "D"]; fix = ["B" => ((:left, :center), (8, 0))], verbose = true)...)
+fig
+```
+"""
+aligntext(ax, x, y, labels::AbstractVector)
+
 """
     mapbbox(x::Union{AbstractVector{<:Real}, Tuple{Vararg{Real}}},
             y::Union{AbstractVector{<:Real}, Tuple{Vararg{Real}}};

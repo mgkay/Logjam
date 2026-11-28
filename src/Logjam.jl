@@ -33,9 +33,9 @@ Always loaded: `Serialization`, `Artifacts`, `LazyArtifacts`, `Random`, `DataFra
 `DelaunayTriangulation`, `Graphs`, `SimpleWeightedGraphs`, `SparseArrays`, `Optim`.
 
 Weak dependencies, which activate an extension when loaded: `GeoMakie` (with `CairoMakie` to render)
-for maps; `HTTP` and `JSON3` for street-address geocoding with Nominatim; `LightOSM` to download an
-OpenStreetMap road network; `JuMP` and `HiGHS` together for `TSP`, `binpack`, and `snapvals` on JuMP
-variables.
+for maps; `Makie`, which CairoMakie loads, for `aligntext(ax, x, y, labels)`; `HTTP` and `JSON3` for
+street-address geocoding with Nominatim; `LightOSM` to download an OpenStreetMap road network; `JuMP` and
+`HiGHS` together for `TSP`, `binpack`, and `snapvals` on JuMP variables.
 """
 module Logjam
 

@@ -278,6 +278,38 @@ missed.
   `SparseAxisArray` (the TSP's `x`) is refused by both alike, its values having no `size`. **Lectures served:**
   every lecture that solves a JuMP model (2.7, 4.1 to 4.4, 5.3), whose `snapvals(value.(x))` keeps working; each
   lecture chooses at the re-pin whether `value.` stays visible (X3). **No migration.**
+- **`aligntext(ax, x, y, labels; fontsize, font, lineheight, justification, rotation, maxgap = 30, fix = nothing,
+  prefer = :outward, verbose = false)`: labels placed clear of everything drawn in an axis (D1, MAP1; CR 52, CR 61
+  and CR 3; the method's keywords provisional, D7).** A new method of `aligntext`, the Makie extension's
+  (`LogjamMakieExt`, which CairoMakie loads, with or without GeoMakie), so it works on a plain `Axis` and on
+  `makemap`'s `GeoAxis`. It returns the keyword arguments of `text!`, `:text`, `:align`, `:offset` and each of the
+  size-setting keywords given, to be splatted into it: `text!(ax, x, y; color = ink, aligntext(ax, x, y, names;
+  fontsize = 18)...)`, the size-setting keywords given to `aligntext` alone and `color` to `text!`. Where
+  `aligntext(x, y)` sees only the points, this method lays each label out at its font and size and reads, in the
+  axis's pixels, every line at its width, every marker, every other label and a legend inside the axis. Each label is
+  tried at the eight sides of its point out to twice `maxgap` pixels, at a cost for its distance (steeper past 20
+  pixels and again past `maxgap`), for its side's rank under `prefer` (`:outward`, the side `aligntext(x, y)`
+  chooses; `:imhof`, the cartographic order from northeast; `:near`, none), and for what it touches: a data line, a
+  marker or another label 1000 each, a base layer 40, the axis edge 5000, a label nearer another point than its own
+  30. A label with no side clear within `maxgap` then searches a 1-pixel grid within `maxgap` before it settles for
+  touching a base layer, and the labels move in turn until none moves. The base layers are `makemap`'s, recognized by
+  the labels the map extension gives them ("FAF5 Roads" with the close tier's other road classes, "Major Roads",
+  "Interstate Roads", "US State Borders", "Country Borders"); on a map a line fainter than opacity 0.35 is no
+  obstacle, as the course's label check has it. `fix` pins labels by name or index (`fix = ["Charlotte" =>
+  ((:right, :center), (-12, 4))]`) and places the others around them; `verbose = true` prints one line for each label
+  left touching something or beyond `maxgap` (flagged), with its placement in the form `fix` takes, and the default
+  prints nothing. Deterministic: no random number is drawn, so a figure gets the same placement on every run, with
+  `verbose` on or off. It is the round-three prototype of the plotting review ported, without the prototype's
+  simulated annealing, which was off by default and the one part that drew random numbers. Checked on synthetic
+  figures (`test/test_aligntext_ax.jl`: the splat, determinism, a label boxed in by data lines flagged, by base
+  layers flagged as touching one, `fix`, `prefer`, a fresh process with CairoMakie alone) and, as a report, by the
+  course's own label check on the review's 16 label figures, run under this branch on scratch copies of the
+  lectures' scripts: 9 contacts, 3 of them with data lines and 6 with state borders, every one in a flagged label
+  (7 labels, all in 2.3's nine-warehouse map and 3.4's Memphis map), the other 14 figures none, as the prototype
+  measured, where the lectures' own placements carried 18 under v0.2.8 and `aligntext(x, y)` on 2.3's map 26 (6 to
+  63 ms a figure once compiled, reported, not asserted). `aligntext(x, y)` is unchanged. **Lectures served:** 2.2,
+  2.3, 2.7, 3.4, 4.1, 5.1, 5.2 and 5.3, whose maps place their labels with `aligntext(x, y)`, by hand, or with the
+  course's drafting placer; each chooses at the re-pin whether to call it. **No migration.**
 
 ### Changed
 

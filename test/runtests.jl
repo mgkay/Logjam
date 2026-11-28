@@ -63,6 +63,7 @@ include("test_routing_v031.jl")    # WP6 (v0.3.1, E2): twoopt's and mincostinser
 end
 import JuMP, HiGHS
 include("test_jump_ext.jl")        # WP2 (v0.3.1, CR 45, E3, SV, X3): TSP, subtours and binpack against Lectures 5.1's, 5.3's and 2.7's definitions, run as text on their inputs; snapvals on JuMP variables against snapvals(value.(x)); fresh processes without and with JuMP and HiGHS
+include("test_aligntext_ax.jl")    # WP7a (v0.3.1, D1, MAP1): aligntext(ax, x, y, labels) in LogjamMakieExt on synthetic figures: the splat, determinism, what it reads and flags, base layers, fix, prefer, errors, the declarations; a fresh process with CairoMakie alone
 
 if haskey(ENV, "LOGJAM_NETWORK_TESTS")
     include("test_osm_network.jl")
