@@ -56,6 +56,14 @@ include("test_geodata_v031.jl")    # WP5 (v0.3.1, A4, A6, A10, X6): loc2lonlat's
 include("test_boxes_v031.jl")      # WP10 (v0.3.1, X7, X8): the place boxes from TIGER/Line 2020, mapbbox for a place and for a state (D3), every county's box bit for bit as at the branch's start; dgca(...; method = :empirical) against Lecture 2.5's @eq-daemp and MATLAB's dagg.m (D8)
 include("test_routing_v031.jl")    # WP6 (v0.3.1, E2): twoopt's and mincostinsert's verbose traces byte for byte against Lecture 5.1's Code block 15 and 5.2's Code block 17, run as text; verbose = false against v0.3.0's bodies (the routing doctests, DOC, run in test_doctests.jl)
 
+# WP2 (v0.3.1): every file above ran without JuMP and HiGHS, so without the optimization extension. They are loaded
+# here, by `import` so that Main gains none of their names, and LogjamJuMPExt with them, for the file that tests it.
+@testset "[WP2] the files above ran without the optimization extension" begin
+    @test Base.get_extension(Logjam, :LogjamJuMPExt) === nothing
+end
+import JuMP, HiGHS
+include("test_jump_ext.jl")        # WP2 (v0.3.1, CR 45, E3, SV, X3): TSP, subtours and binpack against Lectures 5.1's, 5.3's and 2.7's definitions, run as text on their inputs; snapvals on JuMP variables against snapvals(value.(x)); fresh processes without and with JuMP and HiGHS
+
 if haskey(ENV, "LOGJAM_NETWORK_TESTS")
     include("test_osm_network.jl")
     include("test_nominatim.jl")

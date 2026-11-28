@@ -24,8 +24,8 @@ and their names:
   and the constants `WORLD_LIMITS`, `US_LIMITS`, `CUS_LIMITS`.
 - **Display:** `prt`, `snapvals`, `thousands`.
 - **Public, not exported** (called as `Logjam.name`, so a script's own function of the name does not collide):
-  `scanTW`, `usstates`, the inventory measures `poissoncdf`, `pi0`, `qbar` and `poissarr`, and `shtr`, the `sh` and
-  `tr` contract.
+  `scanTW`, `usstates`, the inventory measures `poissoncdf`, `pi0`, `qbar` and `poissarr`, `shtr`, the `sh` and
+  `tr` contract, and the models `TSP` (with `subtours`) and `binpack`, which need JuMP and HiGHS.
 
 ## Dependencies
 
@@ -34,7 +34,8 @@ Always loaded: `Serialization`, `Artifacts`, `LazyArtifacts`, `Random`, `DataFra
 
 Weak dependencies, which activate an extension when loaded: `GeoMakie` (with `CairoMakie` to render)
 for maps; `HTTP` and `JSON3` for street-address geocoding with Nominatim; `LightOSM` to download an
-OpenStreetMap road network.
+OpenStreetMap road network; `JuMP` and `HiGHS` together for `TSP`, `binpack`, and `snapvals` on JuMP
+variables.
 """
 module Logjam
 
@@ -113,6 +114,8 @@ public usstates    # the state borders as NaN-separated polylines (maptools.jl);
 public _osm_cache_path, _osm_snap_bbox    # the tile files and the tile of a box (osmtools.jl); Lecture 4.2's data generator reports its boxes' tiles with them, so they are public (S18)
 public shtr    # the sh and tr contract (transtools.jl): its docstring is the contract, so ?Logjam.shtr shows it, and its value lists the fields (B11; the name provisional, D7)
 public poissoncdf, pi0, qbar, poissarr    # the inventory measures (invtools.jl): Lectures 6.2's and 6.3's definitions, `pi0` and `qbar` with 6.2's reorder-point forms as three-argument methods; not exported, since each body is a lecture's lesson and the lectures define the names (E1, D10)
+public TSP, subtours    # Lecture 5.1's TSP formulation, solved round by round, and the cycles of a successor vector (routetools.jl; CR 45): `TSP`'s method is LogjamJuMPExt's (JuMP and HiGHS), `subtours` is core's; not exported, since each body is a lecture's lesson and Lectures 5.1 and 5.3 define the names (D10)
+public binpack    # Lecture 2.7's bin packing model (loctools.jl; E3): its method is LogjamJuMPExt's (JuMP and HiGHS); not exported, since the body is the lecture's lesson and Lectures 2.7 and 5.3 define the name (D10)
 
 # Include component files
 include("loctools.jl")
@@ -137,12 +140,16 @@ Display current figure. Requires `using CairoMakie, GeoMakie`.
 function dcf end
 
 # The hint a MethodError carries when a function whose methods an extension adds is called without it (C5): the map
-# functions and `dcf` need GeoMakie (and CairoMakie to draw), a download needs LightOSM. Silent for any other error,
-# and for these functions once their extension is loaded, when a MethodError is a wrong argument.
+# functions and `dcf` need GeoMakie (and CairoMakie to draw), a download needs LightOSM, `TSP` and `binpack` need JuMP
+# and HiGHS together (WP2). Silent for any other error, and for these functions once their extension is loaded, when a
+# MethodError is a wrong argument.
 function _extension_hint(io, exc, argtypes, kwargs)
     f = exc.f === Core.kwcall ? exc.args[2] : exc.f
     if f in (makemap, plotroads!, plotroute!, dcf) && Base.get_extension(Logjam, :LogjamMapExt) === nothing
         print(io, "\n$(nameof(f)) needs the map extension, which GeoMakie loads. Run: using CairoMakie, GeoMakie")
+    elseif f in (TSP, binpack) && Base.get_extension(Logjam, :LogjamJuMPExt) === nothing
+        print(io, "\n$(nameof(f)) needs the optimization extension, which JuMP and HiGHS load together. ",
+              "Run: using JuMP, HiGHS")
     elseif f === _osm_download && Base.get_extension(Logjam, :LogjamOSMExt) === nothing
         print(io, "\nosm_roads downloads a box that is not saved in `cache_dir` with the OpenStreetMap extension. ",
               "Run: using LightOSM")

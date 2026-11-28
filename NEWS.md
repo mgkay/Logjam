@@ -240,6 +240,44 @@ missed.
   block 15 (`twoopt_prt`) and 5.2 Code block 17 (`mincostinsert_prt`), whose own printing definitions it can
   replace at the re-pin with `twoopt(π, πTCh; verbose = true)` and `mincostinsert(2, [1, 1], rTD1h; verbose =
   true)`; whether the lectures keep their printing versions is a decision about their shape. **No migration.**
+- **`Logjam.TSP(c)` and `Logjam.subtours(succ)`: Lecture 5.1's TSP formulation, solved one round of subtour
+  constraints at a time, and the cycles of a successor vector (CR 45; `TSP`'s name provisional, D7).** `TSP` builds
+  the DFJ formulation on the arc costs `c` (a binary `x[i, j]` for each arc `i ≠ j`, each node left once and entered
+  once), solves the assignment problem those rows make with HiGHS (silent, `mip_rel_gap = 0`, so the tour is proved
+  optimal), finds the solution's cycles with `subtours`, adds the single-tour constraint for each, and solves again
+  until the solution is one tour. It returns `(; TC, tour, rounds)`, the names 5.1 reads: the optimal cost, the tour
+  as a location sequence from node 1, and each round's `(; TC, S)`. Each body is the lecture's in its order; `TSP`
+  throws an `ArgumentError` for a matrix that is not square (the lecture's `error`) or has fewer than two nodes (on
+  which the lecture's loop would not end), and its `rounds` is a typed vector where the lecture's is `[]`. `TSP`'s
+  method is the optimization extension's, `LogjamJuMPExt`, which JuMP and HiGHS load together; called without them
+  it is a `MethodError` whose hint says `using JuMP, HiGHS`. `subtours` needs neither and is core's. Checked against
+  5.1's definitions run as text (`test/test_jump_ext.jl`): `subtours` `==` on all 5,914 permutations of up to seven
+  nodes; `TSP`'s cost to a relative 1e-9, its tour (up to rotation and reversal) and every round's subtours equal on
+  5.1's Ex. 2 (ten cities, 487.69 mi), Ex. 3(d), Ex. 4(c)'s 100 counties and Code block 24's random instances to
+  `m = 20` (and the first two of `m = 50`), and on 5.3's 31 points against its copy (1,131.60 mi). **Lectures
+  served:** 5.1 (Sec. 2's implementation rung, its Exs. 2 to 4) and 5.3 (Code blocks 9 and 10), which define both
+  inline and may call Logjam's at the re-pin; not exported, so a lecture's own definitions, made after `using
+  Logjam`, do not collide (D10). **No migration.**
+- **`Logjam.binpack(v, V; tlim = 60.0, gap = 1e-4)`: Lecture 2.7's bin packing model (E3; the name and keywords
+  provisional, D7).** A binary for each bin and for each object-bin pair, one potential bin for each object;
+  minimize the bins used subject to each bin's capacity and each object in exactly one bin; HiGHS, silent, with the
+  time limit `tlim` and the relative gap `gap`. It returns 2.7's `(; bins, used, status, gap, secs)`. The body is the
+  lecture's in its order, with an `ArgumentError` for an object larger than a bin (the model's assumption (b), where
+  the lecture's call throws from `value`). Its method is `LogjamJuMPExt`'s, with the same hint. Checked against 2.7's
+  definition and 5.3's copy run as text: the bin count `==`, every object in exactly one bin, no bin over its
+  capacity, and the packing itself equal, on 2.7's Ex. 8 (6 bins), Code block 28's 20 to 200 objects and Code block
+  29's 2% gap, and 5.3's Ex. 6 route times (4 trucks; the times as @tbl-ffd-steps prints them, to two decimals).
+  **Lectures served:** 2.7 (Sec. 4's implementation rung, Ex. 8, Code blocks 28 and 29) and 5.3 (Code blocks 48 and
+  49), which define it inline; not exported (D10). **No migration.**
+- **`snapvals(x)` on JuMP variables (SV, X3).** With JuMP and HiGHS loaded, `snapvals` takes an array of a solved
+  model's variables, `snapvals(x)` being `snapvals(value.(x))`, as ISE 361 F25 calls it, and one variable, whose
+  value it returns snapped, a `Float64` (`value.(x)` of one variable is a number, which the numeric method, calling
+  `Array`, does not take). The numeric method is unchanged. Checked `==` against `snapvals(value.(x))` on Lecture
+  4.3's production-inventory model (ISE 361 F25's 5-MIP-4 cell 16) on its Ex. 3, Lecture 2.7's Code block 2 and its
+  bin packing model, a `DenseAxisArray`, and variables fixed at the numeric method's own pinned values; a
+  `SparseAxisArray` (the TSP's `x`) is refused by both alike, its values having no `size`. **Lectures served:**
+  every lecture that solves a JuMP model (2.7, 4.1 to 4.4, 5.3), whose `snapvals(value.(x))` keeps working; each
+  lecture chooses at the re-pin whether `value.` stays visible (X3). **No migration.**
 
 ### Changed
 

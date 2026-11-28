@@ -18,7 +18,7 @@ The sections below follow the order of the course: location, transportation, dis
 
 ## Extensions
 
-Logjam draws maps with GeoMakie and the Makie backend the caller loads, CairoMakie in the course (`makemap` leaves the active backend's settings as the caller set them). Three optional extensions are available:
+Logjam draws maps with GeoMakie and the Makie backend the caller loads, CairoMakie in the course (`makemap` leaves the active backend's settings as the caller set them). Four optional extensions are available:
 
 ### Map Extension
 
@@ -51,6 +51,18 @@ using Logjam
 
 stops = DataFrame(STREET=["123 Main St"], CITY=["Raleigh"], STATE=[:NC])
 gc = loc2lonlat(stops)  # Geocodes via Nominatim with city/state fallback
+```
+
+### Optimization Extension
+
+`Logjam.TSP` (Lecture 5.1's TSP formulation) and `Logjam.binpack` (Lecture 2.7's bin packing model) solve their models with HiGHS through JuMP, and `snapvals` reads a solved model's variables, when JuMP and HiGHS are both loaded. Called without them, `TSP` and `binpack` are each a `MethodError` that says what to load. `Logjam.subtours`, which `TSP` calls, needs neither.
+
+```julia
+using JuMP, HiGHS                 # Triggers LogjamJuMPExt extension
+using Logjam
+
+r = Logjam.TSP(C)                 # C, a square matrix of arc costs
+r.TC, r.tour
 ```
 
 ```@index
@@ -91,6 +103,14 @@ wcentroid
 
 ```@docs
 randX
+```
+
+### Bin Packing
+
+Lecture 2.7's bin packing model, solved by HiGHS: it needs the optimization extension (`using JuMP, HiGHS`), so the manual shows its example without running it.
+
+```@docs
+binpack
 ```
 
 ## Transportation Functions
@@ -217,6 +237,15 @@ mincostinsert
 pairwisesavings
 savings
 twoopt
+```
+
+### The TSP as a MILP
+
+Lecture 5.1's formulation of the traveling salesman problem, solved one round of subtour constraints at a time. `TSP` needs the optimization extension (`using JuMP, HiGHS`), so the manual shows its example without running it; `subtours` needs nothing.
+
+```@docs
+TSP
+subtours
 ```
 
 ## Inventory Functions

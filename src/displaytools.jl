@@ -458,6 +458,8 @@ end
 
 """
     snapvals(x; atol=1e-8) -> Array
+    snapvals(x::AbstractArray{<:JuMP.AbstractVariableRef}; atol=1e-8) -> Array
+    snapvals(x::JuMP.AbstractVariableRef; atol=1e-8) -> Float64
 
 Snap near-integer and near-zero floating-point values in an array.
 
@@ -466,13 +468,19 @@ introduce small numerical artifacts (e.g., 2.9999999997 instead of 3, or
 1.2e-12 instead of 0). Each element is rounded to the nearest integer if within
 `atol`, and values that round to zero are set to exactly `0.0`.
 
+**With JuMP and HiGHS loaded** (`using JuMP, HiGHS`, the optimization extension), `snapvals` also takes the
+variables of a solved model and reads their values itself, as ISE 361 F25 calls it: `snapvals(x)` for an array of
+variables is `snapvals(value.(x))`, and for one variable it is that variable's value snapped, a `Float64`.
+`snapvals(value.(x))` keeps working and returns the same.
+
 **Caveat:** Snapping may cause constraint violations in some models. When snapped
 values are used in further computation, verify feasibility — particularly for
 models with big-M constraints where rounding a near-zero binary variable to 0
 can violate the associated constraint by a large amount.
 
 # Arguments
-- `x`: Array of numeric values (typically from `value.(x)` after JuMP solve).
+- `x`: Array of numeric values (typically from `value.(x)` after JuMP solve), or, with JuMP and HiGHS loaded, a
+  JuMP variable or an array of them (`x[i=1:m, j=1:t]`, or a `DenseAxisArray`).
 - `atol`: Tolerance for snapping (default: `1e-8`).
 
 # Example
@@ -485,6 +493,29 @@ snapvals([2.9999999997, 1e-12, 0.5])
  3.0
  0.0
  0.5
+```
+
+On a solved model's variables, Lecture 2.7's Code block 2, the relaxation at node 0 of its branch and bound (shown,
+not run when the manual is built: the manual's environment does not load JuMP and HiGHS):
+
+```julia-repl
+julia> using JuMP, HiGHS, Logjam
+
+julia> m = Model(HiGHS.Optimizer); set_silent(m)
+
+julia> @variable(m, 0 <= x₁); @variable(m, 0 <= x₂);
+
+julia> @objective(m, Max, 6x₁ + 8x₂); @constraint(m, 2x₁ + 3x₂ <= 11); @constraint(m, 2x₁ <= 7);
+
+julia> optimize!(m)
+
+julia> snapvals([x₁, x₂])                       # the same as snapvals(value.([x₁, x₂]))
+2-element Vector{Float64}:
+ 3.5
+ 1.3333333333333333
+
+julia> snapvals(x₂)
+1.3333333333333333
 ```
 """
 function snapvals(x; atol::Real=1e-8)

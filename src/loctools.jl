@@ -551,6 +551,76 @@ function pmedian(p, C; verbose = true, construct::Symbol = :add)
 end
 
 # =============================================================================
+# Bin packing (E3): Lecture 2.7's model. It needs JuMP and HiGHS, so it is declared here with its docstring and its
+# method is the optimization extension's (LogjamJuMPExt). `public`, not exported (D10).
+# =============================================================================
+
+"""
+    Logjam.binpack(v, V; tlim = 60.0, gap = 1e-4) -> (bins, used, status, gap, secs)
+
+The fewest bins of capacity `V` that hold objects of sizes `v`, by Lecture 2.7's bin packing model
+(`@mdl-binpack`): a binary `y[i]`, one if bin `i` is used, and `x[i, j]`, one if object `j` is in bin `i`, with one
+potential bin for each object; minimize the bins used, ``\\sum_i y_i``, subject to (a) capacity,
+``V y_i \\ge \\sum_j v_j x_{ij}``, the objects in a bin within its capacity, and (b) assignment,
+``\\sum_i x_{ij} = 1``, every object in exactly one bin. HiGHS solves it silently.
+
+Needs JuMP and HiGHS: `using JuMP, HiGHS` loads the optimization extension that adds the method. Called without
+them, it is a `MethodError` that says what to load.
+
+# Arguments
+- `v`: the size of each object, in the bin's own unit.
+- `V`: the capacity of one bin. No object may be larger (the model's assumption (b)); one that is is an
+  `ArgumentError`.
+- `tlim`: the seconds after which HiGHS gives up and returns the best packing it has found (`set_time_limit_sec`).
+  The model has ``m^2 + m`` binaries for `m` objects, and the default of 60 is Lecture 2.7's, measured to cover two
+  hundred objects several times over.
+- `gap`: the relative gap at which HiGHS stops (`mip_rel_gap`). The objective counts bins, so a gap below one bin's
+  share of the count changes nothing, and above it the saving comes in whole bins (Lecture 2.7).
+
+# Returns
+A `NamedTuple` `(; bins, used, status, gap, secs)`, Lecture 2.7's:
+- `bins`: for each bin used, in the order of the bins, the objects in it.
+- `used`: the number of bins used, the objective value as an `Int`.
+- `status`: `termination_status`: `OPTIMAL` when the search ended within `gap`, `TIME_LIMIT` when `tlim` ran out first.
+- `gap`: `relative_gap`, what the search achieved.
+- `secs`: `solve_time`, HiGHS's seconds.
+
+# Example
+Lecture 2.7's Ex. 8, twenty objects of whole sizes from 1 to 5 (drawn there with `Random.seed!(1244)`, written out
+here) into bins of capacity 10. The total is 60, so no packing uses fewer than 6 bins, and the model finds 6, each
+exactly full. (Shown, not run when the manual is built: the manual's environment does not load JuMP and HiGHS.)
+
+```julia-repl
+julia> using JuMP, HiGHS, Logjam
+
+julia> vB = [2, 4, 4, 5, 4, 3, 3, 3, 1, 5, 5, 4, 2, 3, 1, 4, 1, 2, 1, 3];
+
+julia> packed = Logjam.binpack(vB, 10);
+
+julia> packed.used, packed.status
+(6, OPTIMAL)
+
+julia> [sum(vB[b]) for b in packed.bins]          # the volume in each bin
+6-element Vector{Int64}:
+ 10
+ 10
+ 10
+ 10
+ 10
+ 10
+```
+
+# Notes
+- Source: Lecture 2.7 Sec. 4's implementation rung (`2-loc-7.qmd`, its Ex. 8 and Code blocks 28 and 29), repeated
+  by Lecture 5.3 (Code block 48) to find the fewest trucks for its routes; this is that definition, the lecture's
+  body in its order (E3). **Declared `public`, not exported** (D10): the body is the lecture's lesson, so a
+  lecture's own `binpack`, defined after `using Logjam`, does not collide with it.
+- Which objects share a bin is the solution HiGHS returns, so it can differ between HiGHS versions; the number of
+  bins of a search that ends `OPTIMAL` at the default `gap` cannot.
+"""
+function binpack end
+
+# =============================================================================
 # Alternating Location–Allocation
 # =============================================================================
 

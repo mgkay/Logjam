@@ -1469,3 +1469,127 @@ function _savings(rteTCh, n, iˢ, jˢ; insert = _mincostinsert, TC1 = nothing)
     end
     return Vector{Int}[r for r in rte if r !== nothing]
 end
+
+# =============================================================================
+# The TSP as a MILP (CR 45): Lecture 5.1 Sec. 2's implementation rung. `subtours` needs nothing but Julia and is
+# defined here; `TSP` needs JuMP and HiGHS, so it is declared here with its docstring and its method is the
+# optimization extension's (LogjamJuMPExt). Both `public`, not exported (D10).
+# =============================================================================
+
+"""
+    Logjam.subtours(succ) -> Vector{Vector{Int}}
+
+The cycles of a successor vector: `succ[i]` is the node that follows node `i`, and each cycle is the nodes met by
+following the arcs from its first node back to it, in that order. A single cycle is a tour; more than one are
+**subtours**. `Logjam.TSP` calls it on each round's solution, whose successors are a permutation of the nodes.
+
+The cycles are found in the order of their first nodes: the first starts at node 1, and each later one at the
+lowest node not yet in a cycle.
+
+# Arguments
+- `succ`: the successor of each node `1, ..., n`, a permutation of `1:n` (not checked).
+
+# Returns
+- One vector of nodes for each cycle, each starting at its lowest node.
+
+# Example
+```jldoctest
+julia> Logjam.subtours([2, 1, 4, 5, 3])      # 1 → 2 → 1, and 3 → 4 → 5 → 3
+2-element Vector{Vector{Int64}}:
+ [1, 2]
+ [3, 4, 5]
+
+julia> Logjam.subtours([3, 1, 4, 2])         # one cycle: a tour
+1-element Vector{Vector{Int64}}:
+ [1, 3, 4, 2]
+```
+
+# Notes
+- Source: Lecture 5.1 Sec. 2's implementation rung (`5-rte-1.qmd`), with `TSP`, repeated by Lecture 5.3 (Code
+  block 9); this is that definition (CR 45). **Declared `public`, not exported** (D10): a lecture's own
+  `subtours`, defined after `using Logjam`, does not collide with it. It needs neither JuMP nor HiGHS, so it is
+  available without the optimization extension.
+"""
+function subtours(succ::AbstractVector{<:Integer})
+    S, seen = Vector{Vector{Int}}(), falses(length(succ))
+    for k ∈ eachindex(succ)
+        seen[k] && continue
+        Sₖ, i = Int[], k
+        while !seen[i]                 # follow the arcs back to k
+            seen[i] = true
+            push!(Sₖ, i)
+            i = succ[i]
+        end
+        push!(S, Sₖ)
+    end
+    return S
+end
+
+"""
+    Logjam.TSP(c) -> (TC, tour, rounds)
+
+The optimal tour of a traveling salesman problem (TSP) on the arc costs `c`, by Lecture 5.1's math-programming
+formulation (`@mdl-tsp`, the DFJ formulation): a binary `x[i, j]` for each arc `i ≠ j`, one if the tour goes from
+node `i` directly to node `j`; minimize ``\\sum_{i,j} c_{ij} x_{ij}`` subject to (a) each node left once,
+(b) each node entered once, and (c), single tour, ``\\sum_{i \\in S} \\sum_{j \\in S} x_{ij} \\le |S| - 1`` for each
+subset ``S`` of the nodes, neither empty nor all of them.
+
+Row (c) has one constraint for each subset, so the formulation is solved one round at a time (constraint
+generation): rows (a) and (b) alone, the assignment problem, are solved first; `Logjam.subtours` finds the cycles
+of the solution; row (c) is added for each of them, and the problem is solved again, until the solution is a single
+tour. Each round solves the TSP with only some of its subtour constraints, so its cost is a lower bound on the
+optimal tour's and the costs can only rise from round to round; the tour of the last round satisfies every subtour
+constraint without their having been added, so it is optimal.
+
+Needs JuMP and HiGHS: `using JuMP, HiGHS` loads the optimization extension that adds the method. Called without
+them, it is a `MethodError` that says what to load. HiGHS solves each round silently with `mip_rel_gap = 0`, so
+the tour is proved optimal rather than within HiGHS's default gap of 0.01%.
+
+# Arguments
+- `c`: square matrix of arc costs, `c[i, j]` the cost from node `i` to node `j`, for `n ≥ 2` nodes; symmetric or
+  not. The diagonal is not read.
+
+# Returns
+A `NamedTuple` `(; TC, tour, rounds)`:
+- `TC`: the optimal tour's cost, HiGHS's objective value (`Float64`).
+- `tour`: the optimal tour as a location sequence, starting and ending at node 1.
+- `rounds`: one `(; TC, S)` for each round, in order: the round's cost and its cycles, `Logjam.subtours` of its
+  solution. The last round's `S` is the tour, as a single cycle.
+
+Throws an `ArgumentError` for a matrix that is not square or has fewer than two nodes, and an `ErrorException`
+naming HiGHS's termination status when a round does not end `OPTIMAL`.
+
+# Example
+Lecture 5.1's Ex. 2, the ten North Carolina cities of over 100,000 people under great circle distances, in three
+rounds: the assignment problem's four subtours, then three, then the tour. (Shown, not run when the manual is built:
+the manual's environment does not load JuMP and HiGHS.)
+
+```julia-repl
+julia> using JuMP, HiGHS, Logjam
+
+julia> df = filter(r -> r.STFIP == st2fips(:NC) && r.POP > 100_000, usplace());
+
+julia> P = hcat(df.LON, df.LAT);
+
+julia> nc10 = Logjam.TSP(dists(P, P, :mi));
+
+julia> round(nc10.TC, digits = 2), nc10.tour
+(487.69, [1, 4, 6, 7, 10, 3, 2, 5, 9, 8, 1])
+
+julia> [length(rd.S) for rd in nc10.rounds]      # the subtours of each round
+3-element Vector{Int64}:
+ 4
+ 3
+ 1
+```
+
+# Notes
+- Source: Lecture 5.1 Sec. 2's implementation rung (`5-rte-1.qmd`), which its Exs. 2, 3 and 4 solve, repeated by
+  Lecture 5.3 (Code block 9) for the optimal tour of its 30 customers; this is that definition, the lecture's body
+  in its order (CR 45). **Declared `public`, not exported** (D10): the body is the lecture's lesson, so a lecture's
+  own `TSP`, defined after `using Logjam`, does not collide with it.
+- HiGHS has no lazy-constraint callback, so each round is a new solve of one model that grows by the constraints
+  added. Which subtours a round finds is the solution HiGHS returns, so the number of rounds can differ between
+  HiGHS versions; the optimal cost cannot.
+"""
+function TSP end
