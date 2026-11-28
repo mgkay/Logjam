@@ -177,7 +177,9 @@ maps only where FAF5 has ramps v0.3.0's name rule missed.
   and `COUNTY`, and a string names a column as a `Symbol` does. **Deprecated:** the old names `street`, `city`,
   `state`, `postalcode` and `county` still work, with the same result, and call `Base.depwarn` naming the new one,
   which prints only when Julia runs with `--depwarn=yes` (as `Pkg.test` does), so a script's output is unchanged;
-  passing a keyword by both names is an `ArgumentError`. They were renamed because `state` named a column here and is
+  passing a keyword by both names is an `ArgumentError`. The old names are removed in v0.4.0 (D7, DEP1), with `dcf`
+  and v0.3.0's deprecations (`makemap`'s `doRoadbkgd`, `loc2lonlat`'s `cache_dir`, `shortestpaths(g, weights, n)`).
+  They were renamed because `state` named a column here and is
   a state in the string and vector methods. **A state column that is named and is not in the table is now an
   `ArgumentError`** that says so and points to `state_col`: `loc2lonlat(DataFrame(CITY = ["Athens", "Portland",
   "Jacksonville"]); state = :GA)` read `:GA` as a column and returned `FAIL` for every row, with no warning (review
