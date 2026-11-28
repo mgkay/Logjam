@@ -1,6 +1,10 @@
 using Logjam
 using Documenter
 
+# The data artifacts are lazy: on a fresh machine the first call that reads one downloads it, and Pkg's
+# "Downloading artifact" lines would print inside that docstring example and fail its doctest. Read both here first.
+faf5nodes(); usrdnodemap()
+
 DocMeta.setdocmeta!(Logjam, :DocTestSetup, :(using Logjam); recursive=true)
 
 makedocs(;
