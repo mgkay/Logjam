@@ -322,3 +322,355 @@ end
     @test occursin("makie=true map=false geomakie=false text=true " *
                    "align=[(:right, :top), (:left, :top), (:left, :bottom), (:right, :bottom)]", s)
 end
+
+# ==== added by PCV WP7b of Logjam v0.3.1 (D2, MAP16, CR 50, CR 61): plotroute! in this extension, its stops and route
+# numbers, and plotshmt! ====
+# Test spec Sec. 11. Synthetic figures, and the lectures' own names and shipment tables for the label strings:
+#   1. the declarations: plotroute!'s three methods and plotshmt!'s two are this extension's, each docstring in core,
+#      the first method's keywords v0.3.0's (the course's logjam_kwargs reads them), no ambiguity; without names, loads
+#      or number every return is v0.3.0's (; lines, arrows), and a v0.3.0 call draws the same lines and arrowheads on an
+#      axis that holds Logjam's labels as on one that does not. The v0.3.0 pins themselves are test_LogjamMapExt.jl's
+#      (with GeoMakie), unchanged; 6 below draws them on a plain Axis in a process with CairoMakie alone;
+#   2. names and loads: a dot and a label at each stop, once, in the order the route first visits it; the text == Lectures
+#      5.2's and 5.3's citylabel (copied as text), loads alone `ldlabel`, names alone the name; on a GeoAxis too;
+#   3. number: one per route, `true` "1" to "n", strings as given, each in its route's color, anchored at the centroid of
+#      its stops with the truck's locations left out;
+#   4. Logjam's labels are placed again when a later plotroute! or plotshmt! call adds to the axis, and only then: the
+#      placement aligntext(ax, ...) gives on the figure as it then stands; a label plot deleted is forgotten;
+#   5. plotshmt!: one arrowhead per shipment on both methods; `bend` bows each shipment to the left of its travel; the
+#      routes method draws a route of more than one shipment as a route and a single-shipment route as a shipment, and
+#      with the truck's locations every route as a route; the checks;
+#   6. a fresh process with CairoMakie alone (no GeoMakie, so no LogjamMapExt): every method draws, on a plain Axis,
+#      exactly what it draws in this process with GeoMakie loaded.
+
+using Test
+using Logjam
+using CairoMakie
+using GeoMakie
+using DataFrames
+
+const _WP7B_MX = Base.get_extension(Logjam, :LogjamMakieExt)
+const _WP7B_MK = CairoMakie.Makie
+
+# Lectures 5.2's and 5.3's city labels, as text: the six cities (5-routing/5-rte-2.qmd:581-582), `ldlabel` (Code block
+# 1, 5-rte-2.qmd:207-214) and `citylabel` (5-rte-2.qmd:641; 5-rte-3.qmd:1574 is the same line)
+const _WP7B_CITYLABEL = raw"""
+City = ["Raleigh", "Athens", "Asheville", "Jacksonville", "Savannah",
+        "Gainesville"]
+# the shipments loaded (L) and unloaded (U) at location i: (L1,2:U3)
+function ldlabel(i, sh)
+    L, U = findall(==(i), sh.b), findall(==(i), sh.e)
+    parts = [isempty(L) ? "" : "L" * join(L, ","),
+             isempty(U) ? "" : "U" * join(U, ",")]
+    s = join(filter(!isempty, parts), ":")
+    return isempty(s) ? "" : "($s)"
+end
+citylabel(i, sh) = City[i] * "\n" * ldlabel(i, sh)
+"""
+function _wp7b_citylabels()
+    m = Module(:WP7bCity)
+    Core.eval(m, :(using Logjam))
+    Core.eval(m, :(using DataFrames))
+    foreach(ex -> ex isa LineNumberNode || Core.eval(m, ex), Meta.parseall(_WP7B_CITYLABEL).args)
+    return m
+end
+const _WP7B_LEC = _wp7b_citylabels()
+_wp7b_city() = Base.invokelatest(getfield, _WP7B_LEC, :City)
+_wp7b_citylabel(i, sh) = Base.invokelatest(getfield(_WP7B_LEC, :citylabel), i, sh)
+
+# six locations on a plain axis, laid out as 5.2's cities lie (synthetic coordinates), and 5.2's shipments
+const _WP7B_XY = [8.0 8.5; 3.0 5.0; 4.0 8.0; 6.0 1.5; 7.0 3.5; 5.0 0.8]
+_wp7b_sh() = DataFrame(b = [1, 3, 5], e = [2, 4, 6])           # 5.2's Ex. 2 (5-rte-2.qmd:593)
+_wp7b_shR() = DataFrame(b = ones(Int, 5), e = [2:6;])          # 5.2's shR (5-rte-2.qmd:1925)
+
+function _wp7b_axis(; size = (500, 450), limits = (0, 10, 0, 10))
+    fig = Figure(; size)
+    ax = Axis(fig[1, 1]; limits)
+    hidedecorations!(ax)
+    return fig, ax
+end
+_wp7b_pts(p) = [(Float64(q[1]), Float64(q[2])) for q in p[1][]]
+_wp7b_place(tp) = ([Tuple(_WP7B_MK.sv_getindex(tp.align[], i)) for i in eachindex(tp.input_text[])],
+                   [(o = _WP7B_MK.sv_getindex(tp.offset[], i); (Float64(o[1]), Float64(o[2]))) for i in eachindex(tp.input_text[])])
+
+@testset "WP7b (v0.3.1) plotroute! and plotshmt! in LogjamMakieExt: stops, route numbers, shipments" begin
+    XY, City = _WP7B_XY, _wp7b_city()
+
+    @testset "1. the declarations, and every call without the new keywords returns and draws what v0.3.0 did" begin
+        @test length(methods(plotroute!)) == 3 && all(m -> m.module === _WP7B_MX, methods(plotroute!))
+        @test length(methods(plotshmt!)) == 2 && all(m -> m.module === _WP7B_MX, methods(plotshmt!))
+        @test parentmodule(ldlabel) === Logjam && length(methods(ldlabel)) == 2
+        @test all(m -> m.module === Logjam, methods(ldlabel))
+        meta = Base.Docs.meta(Logjam)
+        for s in (:plotroute!, :plotshmt!, :ldlabel)
+            @test haskey(meta, Base.Docs.Binding(Logjam, s))
+        end
+        @test isempty(Base.Docs.meta(_WP7B_MX))
+        @test :plotshmt! in names(Logjam) && :ldlabel in names(Logjam)
+        kw(T) = Base.kwarg_decl(which(plotroute!, T))
+        @test Base.kwarg_decl(first(methods(plotroute!))) ==
+              [:color, :linewidth, :linestyle, :arrows, :arrow_at, :arrow_size, :arrow_every]
+        @test kw(Tuple{Axis, Vector{Int}, DataFrame, Matrix{Float64}}) ==
+              [:tr, :P, :color, :linewidth, :linestyle, :arrows, :arrow_at, :arrow_size, :arrow_every, :names, :loads]
+        @test kw(Tuple{Axis, Vector{Vector{Int}}, DataFrame, Matrix{Float64}}) ==
+              [:tr, :P, :colors, :linewidth, :linestyle, :arrows, :arrow_at, :arrow_size, :arrow_every, :names, :loads, :number]
+        @test Base.kwarg_decl(which(plotshmt!, Tuple{Axis, DataFrame, Matrix{Float64}})) ==
+              [:bend, :color, :linewidth, :linestyle, :arrows, :arrow_at, :arrow_size, :names, :loads]
+        @test Base.kwarg_decl(which(plotshmt!, Tuple{Axis, DataFrame, Matrix{Float64}, Vector{Vector{Int}}})) ==
+              [:tr, :color, :colors, :linewidth, :linestyle, :arrows, :arrow_at, :arrow_size, :arrow_every, :names, :loads]
+        @test isempty(Test.detect_ambiguities(Logjam, _WP7B_MX))
+        # the returns without names, loads or number
+        sh = _wp7b_sh()
+        fig, ax = _wp7b_axis()
+        @test keys(plotroute!(ax, XY[:, 1], XY[:, 2])) == (:lines, :arrows)
+        @test keys(plotroute!(ax, [1, 2, 1, 3, 2, 3], sh, XY)) == (:lines, :arrows)
+        @test keys(plotroute!(ax, [[1, 1], [2, 3, 2, 3]], sh, XY)) == (:lines, :arrows)
+        @test keys(plotshmt!(ax, sh, XY)) == (:lines, :arrows)
+        @test keys(plotshmt!(ax, sh, XY, [[1, 1], [2, 3, 2, 3]])) == (:lines, :arrows, :routes)
+        # a v0.3.0 call draws the same on an axis that holds Logjam's labels as on one that does not
+        function draw(labeled)
+            fig, ax = _wp7b_axis()
+            labeled && plotshmt!(ax, sh, XY; names = City, loads = true)
+            h1 = plotroute!(ax, [1, 2, 1, 3, 2, 3], sh, XY; color = :green, arrow_at = 0.4)
+            h3 = plotroute!(ax, [[1, 1], [2, 3, 2, 3]], sh, XY; arrow_every = 2)
+            _WP7B_MK.update_state_before_display!(fig)
+            return (_wp7b_pts(h1.lines), _wp7b_pts(h1.arrows), h1.arrows.rotation[],
+                    [_wp7b_pts(l) for l in h3.lines], [_wp7b_pts(a) for a in h3.arrows])
+        end
+        @test draw(true) == draw(false)
+    end
+
+    @testset "2. names and loads: a dot and a label at each stop, once; the text is the lectures' citylabel" begin
+        sh = _wp7b_sh()
+        rte = [1, 2, 1, 3, 2, 3]
+        stops = unique(rte2loc(rte, sh))
+        @test stops == [1, 3, 2, 5, 4, 6]
+        fig, ax = _wp7b_axis()
+        h = plotroute!(ax, rte, sh, XY; names = City, loads = true)
+        @test keys(h) == (:lines, :arrows, :markers, :labels)
+        @test h.markers isa Scatter && _wp7b_pts(h.markers) == [(XY[i, 1], XY[i, 2]) for i in stops]
+        @test h.labels isa _WP7B_MK.Text
+        @test h.labels.input_text[] == [_wp7b_citylabel(i, sh) for i in stops]           # one per stop, 5.2's text
+        @test _wp7b_pts(h.labels) == [(XY[i, 1], XY[i, 2]) for i in stops]
+        # loads alone, names alone; a stop with nothing to show has no label (the truck's depot, here not a city with
+        # a shipment); the truck's locations are stops
+        h = plotroute!(ax, rte, sh, XY; loads = true)
+        @test h.labels.input_text[] == [ldlabel(i, sh) for i in stops]
+        h = plotroute!(ax, rte, sh, XY; names = City)
+        @test h.labels.input_text[] == City[stops]
+        tr = (b = [1], e = [1])
+        shR = _wp7b_shR()
+        r = [1, 2, 3, 4, 5, 1, 2, 3, 4, 5]
+        h = plotroute!(ax, r, shR, XY; tr, names = City, loads = true)
+        @test h.labels.input_text[] == [_wp7b_citylabel(i, shR) for i in unique(rte2loc(r, shR, tr))]
+        @test first(h.labels.input_text[]) == "Raleigh\n(L1,2,3,4,5)"
+        h = plotroute!(ax, [1, 1], DataFrame(b = [3], e = [4]), XY; tr = (b = [1], e = [1]), loads = true)
+        @test h.labels.input_text[] == ["(L1)", "(U1)"] && length(h.markers[1][]) == 3   # the depot, 1, carries nothing
+        # several routes: the stops of all, once
+        R = [[1, 1], [2, 3, 2, 3]]
+        h = plotroute!(ax, R, sh, XY; names = City, loads = true)
+        @test keys(h) == (:lines, :arrows, :markers, :labels)
+        @test h.labels.input_text[] == [_wp7b_citylabel(i, sh) for i in unique(reduce(vcat, rte2loc(R, sh)))]
+        # names indexed by location, so a network's XY may have more rows than there are names
+        @test_throws ArgumentError plotroute!(ax, rte, sh, XY; names = City[1:4])
+        @test_throws ArgumentError plotroute!(ax, rte, sh, XY; names = "Raleigh")
+        @test_throws ArgumentError plotroute!(Figure()[1, 1], rte, sh, XY; names = City)  # labels need an axis
+        # on makemap's GeoAxis, with the lectures' own cities (5-rte-2.qmd:581-586)
+        St = [:NC, :GA, :NC, :FL, :GA, :FL]
+        loc = [loc2lonlat(c; state = s) for (c, s) in zip(City, St)]
+        G = [[q.LON for q in loc] [q.LAT for q in loc]]
+        fig, gax = makemap(G[:, 1], G[:, 2]; xexpand = 0.3, size = (600, 520))
+        h = plotroute!(gax, rte, sh, G; names = City, loads = true)
+        @test h.labels.input_text[] == [_wp7b_citylabel(i, sh) for i in stops] && length(h.labels.align[]) == 6
+    end
+
+    @testset "3. number: one per route, at the centroid of its stops, in its route's color" begin
+        sh = _wp7b_sh()
+        R = [[1, 2, 1, 2], [3, 3]]
+        fig, ax = _wp7b_axis()
+        h = plotroute!(ax, R, sh, XY; number = true)
+        @test keys(h) == (:lines, :arrows, :numbers)
+        @test h.numbers isa _WP7B_MK.Text && h.numbers.input_text[] == ["1", "2"]
+        cen(loc) = (sum(XY[loc, 1]) / length(loc), sum(XY[loc, 2]) / length(loc))
+        @test _wp7b_pts(h.numbers) == [cen([1, 3, 2, 4]), cen([5, 6])]
+        @test _WP7B_MK.to_color.(h.numbers.color[]) == _WP7B_MK.to_color.(_WP7B_MK.wong_colors()[1:2])
+        @test h.numbers.font[] == :bold && h.numbers.justification[] == :center
+        h = plotroute!(ax, R, sh, XY; number = ["Route 1", "Route 2\n(Shmt 3)"], colors = [:green, :red])
+        @test h.numbers.input_text[] == ["Route 1", "Route 2\n(Shmt 3)"]
+        @test _WP7B_MK.to_color.(h.numbers.color[]) == _WP7B_MK.to_color.([:green, :red])
+        # with the truck's locations, the depot is left out of the centroid; as often as the route visits a location
+        tr = (b = [1], e = [1])
+        h = plotroute!(ax, [[2, 2], [3, 3]], sh, XY; tr, number = true)
+        @test _wp7b_pts(h.numbers) == [cen([3, 4]), cen([5, 6])]
+        shR = _wp7b_shR()
+        h = plotroute!(ax, [[1, 2, 1, 2]], shR, XY; number = true)                        # no truck: Raleigh counts twice
+        @test _wp7b_pts(h.numbers) == [cen([1, 1, 2, 3])]
+        # with names and loads too: labels first, then numbers
+        h = plotroute!(ax, R, sh, XY; number = true, names = City, loads = true)
+        @test keys(h) == (:lines, :arrows, :markers, :labels, :numbers)
+        @test_throws ArgumentError plotroute!(ax, R, sh, XY; number = ["one"])
+        @test_throws ArgumentError plotroute!(ax, R, sh, XY; number = :yes)
+        @test_throws ArgumentError plotroute!(ax, [Int[]], sh, XY; number = true)          # nothing to number
+    end
+
+    @testset "4. Logjam's labels are placed again when a later Logjam call adds to the axis, and only then" begin
+        # a shipment and its two ends' labels; then lines over the quadrant Alpha's label took, a plain Makie call first
+        fig, ax = _wp7b_axis(size = (400, 300))
+        sh = DataFrame(b = [1], e = [2])
+        P = [5.0 5.0; 5.0 1.0]
+        h = plotshmt!(ax, sh, P; names = ["Alpha", "Beta"])
+        a0, o0 = _wp7b_place(h.labels)
+        sx = a0[1][1] === :right ? (-1,) : a0[1][1] === :left ? (1,) : (-1, 1)        # west, east, or both
+        sy = a0[1][2] === :top ? (-1,) : a0[1][2] === :bottom ? (1,) : (-1, 1)        # south, north, or both
+        bx, by = Float64[], Float64[]
+        for u in sx, v in sy, k in 1:12                            # horizontal strokes 0.1 apart over that quadrant
+            append!(bx, [5.0 + u * 0.05, 5.0 + u * 2.0, NaN]); append!(by, fill(5.0 + v * (0.03 + 0.1k), 2)); push!(by, NaN)
+        end
+        lines!(ax, bx, by; color = :black)                         # not a Logjam call: nothing moves
+        @test _wp7b_place(h.labels) == (a0, o0)
+        plotroute!(ax, bx, by; color = :black, arrows = false)     # a Logjam call: Alpha moves, clear of every line
+        a1, o1 = _wp7b_place(h.labels)
+        @test (a1[1], o1[1]) != (a0[1], o0[1])
+        # where it moved is what aligntext(ax, ...) gives on the figure as it now stands, the label plot hidden
+        h.labels.visible[] = false
+        q = _WP7B_MX._aligntext(ax, [5.0, 5.0], [5.0, 1.0], ["Alpha", "Beta"])
+        h.labels.visible[] = true
+        @test q.align == a1 && [Float32.(o) for o in q.offset] == [Float32.(o) for o in o1]   # Makie keeps offsets in Float32
+        @test isempty(q.flagged)
+        # deterministic: the same figure drawn again places the same
+        fig2, ax2 = _wp7b_axis(size = (400, 300))
+        h2 = plotshmt!(ax2, sh, P; names = ["Alpha", "Beta"])
+        lines!(ax2, bx, by; color = :black)
+        plotroute!(ax2, bx, by; color = :black, arrows = false)
+        @test _wp7b_place(h2.labels) == (a1, o1)
+        # route numbers are placed again too, and a label plot deleted is forgotten
+        fig, ax = _wp7b_axis()
+        s = _wp7b_sh()
+        hn = plotroute!(ax, [[1, 2, 1, 2], [3, 3]], s, XY; number = true)
+        hl = plotshmt!(ax, s, XY; names = City)
+        @test length(_WP7B_MX._PLACED[ax]) == 2
+        delete!(ax, hl.labels)
+        plotroute!(ax, XY[[1, 6], 1], XY[[1, 6], 2])
+        @test length(_WP7B_MX._PLACED[ax]) == 1 && _WP7B_MX._PLACED[ax][1].tp === hn.numbers
+    end
+
+    @testset "5. plotshmt!: one arrowhead per shipment, bowed by bend; the routes method" begin
+        sh = DataFrame(b = [1, 3, 5, 2], e = [2, 4, 6, 2])                               # the last from 2 to 2
+        fig, ax = _wp7b_axis()
+        h = plotshmt!(ax, sh, XY)
+        @test h.lines isa Lines && h.arrows isa Scatter
+        @test length(h.arrows[1][]) == 3                                                 # none on the shipment of no length
+        pts = _wp7b_pts(h.lines)
+        @test length(pts) == 4 * 3                                                       # each two ends and a NaN
+        @test pts[1:2] == [(XY[1, 1], XY[1, 2]), (XY[2, 1], XY[2, 2])] && all(isnan, pts[3])
+        @test plotshmt!(ax, sh, XY; arrows = false).arrows === nothing
+        # bend: each shipment a curve bowed to the left of its travel, its farthest point bend/2 of its length off the
+        # chord (a quadratic curve's), the arrowhead on it
+        for β in (0.25, -0.25)
+            hb = plotshmt!(ax, sh[1:1, :], XY; bend = β)
+            c = _wp7b_pts(hb.lines)[1:end-1]
+            p, q = XY[1, :], XY[2, :]
+            d = q .- p
+            L = hypot(d...)
+            off = [((x - p[1]) * d[2] - (y - p[2]) * d[1]) / L for (x, y) in c]           # right of travel is positive
+            @test c[1] == (p[1], p[2]) && c[end] == (q[1], q[2]) && length(c) == 60
+            @test isapprox(maximum(abs, off), abs(β) * L / 2; rtol = 1e-3)
+            @test all(o -> sign(o) == -sign(β) || abs(o) < 1e-12, off)                   # bend > 0 bows left
+            @test length(hb.arrows[1][]) == 1
+        end
+        # the routes method: a route of more than one shipment drawn as a route, a single-shipment route as a shipment
+        s = _wp7b_sh()
+        R = [[1, 2, 1, 2], [3, 3]]
+        h = plotshmt!(ax, s, XY, R; colors = [:green])
+        @test keys(h) == (:lines, :arrows, :routes)
+        @test length(h.arrows[1][]) == 1 && _wp7b_pts(h.lines)[1:2] == [(XY[5, 1], XY[5, 2]), (XY[6, 1], XY[6, 2])]
+        @test length(h.routes.lines) == 1 && length(h.routes.arrows[1][1][]) == 3
+        @test _WP7B_MK.to_color(h.routes.lines[1].color[]) == _WP7B_MK.to_color(:green)
+        # each single-shipment route as a shipment: one arrowhead per shipment
+        h = plotshmt!(ax, s, XY, [[1, 1], [2, 2], [3, 3]])
+        @test length(h.arrows[1][]) == 3 && isempty(h.routes.lines)
+        # with the truck's locations, every route is a route
+        h = plotshmt!(ax, s, XY, R; tr = (b = [1], e = [1]))
+        @test length(h.routes.lines) == 2 && isempty(h.arrows[1][])
+        # names and loads, as plotroute!'s
+        h = plotshmt!(ax, s, XY; names = City, loads = true)
+        @test keys(h) == (:lines, :arrows, :markers, :labels)
+        @test h.labels.input_text[] == [_wp7b_citylabel(i, s) for i in [1, 2, 3, 4, 5, 6]]
+        h = plotshmt!(ax, s, XY, R; loads = true)
+        @test keys(h) == (:lines, :arrows, :routes, :markers, :labels)
+        @test h.labels.input_text[] == [ldlabel(i, s) for i in [1, 3, 2, 4, 5, 6]]
+        # the checks
+        @test_throws ArgumentError plotshmt!(ax, s, [XY XY[:, 1]])
+        @test_throws ArgumentError plotshmt!(ax, DataFrame(b = [1], e = [7]), XY)
+        @test_throws ArgumentError plotshmt!(ax, DataFrame(o = [1], d = [2]), XY)
+        @test_throws ArgumentError plotshmt!(ax, s, XY; arrow_at = 1.5)
+        @test_throws ArgumentError plotshmt!(ax, s, XY; bend = Inf)
+        @test_throws ArgumentError plotshmt!(ax, s, XY; names = City[1:3])
+        @test_throws ArgumentError plotshmt!(ax, s, XY, R; arrow_every = 0)
+    end
+end
+
+# 6. Each method drawn on a plain Axis of fixed size and limits, with every keyword, its plots read back as text. The
+# same text in this process (GeoMakie loaded) and in a fresh process with CairoMakie alone.
+const _WP7B_DRAW = raw"""
+XY = [8.0 8.5; 3.0 5.0; 4.0 8.0; 6.0 1.5; 7.0 3.5; 5.0 0.8]
+City = ["Raleigh", "Athens", "Asheville", "Jacksonville", "Savannah", "Gainesville"]
+sh = DataFrame(b = [1, 3, 5], e = [2, 4, 6])
+N = [-79.0 35.0; -78.6 35.9; -78.0 35.2; -78.4 36.3; -79.4 36.2; -77.8 36.0]   # v0.3.0's traced-route network
+P = [[0, 1, 2, 2, 4, 3], [2, 0, 2, 2, 4, 3], [2, 3, 0, 2, 4, 3]]
+out = String[]
+rec(n, p::Makie.Text) = push!(out, n * " text " * repr(p.input_text[]) * " " * repr(p.align[]) * " " * repr(p.offset[]))
+rec(n, p::Makie.Lines) = push!(out, n * " lines " * repr([(q[1], q[2]) for q in p[1][]]))
+rec(n, p::Makie.Scatter) = push!(out, n * " scatter " * repr([(q[1], q[2]) for q in p[1][]]) * " " * repr(p.rotation[]))
+rec(n, ::Nothing) = push!(out, n * " nothing")
+rec(n, v::AbstractVector) = foreach(((k, x),) -> rec("$n[$k]", x), enumerate(v))
+rec(n, t::NamedTuple) = foreach(k -> rec("$n.$k", t[k]), keys(t))
+fig = Figure(size = (500, 450)); ax = Axis(fig[1, 1]; limits = (0, 10, 0, 10)); hidedecorations!(ax)
+fig2 = Figure(size = (500, 450)); ax2 = Axis(fig2[1, 1]; limits = (-80, -77, 34.5, 36.8)); hidedecorations!(ax2)
+H = Any[]
+push!(H, plotroute!(ax, XY[:, 1], XY[:, 2]; arrow_every = 2, arrow_size = 20))
+push!(H, plotroute!(ax, [1.0, 2.0, NaN, 3.0, 3.0, 4.0], [1.0, 2.0, NaN, 2.0, 2.0, 1.0]; arrows = false))
+push!(H, plotroute!(ax, [1, 2, 1, 3, 2, 3], sh, XY; color = :green, arrow_at = 0.4))
+push!(H, plotroute!(ax, [1, 2, 3, 1, 2, 3], sh, XY; tr = (b = [1], e = [1]), linestyle = :dash))
+push!(H, plotroute!(ax2, [1, 2, 1, 2], DataFrame(b = [1, 3], e = [3, 1]), N; P = P))
+push!(H, plotroute!(ax, [[1, 1], [2, 3, 2, 3]], sh, XY; colors = [:red, :blue], linewidth = 3))
+push!(H, plotshmt!(ax, sh, XY; bend = 0.2))
+push!(H, plotshmt!(ax, sh, XY, [[1, 2, 1, 2], [3, 3]]))
+push!(H, plotroute!(ax, [1, 2, 1, 3, 2, 3], sh, XY; names = City, loads = true))
+push!(H, plotroute!(ax, [[1, 2, 1, 2], [3, 3]], sh, XY; number = ["Route 1", "Route 2\n(Shmt 3)"]))
+push!(H, plotshmt!(ax, sh, XY; names = City))
+Makie.update_state_before_display!(fig); Makie.update_state_before_display!(fig2)
+foreach(((k, h),) -> rec("h$k", h), enumerate(H))
+"""
+
+@testset "WP7b (v0.3.1) a fresh process with CairoMakie alone: every method draws what it draws with GeoMakie loaded" begin
+    m = Module(:WP7bDraw)
+    for u in (:(using Logjam), :(using CairoMakie), :(using DataFrames), :(const Makie = CairoMakie.Makie))
+        Core.eval(m, u)
+    end
+    foreach(ex -> ex isa LineNumberNode || Core.eval(m, ex), Meta.parseall(_WP7B_DRAW).args)
+    here = Base.invokelatest(getfield, m, :out)
+    @test length(here) > 30
+    # first with Logjam and DataFrames alone: plotshmt! is a MethodError whose hint names the Makie extension
+    code = "using Logjam, DataFrames; try plotshmt!(nothing, DataFrame(b = [1], e = [2]), [0.0 0.0; 1.0 1.0]) catch e; " *
+           "println(\"WP7B hint \", typeof(e), \" \", occursin(\"needs the Makie extension, which CairoMakie loads\", " *
+           "sprint(showerror, e))) end; " *
+           "using CairoMakie; CairoMakie.activate!(visible = false); const Makie = CairoMakie.Makie; " *
+           _WP7B_DRAW * """
+           println("WP7B ext makie=", Base.get_extension(Logjam, :LogjamMakieExt) !== nothing,
+                   " map=", Base.get_extension(Logjam, :LogjamMapExt) !== nothing, " geomakie=", isdefined(Main, :GeoMakie),
+                   " module=", all(m -> m.module === Base.get_extension(Logjam, :LogjamMakieExt), methods(plotroute!)))
+           foreach(l -> println("WP7B ", l), out)
+           """
+    buf = IOBuffer()
+    cmd = `$(Base.julia_cmd()) --startup-file=no --project=$(Base.active_project()) -e $code`
+    ok = success(pipeline(cmd; stdout = buf, stderr = buf))
+    s = String(take!(buf))
+    @test ok
+    @test occursin("WP7B hint MethodError true", s)
+    @test occursin("WP7B ext makie=true map=false geomakie=false module=true", s)
+    there = [l[6:end] for l in split(s, '\n') if startswith(l, "WP7B ") && !startswith(l, "WP7B ext") &&
+                                                 !startswith(l, "WP7B hint")]
+    @test there == here
+    ok || println(s)
+end

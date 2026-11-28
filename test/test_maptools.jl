@@ -564,3 +564,99 @@ end
     @test _bx_err(() -> mapbbox(:PR)) isa ArgumentError                            # a territory: no counties
     @test _bx_err(() -> mapbbox(:XX)) isa ArgumentError
 end
+
+# ==== added by PCV WP7b of Logjam v0.3.1 (CR 50): ldlabel, the loads label of a location ====
+# `ldlabel(i, sh)` and `ldlabel(sh)` are core's (src/maptools.jl), so they are tested here, with no extension. Test spec
+# Sec. 11: strings `==` to the format Lectures 5.2 and 5.3 print (5.1 prints none). Their definitions are copied below
+# as text, each `.qmd` line cited, and run in a scratch module after `using Logjam`, as the lecture runs them (principle
+# 9: Logjam now exports `ldlabel`, and the lecture's own definition of the name must still work, as for K7a's
+# exports). The inputs are the lectures' own shipment tables, and seeded random tables for the property.
+
+using Test
+using Logjam
+using DataFrames
+using Random
+
+# 5-routing/5-rte-2.qmd:207-214 (Code block 1); 5-routing/5-rte-3.qmd:1563-1569 is the same function with a comment on
+# its first line, copied as well
+const WP7B_LDLABEL_52 = raw"""
+# the shipments loaded (L) and unloaded (U) at location i: (L1,2:U3)
+function ldlabel(i, sh)
+    L, U = findall(==(i), sh.b), findall(==(i), sh.e)
+    parts = [isempty(L) ? "" : "L" * join(L, ","),
+             isempty(U) ? "" : "U" * join(U, ",")]
+    s = join(filter(!isempty, parts), ":")
+    return isempty(s) ? "" : "($s)"
+end
+"""
+const WP7B_LDLABEL_53 = raw"""
+function ldlabel(i, sh)  # the shipments loaded (L) and unloaded (U) at i
+    L, U = findall(==(i), sh.b), findall(==(i), sh.e)
+    parts = [isempty(L) ? "" : "L" * join(L, ","),
+             isempty(U) ? "" : "U" * join(U, ",")]
+    s = join(filter(!isempty, parts), ":")
+    return isempty(s) ? "" : "($s)"
+end
+"""
+
+function _wp7b_lecture(name, code)
+    m = Module(name)
+    Core.eval(m, :(using Logjam))
+    Core.eval(m, :(using DataFrames))
+    for ex in Meta.parseall(code).args
+        ex isa LineNumberNode || Core.eval(m, ex)
+    end
+    return m
+end
+_wp7b_call(m, args...) = Base.invokelatest(getfield(m, :ldlabel), args...)
+
+# the lectures' shipment tables
+const WP7B_SH = [
+    "5.2 Ex. 2 (5-rte-2.qmd:422, :593; 5.3's sh3, 5-rte-3.qmd:1551)" => DataFrame(b = [1, 3, 5], e = [2, 4, 6]),
+    "5.2 shR (5-rte-2.qmd:1925)" => DataFrame(b = ones(Int, 5), e = [2:6;]),
+    "5.2 sh5 (5-rte-2.qmd:1310)" => DataFrame(b = [1, 3, 4, 6, 7], e = [2, 2, 5, 2, 1]),
+    "5.2 shL (5-rte-2.qmd:2787-2791)" => DataFrame(
+        b = [15, 26, 23, 53, 35, 30, 39, 33, 34, 3, 9, 8, 29, 34, 38,
+             32, 18, 17, 4, 4, 7, 30, 33, 22, 6, 19, 16, 8, 37, 14],
+        e = [19, 27, 18, 51, 30, 36, 33, 35, 38, 10, 2, 12, 39, 29, 37,
+             36, 22, 13, 1, 9, 15, 34, 39, 15, 11, 14, 21, 5, 32, 13]),
+]
+
+@testset "[WP7b CR 50] ldlabel: the loads label, == Lectures 5.2's and 5.3's" begin
+    m52, m53 = _wp7b_lecture(:WP7bLd52, WP7B_LDLABEL_52), _wp7b_lecture(:WP7bLd53, WP7B_LDLABEL_53)
+    # the lecture's own ldlabel is its own, defined after `using Logjam`, and Logjam's is untouched
+    @test parentmodule(getfield(m52, :ldlabel)) === m52 && getfield(m52, :ldlabel) !== Logjam.ldlabel
+    @test :ldlabel in names(Logjam) && parentmodule(ldlabel) === Logjam
+    for (what, sh) in WP7B_SH
+        n = maximum([sh.b; sh.e])
+        @testset "$what" begin
+            for i in 0:n+1                              # every location, and one on each side with no shipment
+                @test ldlabel(i, sh) == _wp7b_call(m52, i, sh) == _wp7b_call(m53, i, sh)
+            end
+            @test ldlabel(sh) == [_wp7b_call(m52, i, sh) for i in 1:n]
+            @test ldlabel(sh) isa Vector{String} && length(ldlabel(sh)) == n
+        end
+    end
+    # the strings the lectures print, written out
+    sh2, sh5 = WP7B_SH[1].second, WP7B_SH[3].second
+    @test ldlabel(sh2) == ["(L1)", "(U1)", "(L2)", "(U2)", "(L3)", "(U3)"]
+    @test [ldlabel(i, sh5) for i in 1:7] == ["(L1:U5)", "(U1,2,4)", "(L2)", "(L3)", "(U3)", "(L4)", "(L5)"]
+    @test ldlabel(1, WP7B_SH[2].second) == "(L1,2,3,4,5)"
+    @test ldlabel(1, DataFrame(b = [1, 1, 2], e = [3, 2, 1])) == "(L1,2:U3)"      # CR 50's example
+    # a NamedTuple of columns is a table too, and an empty one labels nothing
+    @test ldlabel(3, (b = [1, 3, 5], e = [2, 4, 6])) == "(L2)"
+    @test ldlabel(DataFrame(b = Int[], e = Int[])) == String[]
+    # property: on seeded random tables, == the lecture's, and every shipment appears once as L and once as U
+    rng = Xoshiro(20261128)
+    for _ in 1:200
+        k, nl = rand(rng, 1:12), rand(rng, 1:9)
+        sh = DataFrame(b = rand(rng, 1:nl, k), e = rand(rng, 1:nl, k))
+        labs = [ldlabel(i, sh) for i in 1:nl]
+        @test labs == [_wp7b_call(m52, i, sh) for i in 1:nl]
+        Ls = reduce(vcat, [parse.(Int, split(something(match(r"L([\d,]+)", l), (; captures = [""])).captures[1], ',';
+                                               keepempty = false)) for l in labs])
+        Us = reduce(vcat, [parse.(Int, split(something(match(r"U([\d,]+)", l), (; captures = [""])).captures[1], ',';
+                                               keepempty = false)) for l in labs])
+        @test sort(Ls) == 1:k && sort(Us) == 1:k
+    end
+end

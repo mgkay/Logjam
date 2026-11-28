@@ -190,10 +190,12 @@ function _maproadtier(box)
     return :none
 end
 
-# makemap, plotroads!, plotroute! and dcf are declared here, with their docstrings, and given their methods by the map
-# extension (ext/LogjamMapExt.jl, which GeoMakie triggers), so that the manual builds and `?makemap` answers without
-# Makie. Called without the extension, each is a MethodError with a hint (`__init__` in Logjam.jl). The argument
-# checks above are core's, so that every method reports the same error; the drawing is the extension's.
+# makemap, plotroads! and dcf are declared here, with their docstrings, and given their methods by the map extension
+# (ext/LogjamMapExt.jl, which GeoMakie triggers), so that the manual builds and `?makemap` answers without Makie;
+# plotroute! and plotshmt! likewise by the Makie extension (ext/LogjamMakieExt.jl, which Makie triggers, so CairoMakie
+# alone loads it, as GeoMakie does; v0.3.1's WP7b moved plotroute! there, MAP16). Called without its extension, each
+# is a MethodError with a hint (`__init__` in Logjam.jl). The argument checks above are core's, so that every method
+# reports the same error; the drawing is the extension's.
 
 """
     makemap(x = nothing, y = nothing; region = :World, xexpand = 0.3, yexpand = 0.1, roads = :auto, borders = true,
@@ -1075,18 +1077,21 @@ keys(handles)  # e.g., [:fill_1, :fill_2, :casing_1, :casing_2, ...]
 """
 function plotroads! end
 
-# plotroute!: three methods, in LogjamMapExt (D2). Unlike v0.2.8's five, they take no markers (`show_markers`,
-# `origin_color`, `dest_color`, `markersize`) and no `(ax, path, dfN)` forms: a removed call or keyword fails with a
-# MethodError.
+# plotroute!: three methods, in LogjamMakieExt (D2; moved from LogjamMapExt in v0.3.1's WP7b, MAP16). Unlike v0.2.8's
+# five, they take no markers (`show_markers`, `origin_color`, `dest_color`, `markersize`) and no `(ax, path, dfN)`
+# forms: a removed call or keyword fails with a MethodError.
 
 """
     plotroute!(ax, x, y; color = :red, linewidth = 2, linestyle = :solid,
                arrows = true, arrow_at = 0.55, arrow_size = 12, arrow_every = 1) -> (; lines, arrows)
-    plotroute!(ax, rte, sh, XY; tr = nothing, P = nothing, color = :red, ...) -> (; lines, arrows)
-    plotroute!(ax, R, sh, XY; tr = nothing, P = nothing, colors = Makie.wong_colors(), ...) -> (; lines, arrows)
+    plotroute!(ax, rte, sh, XY; tr = nothing, P = nothing, color = :red, ..., names = nothing, loads = false)
+        -> (; lines, arrows)
+    plotroute!(ax, R, sh, XY; tr = nothing, P = nothing, colors = Makie.wong_colors(), ..., names = nothing,
+               loads = false, number = false) -> (; lines, arrows)
 
 Draw a route on a map or any Makie axis, with an arrowhead partway along each leg to show the direction of travel.
-Requires `using CairoMakie, GeoMakie`.
+Requires Makie, which CairoMakie loads (`using CairoMakie`); a map from `makemap` needs GeoMakie as well (`using
+CairoMakie, GeoMakie`).
 
 - `plotroute!(ax, x, y)` draws any sequence of locations, such as a tour, a path or a route's location sequence, as the
   line through the points `(x[i], y[i])`. A `NaN` separates one piece from the next.
@@ -1106,10 +1111,32 @@ from one location to the next. The arrowheads point along the leg as it is drawn
 own transform and limits, so it is right on a map (`makemap`'s Mercator `GeoAxis`) and on a plain `Axis`, and a
 `resize!` turns them again. `plotroute!` makes no call to GeoMakie.
 
-Returns the plots drawn as a `NamedTuple`: `lines` (the `Lines`) and `arrows` (the `Scatter` of the arrowheads, `nothing`
-when `arrows = false`); for several routes each is a vector with one element for each route.
+# Stops and route numbers
+- `names`: a vector of the locations' names, indexed by location (as `City[i]` names location `i`). Each stop of the
+  route, each location its location sequence visits (once, in the order it first visits them), is marked with a dot
+  and labeled with its name.
+- `loads = true`: each stop is labeled with the shipments loaded and unloaded there, `ldlabel(i, sh)`, such as
+  `"(L1,2:U3)"`; with `names` as well, its name over its loads on two lines, as Lectures 5.2 and 5.3 label their
+  cities (CR 50). A stop with nothing to show gets no label.
+- `number` (several routes): `true` puts each route's number, `"1"`, `"2"`, and so on, at the centroid of its stops in
+  its route's color (CR 61); one string for each route, such as `"Route 4\\n(Shmt 2)"`, puts that string there. The
+  centroid is the mean of the locations of the route's location sequence, each as often as the route visits it, the
+  truck's own locations (`tr`) left out, as Matlog's `pplot` and Lecture 5.3 place a route's label.
 
-The origin and destination markers of v0.2.8 are gone: mark the stops with `scatter!`.
+The labels and numbers are placed by `aligntext(ax, ...)`, clear of every line, marker and other label in the axis and
+of `makemap`'s base layers as far as they can be: the labels at its defaults, the numbers in bold, as near their
+centroids as is clear, with no side preferred, out to 150 pixels (`prefer = :near`, `maxgap = 150`). Both are drawn at
+the axis's default text size. **They are placed again whenever a later `plotroute!` or `plotshmt!` call adds to the
+same axis**, so a route drawn over a labeled map does not sit on a label; anything else they must clear is drawn
+first, and the figure has its final size first, since the placement is in pixels.
+
+Returns the plots drawn as a `NamedTuple`: `lines` (the `Lines`) and `arrows` (the `Scatter` of the arrowheads, `nothing`
+when `arrows = false`); for several routes each is a vector with one element for each route. With `names` or
+`loads` it also holds `markers` (the `Scatter` of the stops' dots) and `labels` (the `Text` of their labels, one for
+each stop with a label, in the order the route first visits them), and with `number`, `numbers` (the `Text` of the
+route numbers, one for each route). Without these keywords the return is `(; lines, arrows)`, as at v0.3.0.
+
+The origin and destination markers of v0.2.8 are gone: mark the stops with `scatter!`, or with `names` or `loads`.
 
 # Examples
 README Example 4's route, drawn along the FAF5 network it was solved on:
@@ -1140,6 +1167,151 @@ Several routes, one color each, as README Example 5 draws its vehicles (`tr` is 
 plotroute!(ax, rte, sh, [dfN.LON dfN.LAT]; tr = (b = [1], e = [1]), P = P, linewidth = 2.5)
 ```
 
+Lecture 5.2's savings tour from Raleigh (Code blocks 32 and 33), each city labeled with its name over the shipments
+loaded and unloaded there, placed clear of the route, the arrowheads and the state borders; the six cities are those
+of Lecture 5.3's Code block 22:
+
+```julia
+using Logjam, CairoMakie, GeoMakie, DataFrames
+City = ["Raleigh", "Athens", "Asheville", "Jacksonville", "Savannah", "Gainesville"]
+St = [:NC, :GA, :NC, :FL, :GA, :FL]
+loc = [loc2lonlat(c; state = s) for (c, s) in zip(City, St)]
+XY = [[r.LON for r in loc] [r.LAT for r in loc]]
+D = dists(XY, XY, :mi) * 1.2                      # road miles
+shR = DataFrame(b = ones(Int, 5), e = [2:6;])     # a shipment from Raleigh to each city
+tr = (b = 1, e = 1)                               # a truck that begins and ends at Raleigh
+rte = savings(r -> rteTC(r, shR, D, tr), shR)[1]
+fig, ax = makemap(XY[:, 1], XY[:, 2]; xexpand = 0.3, size = (600, 520))
+h = plotroute!(ax, rte, shR, XY; tr, arrow_at = 0.4, names = City, loads = true)
+fig
+```
+
+Two routes of those cities' three shipments, numbered as Lecture 5.2 labels its loads map, a single-shipment route
+with its shipment in parentheses:
+
+```julia
+sh = DataFrame(b = [1, 3, 5], e = [2, 4, 6])
+fig, ax = makemap(XY[:, 1], XY[:, 2]; xexpand = 0.3, size = (600, 520))
+h = plotroute!(ax, [[1, 2, 1, 2], [3, 3]], sh, XY; number = ["Route 1", "Route 2\\n(Shmt 3)"])
+fig
+```
+
 The migration from v0.2.8 is in the v0.3.0 release notes.
 """
 function plotroute! end
+
+# plotshmt!: two methods, in LogjamMakieExt (D2, v0.3.1's WP7b; Matlog's plotshmt).
+
+"""
+    plotshmt!(ax, sh, XY; bend = 0, color = :red, linewidth = 2, linestyle = :solid, arrows = true,
+              arrow_at = 0.55, arrow_size = 12, names = nothing, loads = false) -> (; lines, arrows)
+    plotshmt!(ax, sh, XY, R; tr = nothing, color = :red, colors = Makie.wong_colors(), linewidth = 2,
+              linestyle = :solid, arrows = true, arrow_at = 0.55, arrow_size = 12, arrow_every = 1,
+              names = nothing, loads = false) -> (; lines, arrows, routes)
+
+Draw shipments on a map or any Makie axis, each from its origin `sh.b` to its destination `sh.e`, with one arrowhead
+partway along it to show its direction (Matlog's `plotshmt`). Requires Makie, which CairoMakie loads (`using
+CairoMakie`); a map from `makemap` needs GeoMakie as well (`using CairoMakie, GeoMakie`). `XY` is the `n×2` matrix of
+the locations' (`LON`, `LAT`), one row for each location, as for `plotroute!`.
+
+- `plotshmt!(ax, sh, XY)` draws every shipment of `sh`: a straight line, or with `bend` other than 0 a curve bowed to
+  the left of its direction of travel, the quadratic curve whose control point lies `bend` times the shipment's length
+  from the middle of its straight line (in `XY`'s units, as Lecture 5.2's `curvepts` bows its shipments; a negative
+  `bend` bows it to the right).
+- `plotshmt!(ax, sh, XY, R)` draws the routes `R` (a vector of routes, as `savings` returns them) as Matlog's
+  `plotshmt(sh, XY, rte)` does: each route of more than one shipment as a route, as `plotroute!(ax, R, sh, XY)` draws
+  it, one color from `colors` for each (cycled), and the shipment of each single-shipment route as an independent
+  shipment, straight, in `color`, so a set of loads is drawn in one call (Lecture 5.2's loads map). With `tr`, the
+  truck's `(b = ..., e = ...)`, every route begins and ends at the truck's locations, so every route is drawn as a
+  route.
+
+An arrowhead sits `arrow_at` of the way along each shipment, by its length as drawn, `arrow_size` pixels long, and
+points along it there, on a map and on a plain `Axis` alike, as `plotroute!`'s do (`arrow_every` is the routes'); a
+shipment from a location to itself has none, and `arrows = false` draws none.
+
+`names` and `loads` mark and label each location a shipment begins or ends at (or each stop of a route), once, as
+`plotroute!`'s do: its name, its loads (`ldlabel`), or its name over its loads, placed by `aligntext(ax, ...)` and
+placed again whenever a later `plotroute!` or `plotshmt!` call adds to the same axis.
+
+Returns the plots drawn as a `NamedTuple`: `lines`, one `Lines` of every shipment drawn, each separated from the next
+by `NaN`, and `arrows`, the `Scatter` of their arrowheads, one for each shipment that has a length (`nothing` when
+`arrows = false`); for the routes method these are its independent shipments (empty when there is none), and `routes`
+holds the routes' own `(; lines, arrows)`, a vector of each, as `plotroute!(ax, R, sh, XY)` returns them. With `names`
+or `loads` it also holds `markers` (the `Scatter` of the locations' dots) and `labels` (the `Text` of their labels,
+one for each location with a label, origin before destination, shipment by shipment).
+
+# Examples
+Lecture 5.2's three shipments shipped independently, each city labeled with its name over the shipments loaded and
+unloaded there (Code block 9), and then the route that consolidates them (Code block 20), the labels placed again
+clear of it; the six cities are those of Lecture 5.3's Code block 22:
+
+```julia
+using Logjam, CairoMakie, GeoMakie, DataFrames
+City = ["Raleigh", "Athens", "Asheville", "Jacksonville", "Savannah", "Gainesville"]
+St = [:NC, :GA, :NC, :FL, :GA, :FL]
+loc = [loc2lonlat(c; state = s) for (c, s) in zip(City, St)]
+XY = [[r.LON for r in loc] [r.LAT for r in loc]]
+sh = DataFrame(b = [1, 3, 5], e = [2, 4, 6])
+fig, ax = makemap(XY[:, 1], XY[:, 2]; xexpand = 0.3, size = (600, 520))
+h = plotshmt!(ax, sh, XY; names = City, loads = true)
+plotroute!(ax, [1, 2, 1, 3, 2, 3], sh, XY; color = :green, arrow_at = 0.4)
+fig
+```
+
+The same shipments bowed, and a route of two of them with the third on a route of its own, drawn as a shipment:
+
+```julia
+fig, ax = makemap(XY[:, 1], XY[:, 2]; xexpand = 0.3, size = (600, 520))
+plotshmt!(ax, sh, XY; bend = 0.15)
+fig, ax = makemap(XY[:, 1], XY[:, 2]; xexpand = 0.3, size = (600, 520))
+plotshmt!(ax, sh, XY, [[1, 2, 1, 2], [3, 3]]; colors = [:green])
+```
+"""
+function plotshmt! end
+
+"""
+    ldlabel(i, sh) -> String
+    ldlabel(sh) -> Vector{String}
+
+The label of the shipments loaded and unloaded at location `i` (CR 50): `"(L"`, the shipments whose origin `sh.b` is
+`i`, joined by commas, then `":U"` and the shipments whose destination `sh.e` is `i`, then `")"`, each list in the order
+of `sh`'s rows; with only one side, `"(L1,2)"` or `"(U3)"`; with neither, `""`. So `"(L1,2:U3)"` loads shipments 1
+and 2 at `i` and unloads shipment 3 there. `ldlabel(sh)` gives the label of every location from 1 to the largest in
+`sh.b` and `sh.e`. Lectures 5.2 and 5.3 print these labels under the names of their cities, as `plotroute!` and
+`plotshmt!` do with `loads = true`.
+
+# Examples
+Lecture 5.2's three shipments of Ex. 2, and one location where shipments are both loaded and unloaded:
+
+```jldoctest
+julia> using DataFrames
+
+julia> sh = DataFrame(b = [1, 3, 5], e = [2, 4, 6]);
+
+julia> ldlabel(3, sh)
+"(L2)"
+
+julia> ldlabel(sh)
+6-element Vector{String}:
+ "(L1)"
+ "(U1)"
+ "(L2)"
+ "(U2)"
+ "(L3)"
+ "(U3)"
+
+julia> ldlabel(1, DataFrame(b = [1, 1, 2], e = [3, 2, 1]))
+"(L1,2:U3)"
+
+julia> ldlabel(7, sh)                   # no shipment begins or ends there
+""
+```
+"""
+function ldlabel(i::Integer, sh)
+    L, U = findall(==(i), sh.b), findall(==(i), sh.e)
+    parts = [isempty(L) ? "" : "L" * join(L, ","), isempty(U) ? "" : "U" * join(U, ",")]
+    s = join(filter(!isempty, parts), ":")
+    return isempty(s) ? "" : "($s)"
+end
+
+ldlabel(sh) = [ldlabel(i, sh) for i in 1:maximum([sh.b; sh.e]; init = 0)]

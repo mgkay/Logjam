@@ -3,13 +3,14 @@ module LogjamMapExt
 # The map functions, loaded by GeoMakie alone (C5). Written against Makie through GeoMakie, which reexports it: no
 # backend is loaded here, so the figures this draws are drawn by whichever of CairoMakie or GLMakie the caller loaded
 # (the course loads CairoMakie, and a figure is created without one). Logjam declares each function and keeps its
-# docstring (src/maptools.jl, src/Logjam.jl); this adds the methods.
+# docstring (src/maptools.jl, src/Logjam.jl); this adds the methods. `plotroute!`, which makes no GeoMakie call, moved
+# to the Makie extension in v0.3.1 (WP7b, MAP16), which GeoMakie loads too.
 
 using Logjam
 using GeoMakie
 using GeoMakie: Makie
 using DataFrames
-import Logjam: makemap, plotroads!, plotroute!, dcf
+import Logjam: makemap, plotroads!, dcf
 
 # =============================================================================
 # dcf: display the current figure
@@ -497,128 +498,6 @@ function plotroads!(ax, dfN::DataFrame, dfL::DataFrame; show_connectors::Bool = 
     end
 
     return handles
-end
-
-# =============================================================================
-# plotroute! (D2): three methods, arrowheads on. Makie only: no GeoMakie call is made here, so the arrows are
-# placed and turned from the axis's own transform and limits, on a GeoAxis or a plain Axis alike.
-# =============================================================================
-
-# Where a point of the data space is drawn, in pixels of the axis: the axis's own transform (the identity on a plain
-# `Axis`, Mercator on `makemap`'s `GeoAxis`), then the visible limits over the axis's viewport. Read at each call, so
-# a `resize!` or new limits move the answer with the drawing.
-function _pixelmap(ax)
-    tf = Makie.transform_func(ax)
-    fl = ax.finallimits[]
-    o, w = Makie.origin(fl), Makie.widths(fl)
-    W = Makie.widths(ax.scene.viewport[])
-    return function (x, y)
-        p = Makie.apply_transform(tf, Makie.Point2d(x, y))
-        return Makie.Point2d((p[1] - o[1]) / w[1] * W[1], (p[2] - o[2]) / w[2] * W[2])
-    end
-end
-
-# The arrowhead of each leg: its center `at` of the way along the leg as drawn (by length on the screen) and the
-# angle the leg runs at there, on the screen. `legs` is one (x, y) pair of vectors for each leg.
-function _arrowheads(ax, legs, at)
-    topix = _pixelmap(ax)
-    pos, rot = Makie.Point2f[], Float32[]
-    for (lx, ly) in legs
-        P = [topix(lx[k], ly[k]) for k in eachindex(lx)]
-        seg = [hypot(P[k+1][1] - P[k][1], P[k+1][2] - P[k][2]) for k in 1:length(P)-1]
-        total = sum(seg)
-        if !(total > 0)                       # no length on the screen yet (before the first layout): no direction
-            push!(pos, P[1]); push!(rot, 0f0)
-            continue
-        end
-        target, k = at * total, 1
-        while k < length(seg) && (target > seg[k] || seg[k] == 0)
-            target -= seg[k]
-            k += 1
-        end
-        s = seg[k] > 0 ? clamp(target / seg[k], 0.0, 1.0) : 1.0
-        if seg[k] == 0                        # only repeated vertices from here on: the last stretch with a direction
-            k = findlast(>(0), seg)
-            s = 1.0
-        end
-        d = P[k+1] - P[k]
-        push!(pos, Makie.Point2f(P[k] + s * d))
-        push!(rot, Float32(atan(d[2], d[1])))
-    end
-    return pos, rot
-end
-
-# The arrowheads as one scatter plot in the axis's pixel space, turned and placed again whenever the viewport or the
-# visible limits change.
-function _drawarrows!(ax, legs; color, at, size)
-    state = Observable(_arrowheads(ax, legs, at))
-    onany((_...) -> (state[] = _arrowheads(ax, legs, at)), ax.finallimits, ax.scene.viewport)
-    return scatter!(ax, lift(first, state); marker = :rtriangle, markersize = size, rotation = lift(last, state),
-                    color = color, space = :pixel, strokewidth = 0, inspectable = false)
-end
-
-# the line and its arrowheads; `legs` already holds only the legs that get one
-function _drawroute!(ax, x, y, legs; color, linewidth, linestyle, arrows, arrow_at, arrow_size)
-    hl = lines!(ax, x, y; color = color, linewidth = linewidth, linestyle = linestyle)
-    ha = arrows ? _drawarrows!(ax, legs; color = color, at = arrow_at, size = arrow_size) : nothing
-    return (; lines = hl, arrows = ha)
-end
-
-function _checkarrows(arrow_at, arrow_every)
-    0 <= arrow_at <= 1 || throw(ArgumentError("arrow_at must be in [0, 1], the fraction of a leg's length; got $arrow_at"))
-    arrow_every >= 1 || throw(ArgumentError("arrow_every must be at least 1; got $arrow_every"))
-end
-
-# a leg is each pair of consecutive finite points; the arrow_every-th leg, counting from the first, gets an arrowhead
-# unless it has no length (a location visited twice)
-function _xylegs(x, y, every)
-    legs, n = Tuple{Vector{Float64}, Vector{Float64}}[], 0
-    for i in 1:length(x)-1
-        all(isfinite, (x[i], y[i], x[i+1], y[i+1])) || continue
-        n += 1
-        (n - 1) % every == 0 || continue
-        (x[i] == x[i+1] && y[i] == y[i+1]) && continue
-        push!(legs, ([Float64(x[i]), Float64(x[i+1])], [Float64(y[i]), Float64(y[i+1])]))
-    end
-    return legs
-end
-
-# any sequence of locations
-function plotroute!(ax, x::AbstractVector{<:Real}, y::AbstractVector{<:Real};
-                    color = :red, linewidth = 2, linestyle = :solid,
-                    arrows::Bool = true, arrow_at::Real = 0.55, arrow_size::Real = 12, arrow_every::Integer = 1)
-    length(x) == length(y) || throw(ArgumentError("x and y must have the same length; got $(length(x)) and $(length(y))"))
-    _checkarrows(arrow_at, arrow_every)
-    return _drawroute!(ax, x, y, _xylegs(x, y, arrow_every); color, linewidth, linestyle, arrows, arrow_at, arrow_size)
-end
-
-# one route: its location sequence (`rte2loc`), straight from stop to stop, or along the network by `P`
-function plotroute!(ax, rte::AbstractVector{<:Integer}, sh::AbstractDataFrame, XY::AbstractMatrix{<:Real};
-                    tr = nothing, P = nothing, color = :red, linewidth = 2, linestyle = :solid,
-                    arrows::Bool = true, arrow_at::Real = 0.55, arrow_size::Real = 12, arrow_every::Integer = 1)
-    size(XY, 2) == 2 || throw(ArgumentError("XY must have two columns (LON, LAT), one row for each location; got $(size(XY, 2))"))
-    loc = Int.(Logjam.rte2loc(rte, sh, something(tr, (;))))
-    if P === nothing
-        return plotroute!(ax, XY[loc, 1], XY[loc, 2]; color, linewidth, linestyle, arrows, arrow_at, arrow_size, arrow_every)
-    end
-    _checkarrows(arrow_at, arrow_every)
-    legs = Tuple{Vector{Float64}, Vector{Float64}}[]
-    for k in 1:length(loc)-1                  # an arrowhead on each leg traced along the network
-        path = Logjam.tracepath(P, loc[k], loc[k+1])
-        lx, ly = Float64.(XY[path, 1]), Float64.(XY[path, 2])
-        ((k - 1) % arrow_every == 0 && !(all(==(lx[1]), lx) && all(==(ly[1]), ly))) && push!(legs, (lx, ly))
-    end
-    path = length(loc) >= 2 ? Logjam.tracepath(P, loc) : Int[]     # the line: the legs end to end, a junction one node
-    return _drawroute!(ax, Float64.(XY[path, 1]), Float64.(XY[path, 2]), legs; color, linewidth, linestyle, arrows, arrow_at, arrow_size)
-end
-
-# several routes, one color each
-function plotroute!(ax, R::AbstractVector{<:AbstractVector{<:Integer}}, sh::AbstractDataFrame, XY::AbstractMatrix{<:Real};
-                    tr = nothing, P = nothing, colors = Makie.wong_colors(), linewidth = 2, linestyle = :solid,
-                    arrows::Bool = true, arrow_at::Real = 0.55, arrow_size::Real = 12, arrow_every::Integer = 1)
-    hs = [plotroute!(ax, rte, sh, XY; tr, P, color = colors[mod1(i, length(colors))], linewidth, linestyle,
-                     arrows, arrow_at, arrow_size, arrow_every) for (i, rte) in enumerate(R)]
-    return (; lines = [h.lines for h in hs], arrows = [h.arrows for h in hs])
 end
 
 end # module LogjamMapExt

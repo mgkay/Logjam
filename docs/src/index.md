@@ -22,7 +22,7 @@ Logjam draws maps with GeoMakie and the Makie backend the caller loads, CairoMak
 
 ### Map Extension
 
-`makemap`, `plotroads!`, `plotroute!` and `dcf` are the map extension's, which GeoMakie loads (`using CairoMakie, GeoMakie`; CairoMakie draws). Called without it, each is a `MethodError` that says what to load.
+`makemap`, `plotroads!` and `dcf` are the map extension's, which GeoMakie loads (`using CairoMakie, GeoMakie`; CairoMakie draws). Called without it, each is a `MethodError` that says what to load.
 
 ```julia
 using CairoMakie, GeoMakie        # Triggers LogjamMapExt extension
@@ -31,7 +31,7 @@ using Logjam
 
 ### Makie Extension
 
-`aligntext(ax, x, y, labels)`, which places labels clear of everything drawn in an axis, is the Makie extension's, which Makie loads: CairoMakie alone is enough, and GeoMakie loads it too. It works on a plain `Axis` and on the `GeoAxis` of `makemap`.
+`aligntext(ax, x, y, labels)`, which places labels clear of everything drawn in an axis, and the route and shipment drawing `plotroute!` and `plotshmt!` are the Makie extension's, which Makie loads: CairoMakie alone is enough, and GeoMakie loads it too. They work on a plain `Axis` and on the `GeoAxis` of `makemap`. Called without it, `plotroute!` and `plotshmt!` are each a `MethodError` that says what to load.
 
 ```julia
 using CairoMakie                  # Triggers LogjamMakieExt extension
@@ -369,9 +369,22 @@ usstates
 
 ### Road and Route Visualization
 
+`plotroute!` draws a route and `plotshmt!` shipments, each with an arrowhead to show its direction, on a plain `Axis`
+or a map; with `names` or `loads` they mark and label each stop, its loads written by `ldlabel`, and `plotroute!`'s
+`number` numbers several routes, all placed by `aligntext(ax, ...)` and placed again when a later call adds to the
+axis. `ldlabel` needs no extension:
+
+```@example ldlabel
+using Logjam, DataFrames
+sh = DataFrame(b = [1, 3, 5], e = [2, 4, 6])     # Lecture 5.2's three shipments of Ex. 2
+ldlabel(sh)
+```
+
 ```@docs
 plotroads!
 plotroute!
+plotshmt!
+ldlabel
 ```
 
 ## Display and Formatting

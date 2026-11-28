@@ -107,10 +107,14 @@ const _NOMEXT = Base.get_extension(Logjam, :LogjamNominatimExt)
     end
 
     @testset "the methods are the extension's; core holds none of them" begin
-        for f in (makemap, plotroads!, plotroute!, dcf)
+        # WP7b (v0.3.1; X2, MAP16): plotroute!'s three methods moved to LogjamMakieExt, which GeoMakie loads too, so they
+        # are that extension's now; v0.3.0's copy of this file fails here for plotroute! (a baseline addition, X2)
+        for f in (makemap, plotroads!, dcf)
             @test !isempty(methods(f))
             @test all(m -> m.module === _MAPEXT, methods(f))
         end
+        @test !isempty(methods(plotroute!))
+        @test all(m -> m.module === Base.get_extension(Logjam, :LogjamMakieExt), methods(plotroute!))
         @test length(methods(makemap)) == 7            # (), (x), (x, y) from the default arguments, (bb), (cell, x, y), (cell, bb), (cell)
         @test length(methods(plotroute!)) == 3 && length(methods(plotroads!)) == 1 && length(methods(dcf)) == 1
         @test all(m -> m.module === _OSMEXT, methods(Logjam._osm_download)) && length(methods(Logjam._osm_download)) == 1
@@ -221,8 +225,16 @@ probe("dcf", () -> dcf())
                             "println(\"ext=\", Base.get_extension(Logjam, :LogjamMapExt) !== nothing)")
         @test ok && occursin("ext=false", out)
         got = parse_out(out)
+        # WP7b (v0.3.1; X2, MAP16): plotroute! is the Makie extension's, which CairoMakie loads, so here its probe
+        # reaches the method, whose `lines!` on `nothing` finds no figure: not a MethodError, and no hint. v0.3.0's copy
+        # of this file fails here for its two plotroute! probes (a baseline addition, X2). A plain Axis is drawn on with
+        # CairoMakie alone in test_LogjamMakieExt.jl.
         for n in names
+            startswith(n, "plotroute!") && continue
             @test get(got, n, ("", false)) == ("MethodError", true)
+        end
+        for n in ("plotroute!(x, y)", "plotroute!(x, y; color)")
+            @test haskey(got, n) && got[n][1] != "MethodError" && got[n][1] != "NOERROR"
         end
     end
 

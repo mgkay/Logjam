@@ -350,6 +350,55 @@ missed.
   **Lectures served:** 2.2,
   2.3, 2.7, 3.4, 4.1, 5.1, 5.2 and 5.3, whose maps place their labels with `aligntext(x, y)`, by hand, or with the
   course's drafting placer; each chooses at the re-pin whether to call it. **No migration.**
+- **`plotroute!(ax, rte, sh, XY; names, loads)` and `plotroute!(ax, R, sh, XY; names, loads, number)`: a route's
+  stops labeled, and several routes numbered clear of the lines (D2; CR 50, CR 61; WP7b; the keywords and the return
+  fields provisional, D7).** `names` (a vector of the locations' names, indexed by location) and `loads = true` mark
+  each stop of the route, each location its location sequence visits, once, with a dot, and label it with its name,
+  its loads (`ldlabel`, below), or its name over its loads on two lines, as Lectures 5.2 and 5.3 label their cities
+  (`City[i] * "\n" * ldlabel(i, sh)`); a stop with nothing to show gets no label. `number = true` puts each route's
+  number in its route's color, in bold, at the centroid of its stops (the locations of its location sequence, each
+  as often as the route visits it, the truck's own locations left out, as Matlog's `pplot` and Lecture 5.3 place a
+  route's label); `number` may be one string for each route, as Lecture 5.2's loads map writes `"Route 6\n(Shmt 2)"`.
+  Labels and numbers are placed by `aligntext(ax, ...)`, the labels at its defaults and the numbers nearest their
+  centroids with no side preferred, out to 150 pixels (`prefer = :near`, `maxgap = 150`), and **placed again
+  whenever a later `plotroute!` or `plotshmt!` call adds to the same axis**, so a route drawn over a labeled map does
+  not sit on a label (a plain Makie call does not move them). With them the return also holds `markers` (the dots),
+  `labels` (one for each stop with a label, in the order the route first visits them) and `numbers` (one for each
+  route); without them it is v0.3.0's `(; lines, arrows)`, and every v0.3.0 call draws what it drew, on an axis that
+  holds labels or not. Checked on synthetic figures (`test/test_LogjamMakieExt.jl`: one label per stop, its text
+  `==` Lecture 5.2's `citylabel` copied as text, the numbers' anchors at the centroids, a label moved by a later call
+  to the placement `aligntext(ax, ...)` gives on the figure as it then stands and not by a plain `lines!`, a fresh
+  process with CairoMakie alone drawing exactly what this one does), and, as a report, by the course's label check on
+  Lecture 5.2's route maps drawn through these keywords on scratch copies of its script (fig-southeast,
+  fig-southeast-route, fig-raleigh-savings, fig-loads): 0 contacts on each, 27 label placements, none crossed by a base line,
+  none flagged, as review D's round three found (`makeLogjam/plans/v0_3_1/measurements/wp7b/`). **Lectures
+  served:** 5.2 and 5.3, whose route maps write `citylabel`, `rtelabels!` and 47 hand-placed route numbers in folded
+  code (CR 61); each chooses at the re-pin whether to call them. **No migration.**
+- **`plotshmt!(ax, sh, XY; bend = 0, ...)` and `plotshmt!(ax, sh, XY, R; tr, colors, ...)`: shipments drawn, each
+  from its origin to its destination with one arrowhead (D2, Matlog's `plotshmt`; WP7b; the name, methods and
+  keywords provisional, D7).** The first method draws every shipment of `sh`, straight, or with `bend` other than 0
+  bowed to the left of its travel (the quadratic curve whose control point lies `bend` times the shipment's length
+  from the middle of its chord, as Lecture 5.2's `curvepts` bows its schematics' shipments), one `Lines` for all,
+  each separated by `NaN`, and one arrowhead on each shipment that has a length, `arrow_at` of the way along it as
+  drawn, turned from the axis's own transform as `plotroute!`'s are. The second is Matlog's `plotshmt(sh, XY, rte)`:
+  a route of more than one shipment drawn as a route, as `plotroute!(ax, R, sh, XY)` draws it, in `colors`, and the
+  shipment of a single-shipment route drawn as an independent shipment in `color`, so a set of loads is one call; with
+  the truck's locations (`tr`) every route is a route. `names` and `loads` mark and label the locations as
+  `plotroute!`'s do. Returns `(; lines, arrows)`, the routes method `(; lines, arrows, routes)`, and `markers` and
+  `labels` with `names` or `loads`. Checked: one arrowhead per shipment on both methods, none on a shipment from a
+  location to itself; the bow on the side and of the size `bend` gives; the routes method's split, with and without
+  `tr`; the checks (`test/test_LogjamMakieExt.jl`). **Lectures served:** 5.2's shipment maps (Code blocks 9, 42 and
+  51 draw them by hand with `sh2ln` and `legarrows!`) and its loads map (Code block 54's `rtemap`), and 5.3's copies.
+  **No migration.**
+- **`ldlabel(i, sh)` and `ldlabel(sh)`: the shipments loaded and unloaded at a location (CR 50; WP7b; names
+  provisional, D7).** `"(L1,2:U3)"` loads shipments 1 and 2 at location `i` and unloads shipment 3 there; with one
+  side only `"(L1,2)"` or `"(U3)"`, with neither `""`; `ldlabel(sh)` labels every location from 1 to the largest in
+  `sh.b` and `sh.e`. Core's, so it needs no extension; exported, its call being the point (D10), and a lecture's own
+  definition of the name, made after `using Logjam` as 5.2's Code block 1 and 5.3's Code block 23 make it, still
+  defines the lecture's own function. Checked `==` against both lectures' definitions, copied as text and run after
+  `using Logjam`, on their shipment tables (5.2's Ex. 2, `shR`, `sh5` and the 30 shipments of Ex. 9) and on 200
+  seeded random tables (`test/test_maptools.jl`), and by its doctest. **Lectures served:** 5.2 and 5.3, which define
+  it in folded figure code. **No migration.**
 
 ### Changed
 
@@ -397,6 +446,15 @@ missed.
   `pairwisesavings`' comment that `ijs.s` and `ijs[3]` are the destructured `sˢ` is now a line that runs, and
   `twoopt`'s and `mincostinsert`'s each add a `verbose = true` call, `twoopt(π, C)`'s printing Lecture 5.1's trace.
   The conversion changes no function.
+- **`plotroute!` now needs only Makie (MAP16, X2; WP7b).** Its three methods moved, as they were, from the map
+  extension (`LogjamMapExt`, which GeoMakie loads) to the Makie extension (`LogjamMakieExt`, which CairoMakie loads, and
+  GeoMakie too), since they make no GeoMakie call: they draw on a plain `Axis` with `using CairoMakie` alone, and on
+  `makemap`'s `GeoAxis` as before. Every call draws what it drew: v0.3.0's `plotroute!` tests hold unchanged with
+  GeoMakie loaded, and a fresh process with CairoMakie alone draws exactly the same lines and arrowheads on a plain
+  `Axis` (`test/test_LogjamMakieExt.jl`). Called with neither loaded, `plotroute!` is still a `MethodError` whose
+  hint says to load CairoMakie (and GeoMakie for a map). What moves is only which extension holds the methods, which
+  two of v0.3.0's structure tests name (`test_extensions_c5.jl`; their copies in `test/test_Logjam.jl` now name the
+  Makie extension). **No migration.**
 
 ### Internal
 

@@ -9,11 +9,17 @@
 # It is review D's round-three placer (makeLogjam/plans/v0_3_0/recon/refactor-D/placer2.jl and refactor-D-plotting.md,
 # "Rounds two and three"), ported: the same obstacles, costs, candidates, fine-grid fallback and search, without the
 # prototype's simulated annealing (off by default there, and the only thing in it that drew a random number), so the
-# placement is a function of the figure alone. Route drawing and the schematics (WP7b, WP7c) come later.
+# placement is a function of the figure alone.
+# - in WP7b (D2, MAP16, CR 50, CR 61): `plotroute!`'s three methods, moved here from LogjamMapExt as they were (they
+#   make no GeoMakie call, so they draw on a plain `Axis` with CairoMakie alone), with `names`, `loads` and `number`;
+#   `plotshmt!`; the stops' labels and the route numbers placed by `aligntext(ax, ...)` and placed again when a later
+#   `plotroute!` or `plotshmt!` call adds to the axis. Declared and documented in core (src/maptools.jl). The
+#   schematics (WP7c) come later.
 module LogjamMakieExt
 
 import Logjam
 using Makie: Makie, text!
+using DataFrames: AbstractDataFrame
 
 # =============================================================================
 # Geometry, in the pixels of the axis's scene (its viewport's lower-left corner is the origin)
@@ -650,6 +656,356 @@ function Logjam.aligntext(ax::Makie.AbstractAxis, x::AbstractVector{<:Real}, y::
                           verbose::Bool = false)
     return _aligntext(ax, x, y, labels; fontsize, font, lineheight, justification, rotation, maxgap, fix, prefer,
                       verbose).pairs
+end
+
+# =============================================================================
+# plotroute! (D2): three methods, arrowheads on. Moved here from LogjamMapExt in v0.3.1's WP7b (MAP16), the drawing
+# as it was: no GeoMakie call is made, so the arrows are placed and turned from the axis's own transform and limits,
+# on a GeoAxis or a plain Axis alike, and CairoMakie alone draws them.
+# =============================================================================
+
+# Where a point of the data space is drawn, in pixels of the axis: the axis's own transform (the identity on a plain
+# `Axis`, Mercator on `makemap`'s `GeoAxis`), then the visible limits over the axis's viewport. Read at each call, so
+# a `resize!` or new limits move the answer with the drawing.
+function _pixelmap(ax)
+    tf = Makie.transform_func(ax)
+    fl = ax.finallimits[]
+    o, w = Makie.origin(fl), Makie.widths(fl)
+    W = Makie.widths(ax.scene.viewport[])
+    return function (x, y)
+        p = Makie.apply_transform(tf, Makie.Point2d(x, y))
+        return Makie.Point2d((p[1] - o[1]) / w[1] * W[1], (p[2] - o[2]) / w[2] * W[2])
+    end
+end
+
+# The arrowhead of each leg: its center `at` of the way along the leg as drawn (by length on the screen) and the
+# angle the leg runs at there, on the screen. `legs` is one (x, y) pair of vectors for each leg.
+function _arrowheads(ax, legs, at)
+    topix = _pixelmap(ax)
+    pos, rot = Makie.Point2f[], Float32[]
+    for (lx, ly) in legs
+        P = [topix(lx[k], ly[k]) for k in eachindex(lx)]
+        seg = [hypot(P[k+1][1] - P[k][1], P[k+1][2] - P[k][2]) for k in 1:length(P)-1]
+        total = sum(seg)
+        if !(total > 0)                       # no length on the screen yet (before the first layout): no direction
+            push!(pos, P[1]); push!(rot, 0f0)
+            continue
+        end
+        target, k = at * total, 1
+        while k < length(seg) && (target > seg[k] || seg[k] == 0)
+            target -= seg[k]
+            k += 1
+        end
+        s = seg[k] > 0 ? clamp(target / seg[k], 0.0, 1.0) : 1.0
+        if seg[k] == 0                        # only repeated vertices from here on: the last stretch with a direction
+            k = findlast(>(0), seg)
+            s = 1.0
+        end
+        d = P[k+1] - P[k]
+        push!(pos, Makie.Point2f(P[k] + s * d))
+        push!(rot, Float32(atan(d[2], d[1])))
+    end
+    return pos, rot
+end
+
+# The arrowheads as one scatter plot in the axis's pixel space, turned and placed again whenever the viewport or the
+# visible limits change.
+function _drawarrows!(ax, legs; color, at, size)
+    state = Makie.Observable(_arrowheads(ax, legs, at))
+    Makie.onany((_...) -> (state[] = _arrowheads(ax, legs, at)), ax.finallimits, ax.scene.viewport)
+    return Makie.scatter!(ax, Makie.lift(first, state); marker = :rtriangle, markersize = size,
+                          rotation = Makie.lift(last, state), color = color, space = :pixel, strokewidth = 0,
+                          inspectable = false)
+end
+
+# the line and its arrowheads; `legs` already holds only the legs that get one
+function _drawroute!(ax, x, y, legs; color, linewidth, linestyle, arrows, arrow_at, arrow_size)
+    hl = Makie.lines!(ax, x, y; color = color, linewidth = linewidth, linestyle = linestyle)
+    ha = arrows ? _drawarrows!(ax, legs; color = color, at = arrow_at, size = arrow_size) : nothing
+    return (; lines = hl, arrows = ha)
+end
+
+function _checkarrows(arrow_at, arrow_every)
+    0 <= arrow_at <= 1 || throw(ArgumentError("arrow_at must be in [0, 1], the fraction of a leg's length; got $arrow_at"))
+    arrow_every >= 1 || throw(ArgumentError("arrow_every must be at least 1; got $arrow_every"))
+end
+
+# a leg is each pair of consecutive finite points; the arrow_every-th leg, counting from the first, gets an arrowhead
+# unless it has no length (a location visited twice)
+function _xylegs(x, y, every)
+    legs, n = Tuple{Vector{Float64}, Vector{Float64}}[], 0
+    for i in 1:length(x)-1
+        all(isfinite, (x[i], y[i], x[i+1], y[i+1])) || continue
+        n += 1
+        (n - 1) % every == 0 || continue
+        (x[i] == x[i+1] && y[i] == y[i+1]) && continue
+        push!(legs, ([Float64(x[i]), Float64(x[i+1])], [Float64(y[i]), Float64(y[i+1])]))
+    end
+    return legs
+end
+
+# v0.3.0's bodies of the first two methods, as they were; the public methods below draw through them, the several-route
+# method through the one-route body, and then place what they label.
+function _route_xy!(ax, x, y; color, linewidth, linestyle, arrows, arrow_at, arrow_size, arrow_every)
+    length(x) == length(y) || throw(ArgumentError("x and y must have the same length; got $(length(x)) and $(length(y))"))
+    _checkarrows(arrow_at, arrow_every)
+    return _drawroute!(ax, x, y, _xylegs(x, y, arrow_every); color, linewidth, linestyle, arrows, arrow_at, arrow_size)
+end
+
+function _route_rte!(ax, rte, sh, XY; tr, P, color, linewidth, linestyle, arrows, arrow_at, arrow_size, arrow_every)
+    size(XY, 2) == 2 || throw(ArgumentError("XY must have two columns (LON, LAT), one row for each location; got $(size(XY, 2))"))
+    loc = Int.(Logjam.rte2loc(rte, sh, something(tr, (;))))
+    if P === nothing
+        return _route_xy!(ax, XY[loc, 1], XY[loc, 2]; color, linewidth, linestyle, arrows, arrow_at, arrow_size, arrow_every)
+    end
+    _checkarrows(arrow_at, arrow_every)
+    legs = Tuple{Vector{Float64}, Vector{Float64}}[]
+    for k in 1:length(loc)-1                  # an arrowhead on each leg traced along the network
+        path = Logjam.tracepath(P, loc[k], loc[k+1])
+        lx, ly = Float64.(XY[path, 1]), Float64.(XY[path, 2])
+        ((k - 1) % arrow_every == 0 && !(all(==(lx[1]), lx) && all(==(ly[1]), ly))) && push!(legs, (lx, ly))
+    end
+    path = length(loc) >= 2 ? Logjam.tracepath(P, loc) : Int[]     # the line: the legs end to end, a junction one node
+    return _drawroute!(ax, Float64.(XY[path, 1]), Float64.(XY[path, 2]), legs; color, linewidth, linestyle, arrows, arrow_at, arrow_size)
+end
+
+# =============================================================================
+# The stops' labels and the route numbers (WP7b; CR 50, CR 61), placed by aligntext(ax, ...) and placed again when a
+# later plotroute! or plotshmt! call adds to the axis
+# =============================================================================
+
+# The label plots Logjam has placed in each axis, with what placed them, so that a later drawing call can place them
+# again: (; tp, x, y, labels, kw), `kw` the keywords given to `_aligntext`. Keyed weakly by the axis, so an axis that is
+# gone takes its entries with it; a label plot deleted from its axis is forgotten at the next call.
+const _PLACED = WeakKeyDict{Any, Vector{Any}}()
+
+# the stops' labels at aligntext's defaults; the route numbers in bold, nearest their centroids, with no side preferred,
+# out to 150 px (review D's round three, and WP7a's label check of 5.2's loads map and 5.3's route maps)
+const _NUMBER_KW = (; font = :bold, justification = :center, prefer = :near, maxgap = 150)
+
+# Place the labels at (x, y) with aligntext(ax, ...), draw them, and remember them for _placeagain!.
+function _placelabels!(ax, x, y, labels; color = nothing, kw...)
+    q = _aligntext(ax, x, y, labels; kw...)
+    tp = color === nothing ? text!(ax, x, y; q.pairs...) : text!(ax, x, y; color = color, q.pairs...)
+    push!(get!(() -> Any[], _PLACED, ax), (; tp, x, y, labels, kw = NamedTuple(kw)))
+    return tp
+end
+
+# Place again every label plot placed earlier in this axis, in the order they were placed, each against everything
+# now drawn: the plot is hidden while aligntext(ax, ...) places its labels, so it is not its own obstacle. A no-op on
+# an axis with none, so a call without labels draws what it drew at v0.3.0.
+function _placeagain!(ax)
+    ax isa Makie.AbstractAxis || return nothing
+    recs = get(_PLACED, ax, nothing)
+    recs === nothing && return nothing
+    filter!(r -> any(p -> p === r.tp, ax.scene.plots), recs)
+    for r in recs
+        vis = r.tp.visible[]
+        r.tp.visible[] = false
+        q = try
+            _aligntext(ax, r.x, r.y, r.labels; r.kw...)
+        finally
+            r.tp.visible[] = vis
+        end
+        r.tp.align[] = q.align
+        r.tp.offset[] = q.offset
+    end
+    return nothing
+end
+
+# A stop's label (CR 50): its name, its loads (`ldlabel`), or its name over its loads, as Lectures 5.2 and 5.3's
+# `citylabel` writes it (`City[i] * "\n" * ldlabel(i, sh)`); "" for a stop with neither, which gets no label.
+function _stoplabel(i, sh, names, loads)
+    nm = names === nothing ? "" : string(names[i])
+    ld = loads ? Logjam.ldlabel(i, sh) : ""
+    return isempty(nm) ? ld : isempty(ld) ? nm : nm * "\n" * ld
+end
+
+# names, loads and number are checked before anything is drawn
+function _checklabels(ax, stops, names, who)
+    ax isa Makie.AbstractAxis ||
+        throw(ArgumentError("$who places its labels and numbers in an axis, an Axis or a GeoAxis; got a $(typeof(ax))"))
+    if names !== nothing
+        names isa AbstractVector || throw(ArgumentError("$who's `names` is a vector with a name for each location; got a $(typeof(names))"))
+        for i in stops
+            checkbounds(Bool, names, i) ||
+                throw(ArgumentError("$who's `names` has $(length(names)) names and no name for location $i"))
+        end
+    end
+    return nothing
+end
+
+function _numbertexts(number, n)
+    number === true && return string.(1:n)
+    (number isa AbstractVector && length(number) == n) && return string.(number)
+    throw(ArgumentError("plotroute!'s `number` is false, true or one string for each of the $n routes; got $(repr(number))"))
+end
+
+# The stops' markers, then every label placed earlier in the axis placed again (each now sees the new lines and
+# markers), then the stops' own labels; `stops` holds each location once.
+function _stops!(ax, stops, sh, XY, names, loads)
+    x, y = Float64.(XY[stops, 1]), Float64.(XY[stops, 2])
+    hm = Makie.scatter!(ax, x, y; color = Makie.wong_colors()[1])
+    _placeagain!(ax)
+    txt = [_stoplabel(i, sh, names, loads) for i in stops]
+    keep = findall(!isempty, txt)
+    tp = _placelabels!(ax, x[keep], y[keep], txt[keep])
+    return (; markers = hm, labels = tp)
+end
+
+# The truck's own locations, left out of a route's centroid
+_trucklocs(tr) = tr === nothing ? Int[] : Int.(vcat(get(tr, :b, Int[]), get(tr, :e, Int[])))
+
+# Each route's number at the centroid of its stops (CR 61): the locations of its location sequence, each as often as
+# the route visits it, the truck's own left out (Matlog's pplot, Lecture 5.3's rtelabels!), in its route's color.
+function _numbers!(ax, R, sh, XY, tr, txt, cols)
+    tl = _trucklocs(tr)
+    cx, cy = Float64[], Float64[]
+    for (k, r) in enumerate(R)
+        loc = Int.(Logjam.rte2loc(r, sh, something(tr, (;))))
+        isempty(loc) && throw(ArgumentError("route $k visits no location, so it has no place for its number"))
+        s = filter(l -> !(l in tl), loc)
+        isempty(s) && (s = loc)
+        push!(cx, sum(Float64(XY[l, 1]) for l in s) / length(s))
+        push!(cy, sum(Float64(XY[l, 2]) for l in s) / length(s))
+    end
+    return _placelabels!(ax, cx, cy, txt; color = cols, _NUMBER_KW...)
+end
+
+# any sequence of locations
+function Logjam.plotroute!(ax, x::AbstractVector{<:Real}, y::AbstractVector{<:Real};
+                           color = :red, linewidth = 2, linestyle = :solid,
+                           arrows::Bool = true, arrow_at::Real = 0.55, arrow_size::Real = 12, arrow_every::Integer = 1)
+    h = _route_xy!(ax, x, y; color, linewidth, linestyle, arrows, arrow_at, arrow_size, arrow_every)
+    _placeagain!(ax)
+    return h
+end
+
+# one route: its location sequence (`rte2loc`), straight from stop to stop, or along the network by `P`; with `names`
+# or `loads`, its stops marked and labeled
+function Logjam.plotroute!(ax, rte::AbstractVector{<:Integer}, sh::AbstractDataFrame, XY::AbstractMatrix{<:Real};
+                           tr = nothing, P = nothing, color = :red, linewidth = 2, linestyle = :solid,
+                           arrows::Bool = true, arrow_at::Real = 0.55, arrow_size::Real = 12, arrow_every::Integer = 1,
+                           names = nothing, loads::Bool = false)
+    labeled = names !== nothing || loads
+    if labeled
+        size(XY, 2) == 2 || throw(ArgumentError("XY must have two columns (LON, LAT), one row for each location; got $(size(XY, 2))"))
+        stops = unique(Int.(Logjam.rte2loc(rte, sh, something(tr, (;)))))
+        _checklabels(ax, stops, names, "plotroute!")
+    end
+    h = _route_rte!(ax, rte, sh, XY; tr, P, color, linewidth, linestyle, arrows, arrow_at, arrow_size, arrow_every)
+    labeled || (_placeagain!(ax); return h)
+    return (; h..., _stops!(ax, stops, sh, XY, names, loads)...)
+end
+
+# several routes, one color each; with `names` or `loads` their stops marked and labeled, with `number` each route
+# numbered at the centroid of its stops
+function Logjam.plotroute!(ax, R::AbstractVector{<:AbstractVector{<:Integer}}, sh::AbstractDataFrame, XY::AbstractMatrix{<:Real};
+                           tr = nothing, P = nothing, colors = Makie.wong_colors(), linewidth = 2, linestyle = :solid,
+                           arrows::Bool = true, arrow_at::Real = 0.55, arrow_size::Real = 12, arrow_every::Integer = 1,
+                           names = nothing, loads::Bool = false, number = false)
+    labeled, numbered = names !== nothing || loads, number !== false
+    if labeled || numbered
+        size(XY, 2) == 2 || throw(ArgumentError("XY must have two columns (LON, LAT), one row for each location; got $(size(XY, 2))"))
+        stops = unique(reduce(vcat, [Int.(Logjam.rte2loc(r, sh, something(tr, (;)))) for r in R]; init = Int[]))
+        _checklabels(ax, stops, names, "plotroute!")
+        txt = numbered ? _numbertexts(number, length(R)) : String[]
+    end
+    hs = [_route_rte!(ax, rte, sh, XY; tr, P, color = colors[mod1(i, length(colors))], linewidth, linestyle,
+                      arrows, arrow_at, arrow_size, arrow_every) for (i, rte) in enumerate(R)]
+    h = (; lines = [h.lines for h in hs], arrows = [h.arrows for h in hs])
+    s = labeled ? _stops!(ax, stops, sh, XY, names, loads) : (_placeagain!(ax); (;))
+    numbered || return (; h..., s...)
+    cols = [colors[mod1(i, length(colors))] for i in eachindex(R)]
+    return (; h..., s..., numbers = _numbers!(ax, R, sh, XY, tr, txt, cols))
+end
+
+# =============================================================================
+# plotshmt! (D2, Matlog's plotshmt): each shipment from its origin to its destination, one arrowhead each
+# =============================================================================
+
+# Each shipment's polyline: straight, or bowed to the left of its direction of travel by `bend` times its length (a
+# quadratic curve whose control point is that far from the middle of the chord, as Lecture 5.2's `curvepts` draws its
+# schematics' shipments), in the data's own units.
+function _shmtlegs(sh, XY, bend; n = 60)
+    legs = Tuple{Vector{Float64}, Vector{Float64}}[]
+    for (b, e) in zip(sh.b, sh.e)
+        p = (Float64(XY[b, 1]), Float64(XY[b, 2]))
+        q = (Float64(XY[e, 1]), Float64(XY[e, 2]))
+        if bend == 0 || p == q
+            push!(legs, ([p[1], q[1]], [p[2], q[2]]))
+        else
+            c = ((p[1] + q[1]) / 2 - bend * (q[2] - p[2]), (p[2] + q[2]) / 2 + bend * (q[1] - p[1]))
+            t = range(0, 1, length = n)
+            push!(legs, ([(1 - s)^2 * p[1] + 2(1 - s) * s * c[1] + s^2 * q[1] for s in t],
+                         [(1 - s)^2 * p[2] + 2(1 - s) * s * c[2] + s^2 * q[2] for s in t]))
+        end
+    end
+    return legs
+end
+
+function _checkshmt(sh, XY)
+    size(XY, 2) == 2 || throw(ArgumentError("XY must have two columns (LON, LAT), one row for each location; got $(size(XY, 2))"))
+    for c in (:b, :e)
+        c in propertynames(sh) || throw(ArgumentError("sh must have the columns b and e, each shipment's origin and destination"))
+        bad = findfirst(i -> !(1 <= i <= size(XY, 1)), sh[!, c])
+        bad === nothing || throw(ArgumentError("shipment $bad's $c, $(sh[bad, c]), is not a row of XY (1 to $(size(XY, 1)))"))
+    end
+end
+
+# the shipments as one line, each separated from the next by NaN, and one arrowhead on each that has a length
+function _shmt!(ax, sh, XY; bend, color, linewidth, linestyle, arrows, arrow_at, arrow_size)
+    _checkarrows(arrow_at, 1)
+    legs = _shmtlegs(sh, XY, bend)
+    lx = reduce(vcat, [[l[1]; NaN] for l in legs]; init = Float64[])
+    ly = reduce(vcat, [[l[2]; NaN] for l in legs]; init = Float64[])
+    heads = [l for l in legs if !(all(==(l[1][1]), l[1]) && all(==(l[2][1]), l[2]))]
+    return _drawroute!(ax, lx, ly, heads; color, linewidth, linestyle, arrows, arrow_at, arrow_size)
+end
+
+# each location a shipment begins or ends at, once, origin before destination, shipment by shipment
+_shmtstops(sh) = unique(reduce(vcat, [[b, e] for (b, e) in zip(sh.b, sh.e)]; init = Int[]))
+
+function Logjam.plotshmt!(ax, sh::AbstractDataFrame, XY::AbstractMatrix{<:Real};
+                          bend::Real = 0, color = :red, linewidth = 2, linestyle = :solid,
+                          arrows::Bool = true, arrow_at::Real = 0.55, arrow_size::Real = 12,
+                          names = nothing, loads::Bool = false)
+    _checkshmt(sh, XY)
+    isfinite(bend) || throw(ArgumentError("bend is a finite fraction of a shipment's length; got $bend"))
+    labeled = names !== nothing || loads
+    stops = _shmtstops(sh)
+    labeled && _checklabels(ax, stops, names, "plotshmt!")
+    h = _shmt!(ax, sh, XY; bend, color, linewidth, linestyle, arrows, arrow_at, arrow_size)
+    labeled || (_placeagain!(ax); return h)
+    return (; h..., _stops!(ax, stops, sh, XY, names, loads)...)
+end
+
+# Matlog's plotshmt(sh, XY, rte): a route of more than one shipment drawn as a route, the shipment of a single-shipment
+# route as an independent shipment; with the truck's own locations every route is a route
+function Logjam.plotshmt!(ax, sh::AbstractDataFrame, XY::AbstractMatrix{<:Real},
+                          R::AbstractVector{<:AbstractVector{<:Integer}};
+                          tr = nothing, color = :red, colors = Makie.wong_colors(), linewidth = 2, linestyle = :solid,
+                          arrows::Bool = true, arrow_at::Real = 0.55, arrow_size::Real = 12, arrow_every::Integer = 1,
+                          names = nothing, loads::Bool = false)
+    _checkshmt(sh, XY)
+    _checkarrows(arrow_at, arrow_every)
+    istruck = tr !== nothing && (haskey(tr, :b) || haskey(tr, :e))
+    asroute = [istruck ? !isempty(r) : length(r) > 2 for r in R]
+    single = [r[1] for (k, r) in enumerate(R) if !asroute[k] && length(r) == 2]
+    Rm = R[asroute]
+    labeled = names !== nothing || loads
+    if labeled
+        seq = [asroute[k] ? Int.(Logjam.rte2loc(r, sh, something(tr, (;)))) : (length(r) == 2 ? [sh.b[r[1]], sh.e[r[1]]] : Int[])
+               for (k, r) in enumerate(R)]
+        stops = unique(reduce(vcat, seq; init = Int[]))
+        _checklabels(ax, stops, names, "plotshmt!")
+    end
+    s = _shmt!(ax, sh[single, :], XY; bend = 0, color, linewidth, linestyle, arrows, arrow_at, arrow_size)
+    hs = [_route_rte!(ax, r, sh, XY; tr, P = nothing, color = colors[mod1(i, length(colors))], linewidth, linestyle,
+                      arrows, arrow_at, arrow_size, arrow_every) for (i, r) in enumerate(Rm)]
+    h = (; lines = s.lines, arrows = s.arrows, routes = (; lines = [h.lines for h in hs], arrows = [h.arrows for h in hs]))
+    labeled || (_placeagain!(ax); return h)
+    return (; h..., _stops!(ax, stops, sh, XY, names, loads)...)
 end
 
 # =============================================================================

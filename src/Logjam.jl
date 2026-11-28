@@ -20,8 +20,8 @@ and their names:
 - **Data and geocoding:** `usplace`, `usstate`, `uscounty`, `uscentract`, `uscenblkgrp`, `uszcta5`,
   `uszcta3`, `uscbsa`, `uscsa`, `st2fips`, `fips2st`, `faf5nodes`, `faf5links`, `usrdnode`, `usrdlink`,
   `usrdnodemap`, `loc2lonlat`, `lonlat2loc`, `lonlat`.
-- **Maps** (GeoMakie): `makemap`, `mapbbox`, `aligntext`, `alloclines`, `plotroads!`, `plotroute!`, `dcf`,
-  and the constants `WORLD_LIMITS`, `US_LIMITS`, `CUS_LIMITS`.
+- **Maps** (GeoMakie): `makemap`, `mapbbox`, `aligntext`, `alloclines`, `plotroads!`, `plotroute!`, `plotshmt!`,
+  `ldlabel`, `dcf`, and the constants `WORLD_LIMITS`, `US_LIMITS`, `CUS_LIMITS`.
 - **Display:** `prt`, `snapvals`, `thousands`.
 - **Public, not exported** (called as `Logjam.name`, so a script's own function of the name does not collide):
   `scanTW`, `usstates`, the inventory measures `poissoncdf`, `pi0`, `qbar` and `poissarr`, `shtr`, the `sh` and
@@ -33,9 +33,9 @@ Always loaded: `Serialization`, `Artifacts`, `LazyArtifacts`, `Random`, `DataFra
 `DelaunayTriangulation`, `Graphs`, `SimpleWeightedGraphs`, `SparseArrays`, `Optim`.
 
 Weak dependencies, which activate an extension when loaded: `GeoMakie` (with `CairoMakie` to render)
-for maps; `Makie`, which CairoMakie loads, for `aligntext(ax, x, y, labels)`; `HTTP` and `JSON3` for
-street-address geocoding with Nominatim; `LightOSM` to download an OpenStreetMap road network; `JuMP` and
-`HiGHS` together for `TSP`, `binpack`, and `snapvals` on JuMP variables.
+for maps; `Makie`, which CairoMakie loads, for `aligntext(ax, x, y, labels)`, `plotroute!` and `plotshmt!`;
+`HTTP` and `JSON3` for street-address geocoding with Nominatim; `LightOSM` to download an OpenStreetMap road
+network; `JuMP` and `HiGHS` together for `TSP`, `binpack`, and `snapvals` on JuMP variables.
 """
 module Logjam
 
@@ -60,8 +60,8 @@ using PrecompileTools: @setup_workload, @compile_workload
 _tri_rng() = Xoshiro(0)
 
 # Three extensions (C5). The map extension (LogjamMapExt, triggered by GeoMakie) adds the methods of `makemap`,
-# `plotroads!`, `plotroute!` and `dcf`, and the OSM extension (LogjamOSMExt, triggered by LightOSM) the method of
-# `_osm_download`; each function is declared in core, with its docstring, so a call made without its extension is a
+# `plotroads!` and `dcf` (`plotroute!`'s moved to the Makie extension in v0.3.1, MAP16), and the OSM extension
+# (LogjamOSMExt, triggered by LightOSM) the method of `_osm_download`; each function is declared in core, with its docstring, so a call made without its extension is a
 # MethodError and `__init__` (below) says what to load. The one Ref left is Nominatim's query function, which
 # LogjamNominatimExt (HTTP + JSON3) sets and the tests swap to stand in for the network.
 const _nominatim_available = Ref{Bool}(false)
@@ -89,6 +89,7 @@ export alloclines
 
 # Export map functions and constants
 export makemap, mapbbox, aligntext, plotroads!, plotroute!
+export plotshmt!, ldlabel    # shipments drawn, origin to destination (Matlog's plotshmt), and the loads label of a location (CR 50; WP7b, D2; names provisional, D7)
 export WORLD_LIMITS, US_LIMITS, CUS_LIMITS
 
 # Export helper functions (H7)
@@ -141,13 +142,16 @@ Display current figure. Requires `using CairoMakie, GeoMakie`.
 function dcf end
 
 # The hint a MethodError carries when a function whose methods an extension adds is called without it (C5): the map
-# functions and `dcf` need GeoMakie (and CairoMakie to draw), a download needs LightOSM, `TSP` and `binpack` need JuMP
-# and HiGHS together (WP2). Silent for any other error, and for these functions once their extension is loaded, when a
-# MethodError is a wrong argument.
+# functions and `dcf` need GeoMakie (and CairoMakie to draw), `plotroute!` and `plotshmt!` Makie (WP7b, MAP16), a
+# download needs LightOSM, `TSP` and `binpack` need JuMP and HiGHS together (WP2). Silent for any other error, and for
+# these functions once their extension is loaded, when a MethodError is a wrong argument.
 function _extension_hint(io, exc, argtypes, kwargs)
     f = exc.f === Core.kwcall ? exc.args[2] : exc.f
-    if f in (makemap, plotroads!, plotroute!, dcf) && Base.get_extension(Logjam, :LogjamMapExt) === nothing
+    if f in (makemap, plotroads!, dcf) && Base.get_extension(Logjam, :LogjamMapExt) === nothing
         print(io, "\n$(nameof(f)) needs the map extension, which GeoMakie loads. Run: using CairoMakie, GeoMakie")
+    elseif f in (plotroute!, plotshmt!) && Base.get_extension(Logjam, :LogjamMakieExt) === nothing
+        print(io, "\n$(nameof(f)) needs the Makie extension, which CairoMakie loads; a map from makemap needs GeoMakie ",
+              "too. Run: using CairoMakie, GeoMakie")
     elseif f in (TSP, binpack) && Base.get_extension(Logjam, :LogjamJuMPExt) === nothing
         print(io, "\n$(nameof(f)) needs the optimization extension, which JuMP and HiGHS load together. ",
               "Run: using JuMP, HiGHS")
