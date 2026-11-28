@@ -247,10 +247,11 @@ end
 end
 
 # ==== added by PCV WP7a-2 of Logjam v0.3.1 (his review of WP7a's 5.2 maps: keep a label beside its point) ====
-# A label never moves farther from its point only to clear a base layer. The figure is Jacksonville's on 5.2's maps in
-# miniature, in pixels (a 400 x 300 axis filling its figure): data lines on every side of the point but the northeast,
-# and a base layer 12 px east of it, so the northeast spots out to 19 px touch the base layer and the only clear spot
-# within `maxgap` is the diagonal 24 px out. Synthetic: no lecture data.
+# A label never moves farther from its point only to clear a base line that grazes it, and never takes a spot where a
+# base line crosses its text to be nearer. The figure is Jacksonville's on 5.2's maps in miniature, in pixels (a
+# 400 x 300 axis filling its figure): data lines on every side of the point but the northeast, and a base layer 12 px
+# east of it, so on the northeast diagonal the line crosses the label's text out to 15 px, grazes it (touching only the
+# 2 px clearance) at 19 px, and the only clear spot within `maxgap` is 24 px out. Synthetic: no lecture data.
 function _wp7a2_coast(; base::Bool)
     fig = Figure(size = (400, 300), figure_padding = 0)
     ax = Axis(fig[1, 1]; limits = (0, 400, 0, 300))
@@ -265,16 +266,27 @@ function _wp7a2_coast(; base::Bool)
     return fig, ax
 end
 
-@testset "WP7a-2 (v0.3.1) a label stays beside its point: a nearer spot touching a base layer beats a clear one farther out" begin
+@testset "WP7a-2 (v0.3.1) a label stays beside its point: a spot a base line grazes beats one it crosses nearer in and a clear one farther out" begin
     fig, ax = _wp7a2_coast(base = true)
     q = _WP7A_MX._aligntext(ax, [200.0], [150.0], ["Jacksonville"]; fontsize = 14)
     fig0, ax0 = _wp7a2_coast(base = false)
     q0 = _WP7A_MX._aligntext(ax0, [200.0], [150.0], ["Jacksonville"]; fontsize = 14)
     # the same line as a data line: the label goes out to the clear diagonal, 24 px, touching nothing
     @test q0.align == [(:left, :bottom)] && hypot(q0.offset[1]...) >= 24 && isempty(q0.flagged)
-    # as a base layer: the label stays nearer, northeast, touching the base layer and nothing else (flagged as such)
-    @test q.align == [(:left, :bottom)] && hypot(q.offset[1]...) < 24
-    @test length(q.flagged) == 1 && q.flagged[1].touches == ["a base layer"]
+    # the three kinds of spot on the northeast diagonal: the line crosses the text at 7 and 15 px, grazes it at 19 px,
+    # and the spot 24 px out is clear
+    tp = text!(ax, [200.0], [150.0]; text = ["Jacksonville"], fontsize = 14, align = [(:left, :center)],
+               offset = [(0.0, 0.0)])
+    D = _WP7A_MX._Drawing(ax, tp)
+    delete!(ax, tp)
+    ne(r) = _WP7A_MX._static(D, 1, _WP7A_MX._Cand(2, (round(r * 0.7071; digits = 1), round(r * 0.7071; digits = 1)), r))
+    @test all(t -> t.hard == 0 && t.base > 0 && t.bcross == 1, (ne(7.0), ne(15.0)))
+    @test ne(19.0).hard == 0 && ne(19.0).base > 0 && ne(19.0).bcross == 0
+    @test ne(24.0).hard == 0 && ne(24.0).base == 0
+    # as a base layer: the spot it only grazes wins, nearer than the clear diagonal, and the spots nearer in, where the
+    # line crosses the text, lose
+    @test q.align == [(:left, :bottom)] && q.offset == [(13.4, 13.4)]
+    @test all(u -> !("a data line" in u.touches), q.flagged)
     # nearer as seen, too: from the point to the label's nearest ink
     seen(ax, q) = (tp = text!(ax, [200.0], [150.0]; text = ["Jacksonville"], fontsize = 14, align = q.align,
                               offset = q.offset);

@@ -581,12 +581,14 @@ Borders", "Country Borders"); on a map, a line fainter than opacity 0.35 is the 
 label none of whose sides within `maxgap` is clear of everything, base layers included, then searches every offset on
 a 1-pixel grid within `maxgap`, nearest first, and is offered the first six that clear everything by 1 pixel.
 
-**Closeness to its point outweighs a base layer:** a label never moves farther from its point only to clear one. For
-this the distance is measured as it is seen, from the point to the nearest ink of the label, and a spot touching a
-base layer and nothing else is charged the 40 only if some spot clear of everything is as near as it or nearer;
-otherwise it costs only 1 for each segment of the layer it touches. So a label sits across a border or a coastline
-beside its point rather than clear of it farther out; data lines, markers, other labels and the axis edge are avoided
-as before.
+**Closeness to its point outweighs a base line that only grazes it.** A base line *crosses* a label when its stroke
+enters the ink box of one of the label's lines, and *grazes* it when it touches only the 2-pixel clearance around
+them. A crossing costs the 40 always. A spot that grazes a base layer and touches nothing else costs the 40 if some
+spot clear of everything, or the spot the label would take with the full 40, is as near its point or nearer, the
+distance measured as it is seen, from the point to the nearest ink of the label; otherwise it costs only 1 for each
+segment of the layer it touches. So a label never moves farther from its point only to clear a line that grazes it,
+never takes a spot where a base line crosses its text to be nearer, and the rule only ever brings a label nearer; data
+lines, markers, other labels and the axis edge are avoided as before.
 
 The labels then move one at a time to their best positions given the others, the move that lowers its label's cost
 most first, until no move lowers any; where two labels contend for a place, the one that loses less by moving gives

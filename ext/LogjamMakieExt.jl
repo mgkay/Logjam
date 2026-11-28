@@ -4,7 +4,8 @@
 #   and documented in core beside `aligntext(x, y)` (src/maptools.jl), which it leaves unchanged;
 # - in WP8, a precompile workload for it (D12), at the end of this file;
 # - in WP7a-2, from his review of WP7a's pictures (Jacksonville on 5.2's maps): a label never moves farther from its
-#   point only to clear a base layer, distance as seen, and the labels' moves taken largest first (see _place).
+#   point only to clear a base line that grazes it, and no base line crosses a label's text to bring it nearer;
+#   distance as seen; the labels' moves taken largest first (see _place).
 # It is review D's round-three placer (makeLogjam/plans/v0_3_0/recon/refactor-D/placer2.jl and refactor-D-plotting.md,
 # "Rounds two and three"), ported: the same obstacles, costs, candidates, fine-grid fallback and search, without the
 # prototype's simulated annealing (off by default there, and the only thing in it that drew a random number), so the
@@ -315,11 +316,27 @@ end
 
 _boxes_at(D::_Drawing, i, c::_Cand) = [_shift(b, D.anchors[i][1] + c.off[1], D.anchors[i][2] + c.off[2]) for b in D.rel[c.d][i]]
 
+# A box shrunk inward by m on every side, never past its center line.
+function _shrink(b::_Box, m)
+    cx, cy = (b.x0 + b.x1) / 2, (b.y0 + b.y1) / 2
+    return _Box(min(b.x0 + m, cx), max(b.x1 - m, cx), min(b.y0 + m, cy), max(b.y1 - m, cy))
+end
+
+# How far inside a label's ink boxes a base line must reach to cross its text rather than graze it, in pixels. 0: a
+# stroke that enters an ink box at all crosses, and one that touches only the clearance around the boxes grazes.
+# Measured on the 16 label figures (WP7a-2, labelcheck-alternatives.tsv in makeLogjam's measurements/wp7a2/): every
+# inset from 0.5 px up let a base line into the ink box of a label that was clear of it before, Tucson's on 3.4's map
+# first, and 0 brings Jacksonville to the lecture's own spot all the same.
+const _INSET = 0.0
+
 # The static cost of label i at candidate c: what it crosses, and the axis edge, in two parts. `hard`: a data line
 # charged once per plot crossed plus 1 per segment, a marker or other label once each, any part outside the axis 5000.
 # `base`: a base layer charged once per plot touched (40), and `bsegs`, 1 per base segment touched. The whole is
-# hard + base + bsegs (_scost); _place lets a base contact that brings a label nearer cost only its bsegs (WP7a-2).
-function _static(D::_Drawing, i, c::_Cand; clear = 2.0, wedge = 5000.0)
+# hard + base + bsegs (_scost). `bcross`: the base plots whose stroke reaches into a line box shrunk by `inset` (by
+# default 0, so into the box at all), through the text; a base plot touched and not crossed only grazes the label,
+# touching its `clear` margin. _place lets a graze that brings a label nearer cost only its bsegs, never a crossing
+# (WP7a-2).
+function _static(D::_Drawing, i, c::_Cand; clear = 2.0, wedge = 5000.0, inset = _INSET)
     bs = _boxes_at(D, i, c)
     cost = 0.0
     for b in bs
@@ -345,6 +362,7 @@ function _static(D::_Drawing, i, c::_Cand; clear = 2.0, wedge = 5000.0)
         end
     end
     groups, bgroups = Dict{Int, Float64}(), Dict{Int, Float64}()
+    crossed = Set{Int}()
     bsegs = 0.0
     for k in seen
         s = D.segs[k]
@@ -354,11 +372,14 @@ function _static(D::_Drawing, i, c::_Cand; clear = 2.0, wedge = 5000.0)
         else
             bgroups[s.group] = s.w
             bsegs += 1.0
+            if !(s.group in crossed) && any(b -> _segbox(s.a, s.b, _grow(_shrink(b, inset), s.hw)), bs)
+                push!(crossed, s.group)
+            end
         end
     end
     cost += sum(values(groups); init = 0.0)
     cost += sum((D.obs[k].w for k in seeno); init = 0.0)
-    return (hard = cost, base = sum(values(bgroups); init = 0.0), bsegs = bsegs)
+    return (hard = cost, base = sum(values(bgroups); init = 0.0), bsegs = bsegs, bcross = length(crossed))
 end
 _scost(t) = t.hard + t.base + t.bsegs
 
@@ -394,14 +415,19 @@ end
 #   maxgap   the ordinary search radius, in pixels; beyond it, out to 2maxgap, only at a steep cost per pixel, so only to
 #            clear a data line, a marker or a label (each 1000), never a base layer
 #   fix      label index => candidate: pinned, and no other label may take its place
-# A base layer (WP7a-2, his review of WP7a's 5.2 maps): a label never moves farther from its point only to clear one.
-# Distance is measured as it is seen, from the point to the label's nearest ink (_seen). A candidate touching a base
-# layer and nothing else costs the base layer's 40 only if some candidate clear of everything is as near as it, or
-# nearer; where every clear candidate is farther, the contact costs only its segments, 1 each.
+#   inset    how far inside a label's ink boxes a base line reaches before it crosses the text (_INSET, 0 px)
+# A base layer (WP7a-2: his review of WP7a's 5.2 maps, then the first revision's pictures): a label never moves
+# farther from its point only to clear a base line that merely grazes it, and never takes a spot where a base line
+# crosses its text to be nearer. Distance is measured as it is seen, from the point to the label's nearest ink
+# (_seen). A candidate that grazes a base layer (touching only the `clear` margin around its ink boxes) and touches
+# nothing else costs the base layer's 40 if some candidate clear of everything, or the candidate the label takes on
+# the full costs, is as near as it or nearer; otherwise the graze costs only its segments, 1 each. So the rule only
+# ever brings a label nearer. A crossing costs the 40 always, as a contact did before WP7a-2.
 function _place(ds::Vector{_Drawing}; prefer = :outward, xy = nothing, maxgap = 30, fix = nothing,
                 radii = [3, 5, 7, 9, 12, 15, 19, 24, 30, 38, 48, 60, 75, 95, 120, 150],
                 clear = 2.0, wdist = 1.0, wside = 1.5, wlabel = 1000.0, maxpass = 50, wassoc = 30.0,
-                fallback = 2maxgap, far = prefer === :near ? 60 : 20, grid = 1, keep = 6, gclear = 1.0)
+                fallback = 2maxgap, far = prefer === :near ? 60 : 20, grid = 1, keep = 6, gclear = 1.0,
+                inset = _INSET)
     D1 = ds[1]
     n = length(D1.anchors)
     C = _candidates(filter(<=(min(fallback, maximum(radii))), radii))
@@ -453,7 +479,7 @@ function _place(ds::Vector{_Drawing}; prefer = :outward, xy = nothing, maxgap = 
     for i in 1:n, (k, c) in enumerate(C)
         isinf(pref[i, k]) || (pref[i, k] += assoc(i, c))
     end
-    T = [[_static(D, i, C[k]; clear) for D in ds] for i in 1:n, k in 1:K]
+    T = [[_static(D, i, C[k]; clear, inset) for D in ds] for i in 1:n, k in 1:K]
     S = [isinf(pref[i, k]) ? Inf : sum(_scost, T[i, k]) for i in 1:n, k in 1:K]
     K0 = K
     # The fine-grid fallback (the course's label_place.jl): a label none of whose candidates within maxgap is clear of
@@ -491,15 +517,18 @@ function _place(ds::Vector{_Drawing}; prefer = :outward, xy = nothing, maxgap = 
             K = length(C)
         end
     end
-    # A base layer is never cleared at the price of distance (WP7a-2): a candidate touching a base layer and nothing
-    # else, nearer as seen than every candidate clear of everything, costs only its base segments.
+    # A grazing base layer is never cleared at the price of distance (WP7a-2): a candidate that grazes a base layer,
+    # crosses none and touches nothing else costs only its base segments where that brings the label nearer, as seen,
+    # than every candidate clear of everything and than the candidate it takes on the full costs. A crossing keeps its
+    # 40, and a label already crossed on the full costs is not drawn farther out to a graze.
     for i in 1:n
         seen = [isinf(pref[i, k]) ? Inf : maximum(_seen(D, i, C[k]) for D in ds) for k in 1:K]
         nearest = minimum((seen[k] for k in 1:K if S[i, k] == 0); init = Inf)
+        nearest = min(nearest, seen[argmin(view(S, i, :) .+ view(pref, i, :))])
         for k in 1:K0
             isinf(pref[i, k]) && continue
             ts = T[i, k]
-            (all(t -> t.hard == 0, ts) && any(t -> t.base > 0, ts) && seen[k] < nearest) || continue
+            (all(t -> t.hard == 0 && t.bcross == 0, ts) && any(t -> t.base > 0, ts) && seen[k] < nearest) || continue
             S[i, k] = sum(t -> t.bsegs, ts)
         end
     end
