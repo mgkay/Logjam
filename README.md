@@ -12,7 +12,7 @@ Logjam is a Julia package for logistics engineering, providing tools for:
 * **Spatial Data**: A gazetteer of U.S. administrative boundaries and points, including Cities, Counties, ZIP codes (3- and 5-digit), Census tracts, and CBSA/CSA definitions.
 * **Geocoding**: Forward (`loc2lonlat`) and reverse (`lonlat2loc`) geocoding with tiered resolution — street addresses via Nominatim, city/place names, postal codes, and counties from built-in reference data.
 * **Distance Metrics**: Unified distance calculation utilities supporting Rectilinear (*L*₁), Euclidean (*L*₂), Minkowski (*L_p*), Chebyshev (*L*∞), Great Circle (Haversine), and area-adjusted great-circle (`dgca`) metrics.
-* **Plotting**: Plotting on any Makie axis, a plain `Axis` with CairoMakie alone or a map from `makemap`. Label placement (`aligntext(ax, x, y, labels)`) reads the figure as drawn and puts each label beside its point, clear of the lines, markers and other labels already in the axis.
+* **Plotting**: Plotting on any Makie axis, a plain `Axis` with CairoMakie alone or a map from `makemap`. Label placement (`aligntext(ax, x, y, labels)`) reads the figure as drawn and puts each label beside its point, clear of the lines, markers and other labels already in the axis. Route drawing (`plotroute!`) and shipment drawing (`plotshmt!`, Matlog's `plotshmt`) put an arrowhead on each leg, label each stop with its name and the shipments loaded and unloaded there (`ldlabel`), number several routes, and draw schematics in Matlog's numbered-node style: bowed curves cut at numbered nodes, with labels along the curves.
 * **Mapping**: Plotting recipes and helper functions for mapping spatial data using GeoMakie.
 * **Data Helpers**: Formatted printing (`prt`), thousands separators (`thousands`), floating-point snapping (`snapvals`), the 51-row state table (`usstate`), and a table's or a geocoded place's coordinates as the distance functions take them (`lonlat`).
 
@@ -40,8 +40,8 @@ Logjam uses Julia package extensions to keep its core lightweight. Features acti
 | `using` statement | Features enabled |
 |---|---|
 | `using Logjam` | Core: facility location, costing, distances, road networks, routing, spatial data, geocoding, data helpers. |
-| `using Logjam, CairoMakie` | + plotting on any Makie axis: `aligntext(ax, x, y, labels)`, which places labels clear of what is drawn. CairoMakie loads Makie, which loads the Makie extension. |
-| `using Logjam, CairoMakie, GeoMakie` | + the above, and mapping: `makemap`, `plotroads!`, `plotroute!`. GeoMakie loads the map extension; CairoMakie draws. |
+| `using Logjam, CairoMakie` | + plotting on any Makie axis: `aligntext(ax, x, y, labels)`, which places labels clear of what is drawn, and route and shipment drawing, `plotroute!` and `plotshmt!`. CairoMakie loads Makie, which loads the Makie extension. |
+| `using Logjam, CairoMakie, GeoMakie` | + the above, and mapping: `makemap` and `plotroads!`. GeoMakie loads the map extension; CairoMakie draws. |
 | `using LightOSM; using Logjam` | + OSM roads: `osm_roads` (downloading; a saved copy reads without it). |
 | `using HTTP, JSON3; using Logjam` | + address geocoding: `loc2lonlat` address tier via Nominatim. |
 | `using JuMP, HiGHS; using Logjam` | + optimization models: `Logjam.TSP`, `Logjam.binpack`, and `snapvals` on a solved model's variables. JuMP and HiGHS together load the optimization extension. |

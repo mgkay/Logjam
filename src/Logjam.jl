@@ -20,8 +20,9 @@ and their names:
 - **Data and geocoding:** `usplace`, `usstate`, `uscounty`, `uscentract`, `uscenblkgrp`, `uszcta5`,
   `uszcta3`, `uscbsa`, `uscsa`, `st2fips`, `fips2st`, `faf5nodes`, `faf5links`, `usrdnode`, `usrdlink`,
   `usrdnodemap`, `loc2lonlat`, `lonlat2loc`, `lonlat`.
-- **Maps** (GeoMakie): `makemap`, `mapbbox`, `aligntext`, `alloclines`, `plotroads!`, `plotroute!`, `plotshmt!`,
-  `ldlabel`, `dcf`, and the constants `WORLD_LIMITS`, `US_LIMITS`, `CUS_LIMITS`.
+- **Maps and plots:** `makemap` and `plotroads!` (GeoMakie); `plotroute!`, `plotshmt!` and `aligntext(ax, x, y,
+  labels)` (Makie, which CairoMakie loads); `mapbbox`, `aligntext(x, y)`, `alloclines` and `ldlabel` (core); `dcf`
+  (deprecated, removed in v0.4.0); and the constants `WORLD_LIMITS`, `US_LIMITS`, `CUS_LIMITS`.
 - **Display:** `prt`, `snapvals`, `thousands`.
 - **Public, not exported** (called as `Logjam.name`, so a script's own function of the name does not collide):
   `scanTW`, `usstates`, the inventory measures `poissoncdf`, `pi0`, `qbar` and `poissarr`, `shtr`, the `sh` and

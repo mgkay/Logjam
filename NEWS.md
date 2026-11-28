@@ -19,7 +19,10 @@ forms and `wcentroid(P, w)`; Lecture 2.5's empirical aggregate distance (`dgca(.
 traces of Lectures 5.1 and 5.2 (`twoopt` and `mincostinsert` with `verbose`). `mapbbox` gives the box of a city, town
 or other Census place, and of a state, offline. The ZIP tables gain each ZCTA's state (`STFIP`), and the place table
 each place's short name for a map label (`LABEL`). A Makie extension, which CairoMakie loads, places labels clear of
-everything drawn in an axis (`aligntext(ax, x, y, labels)`). `dcf` is deprecated.
+everything drawn in an axis (`aligntext(ax, x, y, labels)`). In it `plotroute!`, moved there so that it needs only
+CairoMakie, labels each stop and numbers several routes; `plotshmt!` draws shipments from origin to destination, with
+`ldlabel` writing a location's loads; and both draw Lecture 5.2's schematics in Matlog's numbered-node style.
+`dcf` is deprecated.
 
 **No migration:** every call a course makes returns what it returned at v0.3.0, the ZIP and place tables with one
 column appended (`STFIP`, `LABEL`), which code that reads its columns by name does not see; `dcf()` still works, and

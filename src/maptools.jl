@@ -1084,7 +1084,8 @@ function plotroads! end
 """
     plotroute!(ax, x, y; color = :red, linewidth = 2, linestyle = :solid,
                arrows = true, arrow_at = 0.55, arrow_size = 12, arrow_every = 1) -> (; lines, arrows)
-    plotroute!(ax, rte, sh, XY; tr = nothing, P = nothing, color = :red, ..., names = nothing, loads = false,
+    plotroute!(ax, rte, sh, XY; tr = nothing, P = nothing, color = :red, linewidth = 2, linestyle = :solid,
+               arrows = true, arrow_at = nothing, arrow_size = 12, arrow_every = 1, names = nothing, loads = false,
                bend = 0, bend_at = 0.5, node_numbers = false, node_size = 22, label = nothing) -> (; lines, arrows)
     plotroute!(ax, R, sh, XY; tr = nothing, P = nothing, colors = Makie.wong_colors(), ..., names = nothing,
                loads = false, number = false) -> (; lines, arrows)
@@ -1105,11 +1106,13 @@ CairoMakie, GeoMakie`).
   each as the one-route method draws it.
 
 An arrowhead sits `arrow_at` of the way along a leg, by its length as drawn (`0.55` is a little past the middle), on
-every `arrow_every`-th leg from the first, `arrow_size` pixels long. A leg of no length (a location visited twice) has
-none, and `arrows = false` draws none. A leg is each pair of consecutive locations, or with `P` the whole traced path
-from one location to the next. The arrowheads point along the leg as it is drawn: their angle is computed from the axis's
-own transform and limits, so it is right on a map (`makemap`'s Mercator `GeoAxis`) and on a plain `Axis`, and a
-`resize!` turns them again. `plotroute!` makes no call to GeoMakie.
+every `arrow_every`-th leg from the first, `arrow_size` pixels long. `arrow_at`'s default is `0.55`, but on the
+one-route method, whose default, `nothing`, is `0.55`, or with `node_numbers` the arrowhead's tip on the far node
+(below). A leg of no length (a location visited twice) has none, and `arrows = false` draws none. A leg is each pair
+of consecutive locations, or with `P` the whole traced path from one location to the next. The arrowheads point along
+the leg as it is drawn: their angle is computed from the axis's own transform and limits, so it is right on a map
+(`makemap`'s Mercator `GeoAxis`) and on a plain `Axis`, and a `resize!` turns them again. `plotroute!` makes no call
+to GeoMakie.
 
 # Stops and route numbers
 - `names`: a vector of the locations' names, indexed by location (as `City[i]` names location `i`). Each stop of the
@@ -1238,7 +1241,7 @@ function plotroute! end
 
 """
     plotshmt!(ax, sh, XY; bend = 0, color = :red, linewidth = 2, linestyle = :solid, arrows = true,
-              arrow_at = 0.55, arrow_size = 12, names = nothing, loads = false, bend_at = 0.5,
+              arrow_at = nothing, arrow_size = 12, names = nothing, loads = false, bend_at = 0.5,
               node_numbers = false, node_size = 22, shmt_labels = false, load_color = nothing,
               load_font = nothing) -> (; lines, arrows)
     plotshmt!(ax, sh, XY, R; tr = nothing, color = :red, colors = Makie.wong_colors(), linewidth = 2,
@@ -1263,7 +1266,9 @@ the locations' (`LON`, `LAT`), one row for each location, as for `plotroute!`.
 
 An arrowhead sits `arrow_at` of the way along each shipment, by its length as drawn, `arrow_size` pixels long, and
 points along it there, on a map and on a plain `Axis` alike, as `plotroute!`'s do (`arrow_every` is the routes'); a
-shipment from a location to itself has none, and `arrows = false` draws none.
+shipment from a location to itself has none, and `arrows = false` draws none. On the first method `arrow_at`'s
+default, `nothing`, is `0.55`, or with `node_numbers` the arrowhead's tip on the destination's node (below); on the
+routes method it is `0.55`.
 
 `names` and `loads` mark and label each location a shipment begins or ends at (or each stop of a route), once, as
 `plotroute!`'s do: its name, its loads (`ldlabel`), or its name over its loads, placed by `aligntext(ax, ...)` and
