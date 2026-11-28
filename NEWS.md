@@ -399,6 +399,37 @@ missed.
   `using Logjam`, on their shipment tables (5.2's Ex. 2, `shR`, `sh5` and the 30 shipments of Ex. 9) and on 200
   seeded random tables (`test/test_maptools.jl`), and by its doctest. **Lectures served:** 5.2 and 5.3, which define
   it in folded figure code. **No migration.**
+- **Schematics: `plotshmt!(ax, sh, XY; node_numbers, node_size, bend, bend_at, shmt_labels, load_color, load_font)`
+  and `plotroute!(ax, rte, sh, XY; node_numbers, node_size, bend, bend_at, label)`, in Matlog `pplot`'s `'NumNode'`
+  style (D3 of review D's round three; WP7c; the keywords and the return fields `node_numbers`, `shmt_labels` and
+  `label` provisional, D7).** `node_numbers = true` draws each location as a white circle `node_size` pixels across
+  (22, which holds two digits) with its number centered in it at 13 points, over the lines, and cuts each shipment or
+  leg at the circles' edges in pixels after the figure's layout, the arrowhead's tip on the far circle (cut again when
+  the axis's limits or size change); `arrow_at` given restores an arrowhead partway along. A location where Logjam has
+  already drawn a node in the axis is not drawn again, so a route drawn over the shipments' schematic is cut at their
+  nodes. `bend` takes one number for each shipment (or each leg of a route), and `bend_at` (in `[0, 1]`, 0.5 by
+  default) centers the bow that far along the chord, Lecture 5.2's `curvepts` curve; the bows stay the caller's (no
+  `bend = :auto`), since one bend for all lays shipment 2 over shipment 1 on 5.2's five-shipment schematic and no label
+  check sees it. `shmt_labels` writes "Shmt k" (or the word given, or one string each) along each shipment's curve,
+  searched from 10 to 90 percent of its length on either side, 3 to 11 pixels off, turned with it and upright,
+  preferring the middle and the bow's outer side, and clear of everything drawn; a route's `label` is written the
+  same way along its most bowed leg. The stops' labels (`names`, `loads`) are placed by `aligntext(ax, ...)` clear of
+  the circles, curves and labels along them, in `load_color` and `load_font` when given; every label placed, along a
+  curve or not, is placed again when a later `plotroute!` or `plotshmt!` call adds to the axis. `plotshmt!`'s and the
+  one-route `plotroute!`'s `arrow_at` defaults to `nothing`, meaning 0.55 as before, or the end with `node_numbers`.
+  Without these keywords both draw what they drew, through the same code: the drawing of WP7b's test of every method,
+  read back as text, is identical line for line before and after (`makeLogjam/plans/v0_3_1/measurements/wp7c/`).
+  Checked on synthetic figures (`test/test_LogjamMakieExt.jl`): one circle and one number per location, an arrowhead's
+  tip on the destination's circle and none inside a circle, one arrowhead per shipment or leg, `bend` and `bend_at`
+  as vectors bowing each curve as given, the labels along the curves present, upright, between 10 and 90 percent of
+  their curves and clear of every line, a node drawn once, the labels placed again by a later call, and the checks;
+  WP7b's two keyword-list checks of these methods admit the new keywords. As a report, the course's label check on
+  Lecture 5.2's three schematics drawn through these keywords on scratch copies of its script: fig-three-shipments 0
+  contacts of 16 labels, fig-five-shipments 0 of 19, fig-pairwise-saving 0 of 11, none crossed by a base line, none
+  flagged, as round three found. The several-routes methods (`plotroute!(ax, R, ...)`, `plotshmt!(ax, sh, XY, R)`)
+  take none of these keywords yet. **Lectures served:** 5.2, whose schematics draw their nodes, bows, arrowheads and
+  labels by hand in Code blocks 1, 24 and 25 (98, 60 and 21 lines); each chooses at the re-pin whether to call them.
+  **No migration.**
 
 ### Changed
 

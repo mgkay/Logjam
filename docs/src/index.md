@@ -372,7 +372,10 @@ usstates
 `plotroute!` draws a route and `plotshmt!` shipments, each with an arrowhead to show its direction, on a plain `Axis`
 or a map; with `names` or `loads` they mark and label each stop, its loads written by `ldlabel`, and `plotroute!`'s
 `number` numbers several routes, all placed by `aligntext(ax, ...)` and placed again when a later call adds to the
-axis. `ldlabel` needs no extension:
+axis. Drawn as schematics, in Matlog `pplot`'s `'NumNode'` style, `plotshmt!` (`node_numbers`, `node_size`, `bend`
+and `bend_at` for each shipment, `shmt_labels`) and a single route's `plotroute!` (`node_numbers`, `bend` for each leg,
+`label`) put each location in a numbered circle, cut the curves at its edge with the arrowhead's tip on it, and write
+labels along the curves. `ldlabel` needs no extension:
 
 ```@example ldlabel
 using Logjam, DataFrames

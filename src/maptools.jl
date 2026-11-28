@@ -1084,8 +1084,8 @@ function plotroads! end
 """
     plotroute!(ax, x, y; color = :red, linewidth = 2, linestyle = :solid,
                arrows = true, arrow_at = 0.55, arrow_size = 12, arrow_every = 1) -> (; lines, arrows)
-    plotroute!(ax, rte, sh, XY; tr = nothing, P = nothing, color = :red, ..., names = nothing, loads = false)
-        -> (; lines, arrows)
+    plotroute!(ax, rte, sh, XY; tr = nothing, P = nothing, color = :red, ..., names = nothing, loads = false,
+               bend = 0, bend_at = 0.5, node_numbers = false, node_size = 22, label = nothing) -> (; lines, arrows)
     plotroute!(ax, R, sh, XY; tr = nothing, P = nothing, colors = Makie.wong_colors(), ..., names = nothing,
                loads = false, number = false) -> (; lines, arrows)
 
@@ -1130,11 +1130,29 @@ the axis's default text size. **They are placed again whenever a later `plotrout
 same axis**, so a route drawn over a labeled map does not sit on a label; anything else they must clear is drawn
 first, and the figure has its final size first, since the placement is in pixels.
 
+# Schematics (one route)
+The one-route method draws its legs as `plotshmt!`'s schematics draw shipments (see its docstring), in Matlog
+`pplot`'s `'NumNode'` style:
+- `bend`: each leg bowed to the left of its direction of travel (right when negative), one number for every leg or one
+  for each leg of the location sequence `rte2loc(rte, sh, tr)` (one fewer than its locations), as a fraction of the
+  leg's length; `bend_at`, one number or one for each leg in `[0, 1]`, is how far along the leg's chord the bow is
+  centered. Not with `P`, whose legs follow the network.
+- `node_numbers = true`: each stop is a white circle `node_size` pixels across with its location's number in it, unless
+  Logjam has already drawn a node there in this axis (with `plotshmt!` or an earlier `plotroute!`), and each leg is cut
+  at the nodes' edges with its arrowhead's tip on the far node; `arrow_at` given puts the arrowhead partway along the
+  leg instead (`0.55` is the default only without `node_numbers`).
+- `label`: a string written along the route's most bowed leg (a tie going to the longer leg), in the route's color,
+  turned with the leg and upright, clear of what is drawn, and placed again when a later `plotroute!` or `plotshmt!`
+  call adds to the axis, as Lecture 5.2's Code block 25 writes "Shipments 1 and 2" over its route.
+
 Returns the plots drawn as a `NamedTuple`: `lines` (the `Lines`) and `arrows` (the `Scatter` of the arrowheads, `nothing`
 when `arrows = false`); for several routes each is a vector with one element for each route. With `names` or
 `loads` it also holds `markers` (the `Scatter` of the stops' dots) and `labels` (the `Text` of their labels, one for
 each stop with a label, in the order the route first visits them), and with `number`, `numbers` (the `Text` of the
-route numbers, one for each route). Without these keywords the return is `(; lines, arrows)`, as at v0.3.0.
+route numbers, one for each route). With `node_numbers`, `markers` is the `Scatter` of the circles the call drew and
+`node_numbers` the `Text` of their numbers (each `nothing` when every stop already had a node), and with `label`,
+`label` is its `Text`; the order is `lines`, `arrows`, `markers`, `node_numbers`, `label`, `labels`. Without these
+keywords the return is `(; lines, arrows)`, as at v0.3.0, and every call draws what it drew.
 
 The origin and destination markers of v0.2.8 are gone: mark the stops with `scatter!`, or with `names` or `loads`.
 
@@ -1196,6 +1214,22 @@ h = plotroute!(ax, [[1, 2, 1, 2], [3, 3]], sh, XY; number = ["Route 1", "Route 2
 fig
 ```
 
+Lecture 5.2's pairwise saving of shipments 1 and 2 (Code block 25) as a schematic: the two shipments, then the route
+1-3-4-2 that carries both, its middle leg bowed and labeled, cut at the nodes the shipments drew:
+
+```julia
+using Logjam, CairoMakie, DataFrames
+P = [0.0 0.0; 4.0 0.0; 0.35 0.75; 3.65 0.75]     # locations 1 to 4 (Code block 1's)
+sh = DataFrame(b = [1, 3], e = [2, 4])
+fig = Figure(size = (560, 260))
+ax = Axis(fig[1, 1]; aspect = DataAspect(), limits = (-0.6, 4.6, -0.4, 1.75))
+hidedecorations!(ax); hidespines!(ax)
+plotshmt!(ax, sh, P; color = :steelblue, bend = 0.1, node_numbers = true, node_size = 30, shmt_labels = "Shipment")
+plotroute!(ax, [1, 2, 2, 1], sh, P; color = :green, node_numbers = true, node_size = 30, bend = [0, 0.4, 0],
+           label = "Shipments 1 and 2")
+fig
+```
+
 The migration from v0.2.8 is in the v0.3.0 release notes.
 """
 function plotroute! end
@@ -1204,7 +1238,9 @@ function plotroute! end
 
 """
     plotshmt!(ax, sh, XY; bend = 0, color = :red, linewidth = 2, linestyle = :solid, arrows = true,
-              arrow_at = 0.55, arrow_size = 12, names = nothing, loads = false) -> (; lines, arrows)
+              arrow_at = 0.55, arrow_size = 12, names = nothing, loads = false, bend_at = 0.5,
+              node_numbers = false, node_size = 22, shmt_labels = false, load_color = nothing,
+              load_font = nothing) -> (; lines, arrows)
     plotshmt!(ax, sh, XY, R; tr = nothing, color = :red, colors = Makie.wong_colors(), linewidth = 2,
               linestyle = :solid, arrows = true, arrow_at = 0.55, arrow_size = 12, arrow_every = 1,
               names = nothing, loads = false) -> (; lines, arrows, routes)
@@ -1233,12 +1269,42 @@ shipment from a location to itself has none, and `arrows = false` draws none.
 `plotroute!`'s do: its name, its loads (`ldlabel`), or its name over its loads, placed by `aligntext(ax, ...)` and
 placed again whenever a later `plotroute!` or `plotshmt!` call adds to the same axis.
 
+# Schematics
+The first method draws Lecture 5.2's schematics in Matlog `pplot`'s `'NumNode'` style (review D's D3):
+- `bend` may be one number for each shipment, and `bend_at` (one number, or one for each shipment, in `[0, 1]`; 0.5 by
+  default) is how far along the chord the bow is centered: the curve's control point lies `bend` times the
+  shipment's length off the point `bend_at` of the way from its origin to its destination, as Lecture 5.2's
+  `curvepts` draws it. The bows are the caller's to choose: one `bend` for every shipment can lay one shipment over
+  another or run one through a node, which no check of the labels sees.
+- `node_numbers = true`: each location a shipment begins or ends at is a white circle `node_size` pixels across (22,
+  which holds two digits), with its number centered in it at 13 points, drawn over the shipments. Each shipment is
+  cut at the circles' edges, in pixels after the figure's layout, with its arrowhead's tip on its destination's
+  circle; the cut is made again when the axis's limits or size change. `arrow_at` given puts the arrowhead that far
+  along the shipment as drawn instead (`0.55` is the default only without `node_numbers`). A location where Logjam has
+  already drawn a node in this axis is not drawn again, and a later `plotroute!(...; node_numbers = true)` cuts its
+  legs at these nodes.
+- `shmt_labels`: `true` writes "Shmt k" along shipment `k`'s curve, a string writes that word, as `"Shipment"` writes
+  "Shipment k", and a vector writes one string for each shipment. Each label is searched along its curve from 10 to 90
+  percent of its length, on either side, 3 to 11 pixels off it, turned with the curve and upright, preferring the
+  middle of the curve and the outer side of its bow, and clear of every line, marker and label in the axis, in the
+  shipments' color at 13 points.
+- `load_color` and `load_font`: the color and font of the labels `names` and `loads` write (the axis's text color and
+  font by default), as Lecture 5.2 writes its loads in bold red.
+Every label is placed on the figure as drawn, so the figure has its final size and limits first; the labels
+`shmt_labels` writes are placed again, as the stops' labels are, whenever a later `plotroute!` or `plotshmt!` call adds
+to the axis.
+
 Returns the plots drawn as a `NamedTuple`: `lines`, one `Lines` of every shipment drawn, each separated from the next
 by `NaN`, and `arrows`, the `Scatter` of their arrowheads, one for each shipment that has a length (`nothing` when
 `arrows = false`); for the routes method these are its independent shipments (empty when there is none), and `routes`
 holds the routes' own `(; lines, arrows)`, a vector of each, as `plotroute!(ax, R, sh, XY)` returns them. With `names`
 or `loads` it also holds `markers` (the `Scatter` of the locations' dots) and `labels` (the `Text` of their labels,
-one for each location with a label, origin before destination, shipment by shipment).
+one for each location with a label, origin before destination, shipment by shipment). With `node_numbers`, `markers`
+is the `Scatter` of the circles the call drew (no dots are drawn) and `node_numbers` the `Text` of their numbers (each
+`nothing` when every location already had a node); with `shmt_labels`, `shmt_labels` is the `Text` of the labels,
+one for each shipment. The order is `lines`, `arrows`, `markers`, `node_numbers`, `shmt_labels`, `labels`. Without
+the schematic keywords (`bend` one number, `bend_at` 0.5, no `node_numbers`, `shmt_labels`, `load_color` or
+`load_font`) the drawing is the plain one described first.
 
 # Examples
 Lecture 5.2's three shipments shipped independently, each city labeled with its name over the shipments loaded and
@@ -1265,6 +1331,41 @@ fig, ax = makemap(XY[:, 1], XY[:, 2]; xexpand = 0.3, size = (600, 520))
 plotshmt!(ax, sh, XY; bend = 0.15)
 fig, ax = makemap(XY[:, 1], XY[:, 2]; xexpand = 0.3, size = (600, 520))
 plotshmt!(ax, sh, XY, [[1, 2, 1, 2], [3, 3]]; colors = [:green])
+```
+
+Lecture 5.2's three shipments and the roads between their locations as a schematic (Code block 1): the roads dotted,
+the shipments bowed and numbered nodes, each shipment labeled along its curve, then the roads' miles placed clear of
+it all:
+
+```julia
+using Logjam, CairoMakie, DataFrames
+P = [0.0 0.0; 4.0 0.0; 0.35 0.75; 3.65 0.75; 0.35 -1.1; 3.65 -1.1]    # locations 1 to 6
+i, j, mi = [1, 3, 5, 1, 4, 1, 6], [2, 4, 6, 3, 2, 5, 2], [300, 250, 275, 30, 30, 60, 60]   # the roads and their miles
+sh = DataFrame(b = [1, 3, 5], e = [2, 4, 6])
+fig = Figure(size = (560, 330))
+ax = Axis(fig[1, 1]; aspect = DataAspect(), limits = (-0.5, 4.5, -1.5, 1.25))
+hidedecorations!(ax); hidespines!(ax)
+lines!(ax, x2ln(i, j, P[:, 1]), x2ln(i, j, P[:, 2]); color = :red, linestyle = :dot, linewidth = 1.5)
+plotshmt!(ax, sh, P; color = :steelblue, linewidth = 2.5, bend = 0.1, node_numbers = true, node_size = 30,
+          shmt_labels = "Shipment")
+mx, my = (P[i, 1] .+ P[j, 1]) ./ 2, (P[i, 2] .+ P[j, 2]) ./ 2
+text!(ax, mx, my; color = :red, aligntext(ax, mx, my, string.(mi); fontsize = 13, prefer = :near)...)
+fig
+```
+
+Its five shipments in North Carolina (Code block 24), each bowed by its own `bend` from its own `bend_at`, the loads in
+bold red, and the route that carries them drawn over them, cut at the same nodes (`X5` holds the seven locations of
+Code block 22, `r5` the route):
+
+```julia
+fig, ax = makemap(X5[:, 1], X5[:, 2]; xexpand = 0.25, yexpand = 0.12, roads = false, borders = false,
+                  size = (600, :auto))
+sh5 = DataFrame(b = [1, 3, 4, 6, 7], e = [2, 2, 5, 2, 1])
+plotshmt!(ax, sh5, X5; color = :steelblue, linewidth = 2.5, node_numbers = true, shmt_labels = true,
+          bend = [0.21, -0.38, 0.03, -0.08, 0.32], bend_at = [0.9, 0.5, 0.9, 0.5, 0.5], loads = true,
+          load_color = :red, load_font = :bold)
+plotroute!(ax, r5, sh5, X5; color = :red, linestyle = :dash, linewidth = 2.5, node_numbers = true)
+fig
 ```
 """
 function plotshmt! end

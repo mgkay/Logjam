@@ -47,7 +47,7 @@ _runfile("test_Logjam.jl")         # exports and public names; the extensions an
 end
 import JuMP, HiGHS
 _runfile("test_LogjamJuMPExt.jl")  # WP2: TSP, subtours, binpack, snapvals on JuMP variables; fresh processes
-_runfile("test_LogjamMakieExt.jl") # WP7a: aligntext(ax, x, y, labels); WP7b: plotroute!, plotshmt!; fresh processes with CairoMakie alone
+_runfile("test_LogjamMakieExt.jl") # WP7a: aligntext(ax, x, y, labels); WP7b: plotroute!, plotshmt!; WP7c: the schematics; fresh processes with CairoMakie alone
 
 if haskey(ENV, "LOGJAM_NETWORK_TESTS")
     _runfile("test_osm_network.jl")

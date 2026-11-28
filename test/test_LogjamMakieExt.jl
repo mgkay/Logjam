@@ -410,12 +410,16 @@ _wp7b_place(tp) = ([Tuple(_WP7B_MK.sv_getindex(tp.align[], i)) for i in eachinde
         kw(T) = Base.kwarg_decl(which(plotroute!, T))
         @test Base.kwarg_decl(first(methods(plotroute!))) ==
               [:color, :linewidth, :linestyle, :arrows, :arrow_at, :arrow_size, :arrow_every]
+        # (WP7c appends its keywords to this method's and to plotshmt!'s first method's lists below: a deviation, to
+        # his ruling; WP7b's own keywords keep their places)
         @test kw(Tuple{Axis, Vector{Int}, DataFrame, Matrix{Float64}}) ==
-              [:tr, :P, :color, :linewidth, :linestyle, :arrows, :arrow_at, :arrow_size, :arrow_every, :names, :loads]
+              [:tr, :P, :color, :linewidth, :linestyle, :arrows, :arrow_at, :arrow_size, :arrow_every, :names, :loads,
+               :bend, :bend_at, :node_numbers, :node_size, :label]
         @test kw(Tuple{Axis, Vector{Vector{Int}}, DataFrame, Matrix{Float64}}) ==
               [:tr, :P, :colors, :linewidth, :linestyle, :arrows, :arrow_at, :arrow_size, :arrow_every, :names, :loads, :number]
         @test Base.kwarg_decl(which(plotshmt!, Tuple{Axis, DataFrame, Matrix{Float64}})) ==
-              [:bend, :color, :linewidth, :linestyle, :arrows, :arrow_at, :arrow_size, :names, :loads]
+              [:bend, :color, :linewidth, :linestyle, :arrows, :arrow_at, :arrow_size, :names, :loads,
+               :bend_at, :node_numbers, :node_size, :shmt_labels, :load_color, :load_font]
         @test Base.kwarg_decl(which(plotshmt!, Tuple{Axis, DataFrame, Matrix{Float64}, Vector{Vector{Int}}})) ==
               [:tr, :color, :colors, :linewidth, :linestyle, :arrows, :arrow_at, :arrow_size, :arrow_every, :names, :loads]
         @test isempty(Test.detect_ambiguities(Logjam, _WP7B_MX))
@@ -673,4 +677,352 @@ foreach(((k, h),) -> rec("h$k", h), enumerate(H))
                                                  !startswith(l, "WP7B hint")]
     @test there == here
     ok || println(s)
+end
+
+# ==== added by PCV WP7c of Logjam v0.3.1 (D3 of review D's round three): the schematics, in Matlog pplot's NumNode
+# style, as keywords of plotshmt!'s first method and plotroute!'s one-route method ====
+# Test spec Sec. 11 ("NumNode schematics"). Synthetic figures, and Lecture 5.2's own curve copied as text; the course's
+# label check on 5.2's three schematics is a report (makeLogjam/plans/v0_3_1/measurements/wp7c/), not a test:
+#   1. the declarations: the new keywords follow WP7b's (the lists are pinned in WP7b's testset 1 above), the other
+#      methods keep theirs; without the new keywords a call draws what WP7b's code draws: a bowed shipment's points
+#      == WP7b's own `_shmtlegs` (copied as text from c49c66c), and the schematic path given a `bend` vector of equal
+#      values draws the same lines, arrowheads, dots and labels as the plain path given the number;
+#   2. node_numbers: one white circle per location at `node_size` (22 by default), its number centered at 13 points;
+#      one arrowhead per shipment, its tip on its destination's circle, no point of a line inside a circle; the cut
+#      redone after a resize; `arrow_at` given, the arrowhead partway along;
+#   3. bend and bend_at as vectors: each curve == Lecture 5.2's `curvepts` with Code block 24's control point (copied as
+#      text), bowed on its own side, its farthest point where `bend_at` puts it; the checks;
+#   4. shmt_labels: "Shmt k", the word given, one string each; upright, anchored on its curve between 10 and 90 percent of
+#      it, clear of everything (the placement the placer gives, at a cost under 40); placed again when a later Logjam
+#      call adds to the axis, and not by a plain Makie call;
+#   5. plotroute!'s one route: `bend` for each leg, `node_numbers` (no node drawn twice, the legs cut at the nodes
+#      already drawn, at their size), `label` along the most bowed leg, `arrow_every`; `names` and `loads` with nodes
+#      (no dots), `load_color` and `load_font`; the checks.
+
+const _WP7C_MX = Base.get_extension(Logjam, :LogjamMakieExt)
+const _WP7C_MK = CairoMakie.Makie
+
+# WP7b's `_shmtlegs` (ext/LogjamMakieExt.jl at c49c66c), as text: the curve a scalar `bend` draws
+const _WP7C_WP7B_LEGS = raw"""
+function _shmtlegs(sh, XY, bend; n = 60)
+    legs = Tuple{Vector{Float64}, Vector{Float64}}[]
+    for (b, e) in zip(sh.b, sh.e)
+        p = (Float64(XY[b, 1]), Float64(XY[b, 2]))
+        q = (Float64(XY[e, 1]), Float64(XY[e, 2]))
+        if bend == 0 || p == q
+            push!(legs, ([p[1], q[1]], [p[2], q[2]]))
+        else
+            c = ((p[1] + q[1]) / 2 - bend * (q[2] - p[2]), (p[2] + q[2]) / 2 + bend * (q[1] - p[1]))
+            t = range(0, 1, length = n)
+            push!(legs, ([(1 - s)^2 * p[1] + 2(1 - s) * s * c[1] + s^2 * q[1] for s in t],
+                         [(1 - s)^2 * p[2] + 2(1 - s) * s * c[2] + s^2 * q[2] for s in t]))
+        end
+    end
+    return legs
+end
+"""
+# Lecture 5.2's curve (Code block 1, 5-routing/5-rte-2.qmd:135-136) and Code block 24's control point
+# (5-rte-2.qmd:1350-1351), as text
+const _WP7C_CURVEPTS = raw"""
+curvepts(p, c, q; n = 60) = [(1 - s)^2 .* p .+ 2(1 - s) * s .* c .+
+                             s^2 .* q for s in range(0, 1, length = n)]
+function bowed(p, q, bulge, along)
+    nk = [-(q[2] - p[2]), q[1] - p[1]] ./ hypot((q .- p)...)
+    c = p .+ along .* (q .- p) .+ bulge .* nk
+    return curvepts(p, c, q)
+end
+"""
+function _wp7c_module(src)
+    m = Module(:WP7cText)
+    foreach(ex -> ex isa LineNumberNode || Core.eval(m, ex), Meta.parseall(src).args)
+    return m
+end
+const _WP7C_WP7B = _wp7c_module(_WP7C_WP7B_LEGS)
+const _WP7C_LEC = _wp7c_module(_WP7C_CURVEPTS)
+
+function _wp7c_axis(; size = (500, 450), limits = (0, 10, 0, 10))
+    fig = Figure(; size)
+    ax = Axis(fig[1, 1]; limits)
+    hidedecorations!(ax)
+    return fig, ax
+end
+_wp7c_pts(p) = [(Float64(q[1]), Float64(q[2])) for q in p[1][]]
+# a Lines' points split at its NaNs, one piece for each shipment or leg drawn
+function _wp7c_pieces(p)
+    out, cur = Vector{NTuple{2, Float64}}[], NTuple{2, Float64}[]
+    for q in _wp7c_pts(p)
+        if any(isnan, q)
+            isempty(cur) || push!(out, cur)
+            cur = NTuple{2, Float64}[]
+        else
+            push!(cur, q)
+        end
+    end
+    isempty(cur) || push!(out, cur)
+    return out
+end
+# the axis's own pixels of a data point, after the figure's layout
+function _wp7c_pix(fig, ax)
+    _WP7C_MK.update_state_before_display!(fig)
+    f = _WP7C_MX._pixelmap(ax)
+    return (x, y) -> (p = f(x, y); (Float64(p[1]), Float64(p[2])))
+end
+_wp7c_d(a, b) = hypot(a[1] - b[1], a[2] - b[2])
+# each arrowhead's tip, in pixels: Makie's :rtriangle has its tip 0.485 of its size ahead of its center
+_wp7c_tips(h; size = 12) = [(Float64(c[1]) + 0.485size * cos(r), Float64(c[2]) + 0.485size * sin(r))
+                            for (c, r) in zip(h.arrows[1][], h.arrows.rotation[])]
+function _wp7c_angle(r)
+    r isa Real && return Float64(r)
+    v = r * _WP7C_MK.Vec3f(1, 0, 0)
+    return Float64(atan(v[2], v[1]))
+end
+# where a point lies along a polyline in pixels, as a fraction of its length, and how far from it
+function _wp7c_along(P, x)
+    L = [0.0; cumsum([_wp7c_d(P[k], P[k-1]) for k in 2:length(P)])]
+    best, at = Inf, 0.0
+    for k in 2:length(P)
+        a, b = P[k-1], P[k]
+        d2 = (b[1] - a[1])^2 + (b[2] - a[2])^2
+        t = d2 == 0 ? 0.0 : clamp(((x[1] - a[1]) * (b[1] - a[1]) + (x[2] - a[2]) * (b[2] - a[2])) / d2, 0, 1)
+        d = _wp7c_d(x, (a[1] + t * (b[1] - a[1]), a[2] + t * (b[2] - a[2])))
+        d < best && ((best, at) = (d, (L[k-1] + t * (L[k] - L[k-1])) / L[end]))
+    end
+    return at, best
+end
+
+@testset "WP7c (v0.3.1) the schematics: plotshmt! and plotroute! in pplot's NumNode style" begin
+    XY, City = _WP7B_XY, _wp7b_city()
+    sh = _wp7b_sh()
+
+    @testset "1. the declarations; without the new keywords a call draws what WP7b's code draws" begin
+        @test Base.kwarg_decl(first(methods(plotroute!))) ==
+              [:color, :linewidth, :linestyle, :arrows, :arrow_at, :arrow_size, :arrow_every]      # v0.3.0's
+        @test Base.kwarg_decl(which(plotroute!, Tuple{Axis, Vector{Vector{Int}}, DataFrame, Matrix{Float64}})) ==
+              [:tr, :P, :colors, :linewidth, :linestyle, :arrows, :arrow_at, :arrow_size, :arrow_every, :names, :loads, :number]
+        @test Base.kwarg_decl(which(plotshmt!, Tuple{Axis, DataFrame, Matrix{Float64}, Vector{Vector{Int}}})) ==
+              [:tr, :color, :colors, :linewidth, :linestyle, :arrows, :arrow_at, :arrow_size, :arrow_every, :names, :loads]
+        @test length(methods(plotroute!)) == 3 && length(methods(plotshmt!)) == 2
+        @test isempty(Test.detect_ambiguities(Logjam, _WP7C_MX))
+        # a scalar bend: the points WP7b's own code computes, bit for bit
+        for β in (0.0, 0.2, -0.35, 1.0)
+            fig, ax = _wp7c_axis()
+            h = plotshmt!(ax, sh, XY; bend = β)
+            want = Base.invokelatest(_WP7C_WP7B._shmtlegs, sh, XY, β)
+            @test _wp7c_pieces(h.lines) == [collect(zip(l[1], l[2])) for l in want]
+        end
+        # the schematic path given a bend vector of equal values draws what the plain path draws given the number
+        function draw(b)
+            fig, ax = _wp7c_axis()
+            h = plotshmt!(ax, sh, XY; bend = b, arrow_at = 0.4, names = City, loads = true)
+            _WP7C_MK.update_state_before_display!(fig)
+            return (keys(h), _wp7c_pts(h.lines), _wp7c_pts(h.arrows), h.arrows.rotation[], _wp7c_pts(h.markers),
+                    h.labels.input_text[], h.labels.align[], h.labels.offset[])
+        end
+        @test isequal(draw(0.2), draw(fill(0.2, 3)))                       # isequal: the lines hold NaNs
+        r1 = plotroute!(_wp7c_axis()[2], [1, 2, 1, 3, 2, 3], sh, XY)
+        @test keys(r1) == (:lines, :arrows)
+        @test keys(plotroute!(_wp7c_axis()[2], [1, 2, 1, 3, 2, 3], sh, XY; bend = 0, bend_at = 0.5)) == (:lines, :arrows)
+    end
+
+    @testset "2. node_numbers: a numbered circle per location, the curves cut at its edge, the tip on it" begin
+        fig, ax = _wp7c_axis()
+        h = plotshmt!(ax, sh, XY; bend = 0.15, node_numbers = true)
+        @test keys(h) == (:lines, :arrows, :markers, :node_numbers)
+        iscircle(m) = m === _WP7C_MK.Circle || m isa _WP7C_MK.Circle || (m isa Type && m <: _WP7C_MK.Circle)
+        @test h.markers isa Scatter && iscircle(h.markers.marker[]) && all(==(22), h.markers.markersize[])
+        @test _WP7C_MK.to_color(h.markers.color[]) == _WP7C_MK.to_color(:white) && h.markers.strokewidth[] == 1.5
+        @test _wp7c_pts(h.markers) == [(XY[i, 1], XY[i, 2]) for i in 1:6]
+        @test h.node_numbers isa _WP7C_MK.Text && h.node_numbers.input_text[] == string.(1:6)
+        @test h.node_numbers.fontsize[] == 13 && h.node_numbers.align[] == (:center, :center)
+        @test _wp7c_pts(h.node_numbers) == _wp7c_pts(h.markers)
+        function cut_ok(fig, ax, h, sh, XY; r = 11.75, asize = 12)
+            pix = _wp7c_pix(fig, ax)
+            tips = _wp7c_tips(h; size = asize)
+            ok = length(tips) == size(sh, 1)
+            for (k, e) in enumerate(sh.e)
+                ok &= isapprox(_wp7c_d(tips[k], pix(XY[e, 1], XY[e, 2])), r; atol = 1e-3)    # the tip on the circle
+            end
+            pieces = _wp7c_pieces(h.lines)
+            ok &= length(pieces) == size(sh, 1)
+            for (k, (b, e)) in enumerate(zip(sh.b, sh.e)), q in pieces[k]
+                for i in (b, e)                                                           # no point inside a circle
+                    ok &= _wp7c_d(pix(q...), pix(XY[i, 1], XY[i, 2])) >= r - 1e-6
+                end
+            end
+            for (k, b) in enumerate(sh.b)                                                 # each piece begins on it
+                ok &= isapprox(_wp7c_d(pix(pieces[k][1]...), pix(XY[b, 1], XY[b, 2])), r; atol = 1e-6)
+            end
+            return ok
+        end
+        @test cut_ok(fig, ax, h, sh, XY)
+        resize!(fig, 700, 420)                                    # the cut and the tips follow the layout
+        @test cut_ok(fig, ax, h, sh, XY)
+        # node_size, and a larger arrowhead
+        fig, ax = _wp7c_axis()
+        h = plotshmt!(ax, sh, XY; node_numbers = true, node_size = 30, arrow_size = 16)
+        @test all(==(30), h.markers.markersize[]) && cut_ok(fig, ax, h, sh, XY; r = 15.75, asize = 16)
+        # arrow_at given: the arrowhead partway along, here halfway along a straight shipment, clear of both circles
+        fig, ax = _wp7c_axis()
+        h = plotshmt!(ax, sh, XY; node_numbers = true, arrow_at = 0.5)
+        pix = _wp7c_pix(fig, ax)
+        for (k, (b, e)) in enumerate(zip(sh.b, sh.e))
+            c = h.arrows[1][][k]
+            m = pix((XY[b, 1] + XY[e, 1]) / 2, (XY[b, 2] + XY[e, 2]) / 2)
+            @test isapprox(Float64(c[1]), m[1]; atol = 1e-3) && isapprox(Float64(c[2]), m[2]; atol = 1e-3)
+        end
+        # a shipment from a location to itself: no line, no arrowhead, one node
+        fig, ax = _wp7c_axis()
+        h = plotshmt!(ax, DataFrame(b = [1, 2], e = [2, 2]), XY; node_numbers = true)
+        @test length(h.arrows[1][]) == 1 && length(_wp7c_pieces(h.lines)) == 1 && h.node_numbers.input_text[] == ["1", "2"]
+        # arrows = false; and an axis is needed
+        @test plotshmt!(_wp7c_axis()[2], sh, XY; node_numbers = true, arrows = false).arrows === nothing
+        @test_throws ArgumentError plotshmt!(Figure()[1, 1], sh, XY; node_numbers = true)
+        @test_throws ArgumentError plotshmt!(_wp7c_axis()[2], sh, XY; node_numbers = true, node_size = 0)
+    end
+
+    @testset "3. bend and bend_at, one for each shipment: Lecture 5.2's curve, each on its own side" begin
+        fig, ax = _wp7c_axis()
+        β, α = [0.25, -0.2, 0.0], [0.5, 0.8, 0.9]
+        h = plotshmt!(ax, sh, XY; bend = β, bend_at = α)
+        pieces = _wp7c_pieces(h.lines)
+        @test length(pieces) == 3 && length(pieces[1]) == 60 && length(pieces[2]) == 60 && length(pieces[3]) == 2
+        @test length(h.arrows[1][]) == 3
+        for k in 1:3
+            p, q = XY[sh.b[k], :], XY[sh.e[k], :]
+            L = hypot((q .- p)...)
+            if β[k] != 0
+                want = Base.invokelatest(_WP7C_LEC.bowed, p, q, β[k] * L, α[k])     # 5.2's bulge is in data units
+                @test all(isapprox(collect(a), b; rtol = 1e-12, atol = 1e-12) for (a, b) in zip(pieces[k], want))
+            end
+            d = q .- p
+            off = [((x - p[1]) * d[2] - (y - p[2]) * d[1]) / L for (x, y) in pieces[k]]  # right of travel is positive
+            if β[k] == 0
+                @test all(o -> abs(o) < 1e-12, off)
+            else
+                @test isapprox(maximum(abs, off), abs(β[k]) * L / 2; rtol = 1e-3)
+                @test all(o -> sign(o) == -sign(β[k]) || abs(o) < 1e-12, off)
+                # the farthest point lies (1 + 2 bend_at) / 4 of the way along the chord
+                j = argmax(abs.(off))
+                along = ((pieces[k][j][1] - p[1]) * d[1] + (pieces[k][j][2] - p[2]) * d[2]) / L^2
+                @test isapprox(along, (1 + 2α[k]) / 4; atol = 0.02)
+            end
+        end
+        # with node_numbers too, the vectors are taken shipment by shipment
+        h = plotshmt!(_wp7c_axis()[2], sh, XY; bend = β, bend_at = α, node_numbers = true)
+        @test length(h.arrows[1][]) == 3 && length(_wp7c_pieces(h.lines)) == 3
+        # the checks
+        ax = _wp7c_axis()[2]
+        @test_throws ArgumentError plotshmt!(ax, sh, XY; bend = [0.1, 0.2])
+        @test_throws ArgumentError plotshmt!(ax, sh, XY; bend = [0.1, Inf, 0.0])
+        @test_throws ArgumentError plotshmt!(ax, sh, XY; bend_at = 1.5)
+        @test_throws ArgumentError plotshmt!(ax, sh, XY; bend_at = [0.5, 0.5])
+        @test_throws ArgumentError plotshmt!(ax, sh, XY; bend = [0.1, 0.1, 0.1], arrow_at = 2)
+    end
+
+    @testset "4. shmt_labels: along each curve, upright, clear, and placed again by a later Logjam call" begin
+        fig, ax = _wp7c_axis()
+        h = plotshmt!(ax, sh, XY; bend = 0.2, shmt_labels = true)
+        @test keys(h) == (:lines, :arrows, :shmt_labels)
+        tp = h.shmt_labels
+        @test tp isa _WP7C_MK.Text && tp.input_text[] == ["Shmt 1", "Shmt 2", "Shmt 3"]
+        @test _WP7C_MK.to_color(tp.color[]) == _WP7C_MK.to_color(:red) && tp.fontsize[] == 13
+        @test plotshmt!(_wp7c_axis()[2], sh, XY; shmt_labels = "Shipment").shmt_labels.input_text[] ==
+              ["Shipment 1", "Shipment 2", "Shipment 3"]
+        @test plotshmt!(_wp7c_axis()[2], sh, XY; shmt_labels = ["a", "b", "c"]).shmt_labels.input_text[] == ["a", "b", "c"]
+        pix = _wp7c_pix(fig, ax)
+        pieces = _wp7c_pieces(h.lines)
+        for k in 1:3
+            φ = _wp7c_angle(_WP7C_MK.sv_getindex(tp.rotation[], k))
+            @test abs(φ) <= pi / 2 + 1e-9                                                    # upright
+            at, dist = _wp7c_along([pix(q...) for q in pieces[k]], pix(_wp7c_pts(tp)[k]...))
+            @test dist < 1e-3 && 0.1 - 1e-9 <= at <= 0.9 + 1e-9                            # on its curve, 10 to 90 percent
+        end
+        # clear of everything: the placement the placer gives on the figure as it stands, the label hidden, costs under 40
+        rec = only(r for r in _WP7C_MX._PLACED[ax] if r.tp === tp)
+        tp.visible[] = false
+        q = _WP7C_MX._curveplace(ax, rec.curves, rec.kw.sizes, rec.kw.outer)
+        tp.visible[] = true
+        @test all(<(40), q.costs)
+        @test [Float32.(o) for o in q.offs] == [(o = _WP7C_MK.sv_getindex(tp.offset[], i); (Float32(o[1]), Float32(o[2]))) for i in 1:3]
+        # a shipment and its label; strokes over the place the label took: a plain lines! moves nothing, a Logjam call
+        # places it again, elsewhere, still clear
+        fig, ax = _wp7c_axis()
+        s1, P1 = DataFrame(b = [1], e = [2]), [2.0 5.0; 8.0 5.0]
+        h = plotshmt!(ax, s1, P1; bend = 0.2, shmt_labels = true)
+        a0, o0 = _wp7c_pts(h.shmt_labels), h.shmt_labels.offset[]
+        c0 = a0[1]
+        bx, by = Float64[], Float64[]
+        for y in (c0[2] - 0.8):0.04:(c0[2] + 0.8)                  # horizontal strokes about 2 px apart around it
+            append!(bx, [c0[1] - 1.2, c0[1] + 1.2, NaN]); append!(by, [y, y, NaN])
+        end
+        lines!(ax, bx, by; color = :black)
+        @test _wp7c_pts(h.shmt_labels) == a0 && h.shmt_labels.offset[] == o0
+        plotroute!(ax, bx, by; color = :black, arrows = false)
+        @test (_wp7c_pts(h.shmt_labels), h.shmt_labels.offset[]) != (a0, o0)
+        rec = only(r for r in _WP7C_MX._PLACED[ax] if r.tp === h.shmt_labels)
+        h.shmt_labels.visible[] = false
+        q = _WP7C_MX._curveplace(ax, rec.curves, rec.kw.sizes, rec.kw.outer)
+        h.shmt_labels.visible[] = true
+        @test all(<(40), q.costs) && [Float64.(Tuple(p)) for p in q.anchors] == _wp7c_pts(h.shmt_labels)
+        # the checks
+        ax = _wp7c_axis()[2]
+        @test_throws ArgumentError plotshmt!(ax, sh, XY; shmt_labels = ["a"])
+        @test_throws ArgumentError plotshmt!(ax, sh, XY; shmt_labels = 3)
+    end
+
+    @testset "5. plotroute!'s one route: bend for each leg, node_numbers, label; names and loads with nodes" begin
+        s = DataFrame(b = [1, 3], e = [2, 4])
+        P = [1.0 2.0; 9.0 2.0; 2.0 6.0; 8.0 6.0]                   # 5.2's pairwise-saving layout, stretched
+        fig, ax = _wp7c_axis()
+        hs = plotshmt!(ax, s, P; bend = 0.1, node_numbers = true, node_size = 30)
+        hr = plotroute!(ax, [1, 2, 2, 1], s, P; color = :green, node_numbers = true, bend = [0, 0.4, 0],
+                        label = "Shipments 1 and 2")
+        @test keys(hr) == (:lines, :arrows, :markers, :node_numbers, :label)
+        @test hr.markers === nothing && hr.node_numbers === nothing                   # every stop already has a node
+        @test length(_WP7C_MX._NODES[ax]) == 1
+        loc = [1, 3, 4, 2]                                                            # rte2loc([1, 2, 2, 1], s)
+        pix = _wp7c_pix(fig, ax)
+        tips = _wp7c_tips(hr)
+        @test length(tips) == 3                                                       # one per leg
+        @test all(isapprox(_wp7c_d(tips[k], pix(P[loc[k+1], 1], P[loc[k+1], 2])), 15.75; atol = 1e-3) for k in 1:3)
+        pieces = _wp7c_pieces(hr.lines)
+        @test length(pieces) == 3 && length(pieces[1]) == 2 && length(pieces[3]) == 2 && length(pieces[2]) > 10
+        @test maximum(last, pieces[2]) > 6.0 + 0.9 * 0.4 * 6 / 2                      # the middle leg bowed up, by 0.4
+        @test hr.label isa _WP7C_MK.Text && hr.label.input_text[] == ["Shipments 1 and 2"]
+        @test _WP7C_MK.to_color(hr.label.color[]) == _WP7C_MK.to_color(:green)
+        at, dist = _wp7c_along([pix(q...) for q in Base.invokelatest(_WP7C_LEC.bowed, P[3, :], P[4, :], 0.4 * 6.0, 0.5)],
+                               pix(_wp7c_pts(hr.label)[1]...))
+        @test dist < 1e-3 && 0.1 - 1e-9 <= at <= 0.9 + 1e-9                          # on the most bowed leg
+        # a route on its own: its stops' nodes, in the order it first visits them; arrow_every; a straight route
+        fig, ax = _wp7c_axis()
+        h = plotroute!(ax, [1, 2, 2, 1], s, P; node_numbers = true, arrow_every = 2)
+        @test h.node_numbers.input_text[] == ["1", "3", "4", "2"] && all(==(22), h.markers.markersize[])
+        @test length(h.arrows[1][]) == 2
+        tips = _wp7c_tips(h)
+        pix = _wp7c_pix(fig, ax)
+        @test all(isapprox(_wp7c_d(tips[j], pix(P[loc[k+1], 1], P[loc[k+1], 2])), 11.75; atol = 1e-3) for (j, k) in enumerate((1, 3)))
+        # a bend alone: bowed legs, an arrowhead partway along each, one line through them
+        h = plotroute!(_wp7c_axis()[2], [1, 2, 2, 1], s, P; bend = 0.2)
+        @test keys(h) == (:lines, :arrows) && length(h.arrows[1][]) == 3 && length(_wp7c_pieces(h.lines)) == 1
+        # names and loads with nodes: the circles are the markers, no dots
+        fig, ax = _wp7c_axis()
+        h = plotroute!(ax, [1, 2, 2, 1], s, P; node_numbers = true, loads = true)
+        @test keys(h) == (:lines, :arrows, :markers, :node_numbers, :labels)
+        m = h.markers.marker[]
+        @test (m === _WP7C_MK.Circle || m isa _WP7C_MK.Circle || (m isa Type && m <: _WP7C_MK.Circle)) &&
+              h.labels.input_text[] == [ldlabel(i, s) for i in loc]
+        @test count(p -> p isa Scatter, ax.scene.plots) == 2                          # the circles and the arrowheads
+        h = plotshmt!(_wp7c_axis()[2], s, P; node_numbers = true, names = ["A", "B", "C", "D"], loads = true,
+                      load_color = :red, load_font = :bold, shmt_labels = true)
+        @test keys(h) == (:lines, :arrows, :markers, :node_numbers, :shmt_labels, :labels)
+        @test _WP7C_MK.to_color(h.labels.color[]) == _WP7C_MK.to_color(:red) && h.labels.font[] == :bold
+        @test h.labels.input_text[] == ["A\n(L1)", "B\n(U1)", "C\n(L2)", "D\n(U2)"]
+        # the checks
+        ax = _wp7c_axis()[2]
+        @test_throws ArgumentError plotroute!(ax, [1, 2, 2, 1], s, P; bend = [0.1, 0.2])        # three legs
+        @test_throws ArgumentError plotroute!(ax, [1, 2, 2, 1], s, P; label = 3)
+        @test_throws ArgumentError plotroute!(ax, [1, 2, 2, 1], s, P; bend_at = -0.1)
+        @test_throws ArgumentError plotroute!(ax, [1, 1], DataFrame(b = [1], e = [2]), [0.0 0.0; 1.0 1.0];
+                                              P = [[0, 1], [2, 0]], bend = 0.2)                # P traces its legs
+    end
 end
