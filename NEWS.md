@@ -291,23 +291,33 @@ missed.
   pixels and again past `maxgap`), for its side's rank under `prefer` (`:outward`, the side `aligntext(x, y)`
   chooses; `:imhof`, the cartographic order from northeast; `:near`, none), and for what it touches: a data line, a
   marker or another label 1000 each, a base layer 40, the axis edge 5000, a label nearer another point than its own
-  30. A label with no side clear within `maxgap` then searches a 1-pixel grid within `maxgap` before it settles for
-  touching a base layer, and the labels move in turn until none moves. The base layers are `makemap`'s, recognized by
-  the labels the map extension gives them ("FAF5 Roads" with the close tier's other road classes, "Major Roads",
-  "Interstate Roads", "US State Borders", "Country Borders"); on a map a line fainter than opacity 0.35 is no
-  obstacle, as the course's label check has it. `fix` pins labels by name or index (`fix = ["Charlotte" =>
-  ((:right, :center), (-12, 4))]`) and places the others around them; `verbose = true` prints one line for each label
-  left touching something or beyond `maxgap` (flagged), with its placement in the form `fix` takes, and the default
-  prints nothing. Deterministic: no random number is drawn, so a figure gets the same placement on every run, with
-  `verbose` on or off. It is the round-three prototype of the plotting review ported, without the prototype's
-  simulated annealing, which was off by default and the one part that drew random numbers. Checked on synthetic
-  figures (`test/test_aligntext_ax.jl`: the splat, determinism, a label boxed in by data lines flagged, by base
-  layers flagged as touching one, `fix`, `prefer`, a fresh process with CairoMakie alone) and, as a report, by the
-  course's own label check on the review's 16 label figures, run under this branch on scratch copies of the
-  lectures' scripts: 9 contacts, 3 of them with data lines and 6 with state borders, every one in a flagged label
-  (7 labels, all in 2.3's nine-warehouse map and 3.4's Memphis map), the other 14 figures none, as the prototype
-  measured, where the lectures' own placements carried 18 under v0.2.8 and `aligntext(x, y)` on 2.3's map 26 (6 to
-  63 ms a figure once compiled, reported, not asserted). `aligntext(x, y)` is unchanged. **Lectures served:** 2.2,
+  30. A label with no side clear within `maxgap` then searches a 1-pixel grid within `maxgap` for a clear spot. **A
+  label never moves farther from its point only to clear a base layer** (WP7a-2, his review of the first pictures:
+  Jacksonville on 5.2's routing maps sat 24 px out on a diagonal, clear of the coastline, "quite offset from the
+  actual point", where the lecture puts it 19 px to its right): with distance measured as it is seen, from the point
+  to the label's nearest ink, a spot touching a base layer and nothing else costs the 40 only where some spot clear of
+  everything is as near or nearer, and otherwise only 1 for each segment of the layer it touches. The labels then
+  move one at a time, the move that lowers its label's cost most first, until none does, so that where two labels
+  contend for a place the one that loses less gives way. The base layers are `makemap`'s, recognized by the labels
+  the map extension gives them ("FAF5 Roads" with the close tier's other road classes, "Major Roads", "Interstate
+  Roads", "US State Borders", "Country Borders"); on a map a line fainter than opacity 0.35 is no obstacle, as the
+  course's label check has it. `fix` pins labels by name or index (`fix = ["Charlotte" => ((:right, :center),
+  (-12, 4))]`) and places the others around them; `verbose = true` prints one line for each label left touching
+  something or beyond `maxgap` (flagged), with its placement in the form `fix` takes, and the default prints nothing.
+  Deterministic: no random number is drawn, so a figure gets the same placement on every run, with `verbose` on or
+  off. It is the round-three prototype of the plotting review ported, without the prototype's simulated annealing,
+  which was off by default and the one part that drew random numbers. Checked on synthetic figures
+  (`test/test_LogjamMakieExt.jl`, `test/test_aligntext_ax.jl` before WP8: the splat, determinism, a label boxed in by
+  data lines flagged, by base layers flagged as touching one, a label kept beside its point across a base layer where
+  the one clear spot is a diagonal farther out, `fix`, `prefer`, a fresh process with CairoMakie alone) and, as a
+  report, by the course's own label check on the review's 16 label figures, run under this branch on scratch copies
+  of the lectures' scripts. The first build measured 9 contacts, 3 of them with data lines and 6 with state borders,
+  as the prototype did; with WP7a-2, 26: the same 3 with data lines and 23 with the state-border layer (borders and
+  coastlines), none with a marker, another label or the axis edge, every one in a flagged label (21 labels). WP7a-2
+  moved 15 labels in 8 figures, every one nearer its point (by 1.8 to 17.2 px as seen), the three Jacksonville labels
+  to 7.6 px from it (the first build 24.8, the lecture 19.5), and none farther. The lectures' own placements carried
+  18 contacts under v0.2.8 and `aligntext(x, y)` on 2.3's map 26 (8 to 67 ms a figure once compiled, reported, not
+  asserted). `aligntext(x, y)` is unchanged. **Lectures served:** 2.2,
   2.3, 2.7, 3.4, 4.1, 5.1, 5.2 and 5.3, whose maps place their labels with `aligntext(x, y)`, by hand, or with the
   course's drafting placer; each chooses at the re-pin whether to call it. **No migration.**
 

@@ -579,12 +579,22 @@ since it would read as that point's. The base layers are `makemap`'s, recognized
 gives them ("FAF5 Roads" with the close tier's other road classes, "Major Roads", "Interstate Roads", "US State
 Borders", "Country Borders"); on a map, a line fainter than opacity 0.35 is the muted background and no obstacle. A
 label none of whose sides within `maxgap` is clear of everything, base layers included, then searches every offset on
-a 1-pixel grid within `maxgap`, nearest first, and is offered the first six that clear everything by 1 pixel. Every
-label then moves in turn to its best position given the others, until none moves.
+a 1-pixel grid within `maxgap`, nearest first, and is offered the first six that clear everything by 1 pixel.
 
-A label left touching something, or beyond `maxgap`, is **flagged**: nothing within reach was clear. The placement is
-still returned; `verbose = true` names each flagged label, which can then be pinned with `fix`, the map widened, or the
-label shortened.
+**Closeness to its point outweighs a base layer:** a label never moves farther from its point only to clear one. For
+this the distance is measured as it is seen, from the point to the nearest ink of the label, and a spot touching a
+base layer and nothing else is charged the 40 only if some spot clear of everything is as near as it or nearer;
+otherwise it costs only 1 for each segment of the layer it touches. So a label sits across a border or a coastline
+beside its point rather than clear of it farther out; data lines, markers, other labels and the axis edge are avoided
+as before.
+
+The labels then move one at a time to their best positions given the others, the move that lowers its label's cost
+most first, until no move lowers any; where two labels contend for a place, the one that loses less by moving gives
+way.
+
+A label left touching something, or beyond `maxgap`, is **flagged**: nothing within reach was clear, or, where it
+touches only a base layer, nothing as near its point was. The placement is still returned; `verbose = true` names each
+flagged label, which can then be pinned with `fix`, the map widened, or the label shortened.
 
 # Behavior
 - **Deterministic.** No random number is drawn, so the same figure gives the same placement on every run, with

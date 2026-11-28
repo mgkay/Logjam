@@ -2,7 +2,9 @@
 # with GeoMakie. Built in v0.3.1's WP7a:
 # - `aligntext(ax, x, y, labels; ...)`, a label placer that reads the drawn figure (D1, CR 52, CR 61, CR 3), declared
 #   and documented in core beside `aligntext(x, y)` (src/maptools.jl), which it leaves unchanged;
-# - in WP8, a precompile workload for it (D12), at the end of this file.
+# - in WP8, a precompile workload for it (D12), at the end of this file;
+# - in WP7a-2, from his review of WP7a's pictures (Jacksonville on 5.2's maps): a label never moves farther from its
+#   point only to clear a base layer, distance as seen, and the labels' moves taken largest first (see _place).
 # It is review D's round-three placer (makeLogjam/plans/v0_3_0/recon/refactor-D/placer2.jl and refactor-D-plotting.md,
 # "Rounds two and three"), ported: the same obstacles, costs, candidates, fine-grid fallback and search, without the
 # prototype's simulated annealing (off by default there, and the only thing in it that drew a random number), so the
@@ -313,8 +315,10 @@ end
 
 _boxes_at(D::_Drawing, i, c::_Cand) = [_shift(b, D.anchors[i][1] + c.off[1], D.anchors[i][2] + c.off[2]) for b in D.rel[c.d][i]]
 
-# The static cost of label i at candidate c: what it crosses, and the axis edge. A data or base line is charged once
-# per plot crossed plus 1 per segment; a marker or other label once each; any part outside the axis 5000.
+# The static cost of label i at candidate c: what it crosses, and the axis edge, in two parts. `hard`: a data line
+# charged once per plot crossed plus 1 per segment, a marker or other label once each, any part outside the axis 5000.
+# `base`: a base layer charged once per plot touched (40), and `bsegs`, 1 per base segment touched. The whole is
+# hard + base + bsegs (_scost); _place lets a base contact that brings a label nearer cost only its bsegs (WP7a-2).
 function _static(D::_Drawing, i, c::_Cand; clear = 2.0, wedge = 5000.0)
     bs = _boxes_at(D, i, c)
     cost = 0.0
@@ -340,16 +344,26 @@ function _static(D::_Drawing, i, c::_Cand; clear = 2.0, wedge = 5000.0)
             end
         end
     end
-    groups = Dict{Int, Float64}()
+    groups, bgroups = Dict{Int, Float64}(), Dict{Int, Float64}()
+    bsegs = 0.0
     for k in seen
         s = D.segs[k]
-        groups[s.group] = s.w
-        cost += 1.0
+        if s.w >= 1000
+            groups[s.group] = s.w
+            cost += 1.0
+        else
+            bgroups[s.group] = s.w
+            bsegs += 1.0
+        end
     end
     cost += sum(values(groups); init = 0.0)
     cost += sum((D.obs[k].w for k in seeno); init = 0.0)
-    return cost
+    return (hard = cost, base = sum(values(bgroups); init = 0.0), bsegs = bsegs)
 end
+_scost(t) = t.hard + t.base + t.bsegs
+
+# The distance of label i at candidate c as it is seen: from its point to the nearest ink of the label.
+_seen(D::_Drawing, i, c::_Cand) = minimum(_boxdist(D.anchors[i], b) for b in _boxes_at(D, i, c))
 
 # What label i touches at candidate c, in words, for the flag.
 function _touches(D::_Drawing, i, c::_Cand; clear = 1.0)
@@ -369,14 +383,21 @@ function _touches(D::_Drawing, i, c::_Cand; clear = 1.0)
 end
 
 # Place the labels of the Text plot in each drawing of `ds` (one placement shared by all). Every label starts at its
-# best candidate on its own; then each in turn moves to its best given the others (another label costs 1000), until
-# none moves. Deterministic: no random number is drawn, and ties go to the first candidate in a fixed order.
+# best candidate on its own; then, one move at a time, the label whose move to its best place given the others lowers
+# its cost most moves (another label costs 1000), until no move lowers any; so where two labels contend for a place,
+# the one that loses less by moving gives way (WP7a-2: a sweep in a fixed order moved the other one, out to 14 px
+# farther, on 2.3's nine-warehouse map). Deterministic: no random number is drawn, and ties go to the first label and
+# candidate in a fixed order.
 #   prefer = :outward  the side `aligntext(x, y)` chooses from the points is preferred, 1.5 per 45 degrees away
 #            :imhof    the cartographic order NE, NW, SW, SE, E, N, W, S, 1.5 a rank
 #            :near     no side preferred, and no cost for sitting nearer another labeled point
 #   maxgap   the ordinary search radius, in pixels; beyond it, out to 2maxgap, only at a steep cost per pixel, so only to
-#            clear a data line, a marker or a label (each 1000), never a base layer (40)
+#            clear a data line, a marker or a label (each 1000), never a base layer
 #   fix      label index => candidate: pinned, and no other label may take its place
+# A base layer (WP7a-2, his review of WP7a's 5.2 maps): a label never moves farther from its point only to clear one.
+# Distance is measured as it is seen, from the point to the label's nearest ink (_seen). A candidate touching a base
+# layer and nothing else costs the base layer's 40 only if some candidate clear of everything is as near as it, or
+# nearer; where every clear candidate is farther, the contact costs only its segments, 1 each.
 function _place(ds::Vector{_Drawing}; prefer = :outward, xy = nothing, maxgap = 30, fix = nothing,
                 radii = [3, 5, 7, 9, 12, 15, 19, 24, 30, 38, 48, 60, 75, 95, 120, 150],
                 clear = 2.0, wdist = 1.0, wside = 1.5, wlabel = 1000.0, maxpass = 50, wassoc = 30.0,
@@ -432,7 +453,9 @@ function _place(ds::Vector{_Drawing}; prefer = :outward, xy = nothing, maxgap = 
     for i in 1:n, (k, c) in enumerate(C)
         isinf(pref[i, k]) || (pref[i, k] += assoc(i, c))
     end
-    S = [isinf(pref[i, k]) ? Inf : sum(_static(D, i, C[k]; clear) for D in ds) for i in 1:n, k in 1:K]
+    T = [[_static(D, i, C[k]; clear) for D in ds] for i in 1:n, k in 1:K]
+    S = [isinf(pref[i, k]) ? Inf : sum(_scost, T[i, k]) for i in 1:n, k in 1:K]
+    K0 = K
     # The fine-grid fallback (the course's label_place.jl): a label none of whose candidates within maxgap is clear of
     # everything, base layers included, searches every offset on a `grid`-px lattice within maxgap, nearest first, ties
     # by angle, its alignment the quadrant it points into, and keeps the first `keep` that clear everything by the
@@ -450,7 +473,7 @@ function _place(ds::Vector{_Drawing}; prefer = :outward, xy = nothing, maxgap = 
             for (dx, dy) in lattice
                 a = (dx > 2 ? :left : dx < -2 ? :right : :center, dy > 2 ? :bottom : dy < -2 ? :top : :center)
                 c = _Cand(_dirof(a), (Float64(dx), Float64(dy)), hypot(dx, dy))
-                s = sum(_static(D, i, c; clear = gclear) for D in ds)
+                s = sum(D -> _scost(_static(D, i, c; clear = gclear)), ds)
                 s == 0 || continue
                 p = wdist * (c.r - first(radii)) + 4wdist * max(c.r - far, 0) + wside * rankof(i, c) + assoc(i, c)
                 push!(extra, (i, c, s, p))
@@ -466,6 +489,18 @@ function _place(ds::Vector{_Drawing}; prefer = :outward, xy = nothing, maxgap = 
             end
             pref, S = hcat(pref, P2), hcat(S, S2)
             K = length(C)
+        end
+    end
+    # A base layer is never cleared at the price of distance (WP7a-2): a candidate touching a base layer and nothing
+    # else, nearer as seen than every candidate clear of everything, costs only its base segments.
+    for i in 1:n
+        seen = [isinf(pref[i, k]) ? Inf : maximum(_seen(D, i, C[k]) for D in ds) for k in 1:K]
+        nearest = minimum((seen[k] for k in 1:K if S[i, k] == 0); init = Inf)
+        for k in 1:K0
+            isinf(pref[i, k]) && continue
+            ts = T[i, k]
+            (all(t -> t.hard == 0, ts) && any(t -> t.base > 0, ts) && seen[k] < nearest) || continue
+            S[i, k] = sum(t -> t.bsegs, ts)
         end
     end
     cost = S .+ pref
@@ -484,21 +519,18 @@ function _place(ds::Vector{_Drawing}; prefer = :outward, xy = nothing, maxgap = 
         return t
     end
     total(i, k) = cost[i, k] + overlapcost(i, k)
-    for pass in 1:maxpass
-        moved = false
-        for i in sortperm([total(i, choice[i]) for i in 1:n]; rev = true)
-            best, bk = total(i, choice[i]), choice[i]
+    for _ in 1:maxpass*n          # one move at a time, the one that lowers its label's cost most
+        gain, bi, bk = 1e-9, 0, 0
+        for i in 1:n
+            t0 = total(i, choice[i])
             for k in 1:K
-                cost[i, k] >= best && continue
-                t = total(i, k)
-                t < best - 1e-9 && ((best, bk) = (t, k))
-            end
-            if bk != choice[i]
-                choice[i] = bk
-                moved = true
+                cost[i, k] >= t0 - gain && continue
+                g = t0 - total(i, k)
+                g > gain && ((gain, bi, bk) = (g, i, k))
             end
         end
-        moved || break
+        bi == 0 && break
+        choice[bi] = bk
     end
     align = [_DIRS[C[choice[i]].d] for i in 1:n]
     offset = [C[choice[i]].off for i in 1:n]

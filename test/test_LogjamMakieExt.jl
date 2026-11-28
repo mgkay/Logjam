@@ -1,7 +1,8 @@
 # test_LogjamMakieExt.jl -- the tests of ext/LogjamMakieExt.jl, one test file per source file (PCV WP8 of Logjam v0.3.1).
 # Each section below was moved verbatim from the test file its marker names, under that file's own header,
 # which says which component added it. No assertion changed. A testset taken out of a wrapper that held the
-# tests of several modules sits in a wrapper of the same name with this module's name before it.
+# tests of several modules sits in a wrapper of the same name with this module's name before it. A section marked
+# "added by" was written after WP8, by the work package it names.
 
 # ==== moved from test/test_aligntext_ax.jl, its lines 1-264 ====
 # test_aligntext_ax.jl -- added by PCV WP7a of Logjam v0.3.1 (D1, MAP1): `aligntext(ax, x, y, labels; ...)`, the label
@@ -243,6 +244,47 @@ end
         @test Base.kwarg_decl(m) == [:fontsize, :font, :lineheight, :justification, :rotation, :maxgap, :fix, :prefer, :verbose]
         @test isempty(Test.detect_ambiguities(Logjam, _WP7A_MX))
     end
+end
+
+# ==== added by PCV WP7a-2 of Logjam v0.3.1 (his review of WP7a's 5.2 maps: keep a label beside its point) ====
+# A label never moves farther from its point only to clear a base layer. The figure is Jacksonville's on 5.2's maps in
+# miniature, in pixels (a 400 x 300 axis filling its figure): data lines on every side of the point but the northeast,
+# and a base layer 12 px east of it, so the northeast spots out to 19 px touch the base layer and the only clear spot
+# within `maxgap` is the diagonal 24 px out. Synthetic: no lecture data.
+function _wp7a2_coast(; base::Bool)
+    fig = Figure(size = (400, 300), figure_padding = 0)
+    ax = Axis(fig[1, 1]; limits = (0, 400, 0, 300))
+    hidedecorations!(ax); hidespines!(ax)
+    for q in ((0, 150), (200, 300), (200, 0), (50, 300), (50, 0), (350, 0))    # rays west, north, south, NW, SW, SE
+        lines!(ax, [200.0, q[1]], [150.0, q[2]]; color = :red, linewidth = 1)
+    end
+    lines!(ax, [230.0, 400.0], [150.0, 150.0]; color = :red, linewidth = 1)  # a route east, beyond the coast
+    kw = base ? (; label = "US State Borders") : (;)                          # unlabeled, it is a data line
+    lines!(ax, [212.0, 212.0], [0.0, 300.0]; color = :blue, linewidth = 1, kw...)
+    scatter!(ax, [200.0], [150.0]; markersize = 12)
+    return fig, ax
+end
+
+@testset "WP7a-2 (v0.3.1) a label stays beside its point: a nearer spot touching a base layer beats a clear one farther out" begin
+    fig, ax = _wp7a2_coast(base = true)
+    q = _WP7A_MX._aligntext(ax, [200.0], [150.0], ["Jacksonville"]; fontsize = 14)
+    fig0, ax0 = _wp7a2_coast(base = false)
+    q0 = _WP7A_MX._aligntext(ax0, [200.0], [150.0], ["Jacksonville"]; fontsize = 14)
+    # the same line as a data line: the label goes out to the clear diagonal, 24 px, touching nothing
+    @test q0.align == [(:left, :bottom)] && hypot(q0.offset[1]...) >= 24 && isempty(q0.flagged)
+    # as a base layer: the label stays nearer, northeast, touching the base layer and nothing else (flagged as such)
+    @test q.align == [(:left, :bottom)] && hypot(q.offset[1]...) < 24
+    @test length(q.flagged) == 1 && q.flagged[1].touches == ["a base layer"]
+    # nearer as seen, too: from the point to the label's nearest ink
+    seen(ax, q) = (tp = text!(ax, [200.0], [150.0]; text = ["Jacksonville"], fontsize = 14, align = q.align,
+                              offset = q.offset);
+                   D = _WP7A_MX._Drawing(ax, tp);
+                   c = _WP7A_MX._Cand(_WP7A_MX._dirof(q.align[1]), q.offset[1], hypot(q.offset[1]...));
+                   s = _WP7A_MX._seen(D, 1, c); delete!(ax, tp); s)
+    @test seen(ax, q) < seen(ax0, q0)
+    # and the public call gives the same placement, deterministic
+    r = aligntext(ax, [200.0], [150.0], ["Jacksonville"]; fontsize = 14)
+    @test r[2].second == q.align && r[3].second == q.offset
 end
 
 @testset "WP7a (v0.3.1) a fresh process: LogjamMakieExt loads with CairoMakie alone, without GeoMakie" begin
