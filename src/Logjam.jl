@@ -51,6 +51,7 @@ using Graphs
 using SimpleWeightedGraphs
 using SparseArrays
 using Optim
+using PrecompileTools: @setup_workload, @compile_workload
 
 # DelaunayTriangulation's `triangulate` and `find_triangle` draw from the global random stream unless given an
 # `rng`, which makes the triangle chosen among cocircular nodes vary from run to run and advances the caller's
@@ -159,6 +160,26 @@ end
 
 function __init__()
     Base.Experimental.register_error_hint(_extension_hint, MethodError)
+end
+
+# The precompile workload (D12, WP8 of v0.3.1): the first calls of `addconnectors`, through its local point location
+# and its whole-triangulation fallback, and of `aligntext(x, y)`, compiled once while the package image is built, so a
+# script's first call does not compile them. Synthetic points made here without random numbers: no network, no file
+# read or written, no artifact, nothing drawn, and the results are discarded, so no function's output changes. The
+# Makie extension compiles `aligntext(ax, ...)` the same way (ext/LogjamMakieExt.jl).
+@setup_workload begin
+    # 40 nodes on a jittered 8 x 5 grid, more than the 16 nearest the local search starts with; three links; one new
+    # point inside the network and one outside its hull
+    xs = [-79.0 + 0.1 * ((i - 1) % 8) + 0.013 * sin(3.0 * i) for i in 1:40]
+    ys = [35.0 + 0.1 * ((i - 1) ÷ 8) + 0.011 * cos(2.0 * i) for i in 1:40]
+    nodes = DataFrame(IDX = 1:40, LON = xs, LAT = ys)
+    links = DataFrame(SRC = [1, 2, 3], DST = [2, 3, 4], DIST = [6.0, 6.0, 6.0])
+    px, py = [-78.66, -79.5], [35.21, 34.6]
+    @compile_workload begin
+        addconnectors(nodes, links, px, py)
+        addconnectors(nodes, links, px, py; speed = 20)
+        aligntext(xs[1:6], ys[1:6])
+    end
 end
 
 end # module Logjam

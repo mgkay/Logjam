@@ -461,6 +461,14 @@ missed.
   files named above among them, are sections of those files now, each moved verbatim under its old header, and the
   count is the same before and after. A helper that two files defined, and a pin-case or oracle file that several
   included, is defined once, so a full run prints no method-redefinition warning.
+- **Precompile workloads (D12, WP8).** A `PrecompileTools` workload in `src/Logjam.jl` compiles the first calls of
+  `addconnectors` (its local point location and its fallback outside the hull) and `aligntext(x, y)` while the
+  package image is built, and one in `LogjamMakieExt` the first call of `aligntext(ax, x, y, labels)` on a figure of
+  Makie's own. Synthetic points only: no network, no file read or written, no artifact, no window; no output changes.
+  First call in a fresh process after precompilation (median of three, Julia 1.12.6, reported, not asserted):
+  `addconnectors` on 225 nodes and 12 points 10.4 s to 0.03 s, `aligntext(x, y)` on six points 9.4 s to 0.0003 s,
+  `aligntext(ax, ...)` on a plain `Axis` 12.5 s to 0.98 s. Building the images takes about 16 s longer, once (Logjam
+  3.5 s to 9.4 s, `LogjamMakieExt` 4.7 s to 14.3 s).
 
 ## v0.3.0
 

@@ -1,7 +1,8 @@
 # LogjamMakieExt: plotting that needs only Makie, not GeoMakie. Loaded whenever Makie is, so with CairoMakie alone and
 # with GeoMakie. Built in v0.3.1's WP7a:
 # - `aligntext(ax, x, y, labels; ...)`, a label placer that reads the drawn figure (D1, CR 52, CR 61, CR 3), declared
-#   and documented in core beside `aligntext(x, y)` (src/maptools.jl), which it leaves unchanged.
+#   and documented in core beside `aligntext(x, y)` (src/maptools.jl), which it leaves unchanged;
+# - in WP8, a precompile workload for it (D12), at the end of this file.
 # It is review D's round-three placer (makeLogjam/plans/v0_3_0/recon/refactor-D/placer2.jl and refactor-D-plotting.md,
 # "Rounds two and three"), ported: the same obstacles, costs, candidates, fine-grid fallback and search, without the
 # prototype's simulated annealing (off by default there, and the only thing in it that drew a random number), so the
@@ -588,6 +589,25 @@ function Logjam.aligntext(ax::Makie.AbstractAxis, x::AbstractVector{<:Real}, y::
                           verbose::Bool = false)
     return _aligntext(ax, x, y, labels; fontsize, font, lineheight, justification, rotation, maxgap, fix, prefer,
                       verbose).pairs
+end
+
+# =============================================================================
+# The precompile workload (D12, WP8 of v0.3.1)
+# =============================================================================
+# The first call of aligntext(ax, ...), compiled once while the extension's package image is built: a figure of Makie's
+# own with no backend (so no window and no file), a line and markers through four points, and their labels. The
+# placement is discarded, so no output changes.
+using PrecompileTools: @setup_workload, @compile_workload
+@setup_workload begin
+    x, y = [1.0, 2.0, 3.0, 4.0], [1.0, 2.5, 1.5, 3.0]
+    labels = ["A", "B", "C", "D"]
+    @compile_workload begin
+        fig = Makie.Figure(size = (400, 300))
+        ax = Makie.Axis(fig[1, 1])
+        Makie.lines!(ax, x, y)
+        Makie.scatter!(ax, x, y)
+        Logjam.aligntext(ax, x, y, labels)
+    end
 end
 
 end # module
