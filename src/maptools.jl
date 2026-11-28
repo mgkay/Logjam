@@ -1106,9 +1106,9 @@ CairoMakie, GeoMakie`).
   each as the one-route method draws it.
 
 An arrowhead sits `arrow_at` of the way along a leg, by its length as drawn (`0.55` is a little past the middle), on
-every `arrow_every`-th leg from the first, `arrow_size` pixels long. `arrow_at`'s default is `0.55`, but on the
-one-route method, whose default, `nothing`, is `0.55`, or with `node_numbers` the arrowhead's tip on the far node
-(below). A leg of no length (a location visited twice) has none, and `arrows = false` draws none. A leg is each pair
+every `arrow_every`-th leg from the first, `arrow_size` pixels long. `arrow_at` is `0.55` by default. On the
+one-route method its default is `nothing`, which means `0.55`, or, with `node_numbers`, the arrowhead's tip on the far
+node (below). A leg of no length (a location visited twice) has none, and `arrows = false` draws none. A leg is each pair
 of consecutive locations, or with `P` the whole traced path from one location to the next. The arrowheads point along
 the leg as it is drawn: their angle is computed from the axis's own transform and limits, so it is right on a map
 (`makemap`'s Mercator `GeoAxis`) and on a plain `Axis`, and a `resize!` turns them again. `plotroute!` makes no call
@@ -1267,8 +1267,8 @@ the locations' (`LON`, `LAT`), one row for each location, as for `plotroute!`.
 An arrowhead sits `arrow_at` of the way along each shipment, by its length as drawn, `arrow_size` pixels long, and
 points along it there, on a map and on a plain `Axis` alike, as `plotroute!`'s do (`arrow_every` is the routes'); a
 shipment from a location to itself has none, and `arrows = false` draws none. On the first method `arrow_at`'s
-default, `nothing`, is `0.55`, or with `node_numbers` the arrowhead's tip on the destination's node (below); on the
-routes method it is `0.55`.
+default is `nothing`, which means `0.55`, or, with `node_numbers`, the arrowhead's tip on the destination's node
+(below); on the routes method it is `0.55`.
 
 `names` and `loads` mark and label each location a shipment begins or ends at (or each stop of a route), once, as
 `plotroute!`'s do: its name, its loads (`ldlabel`), or its name over its loads, placed by `aligntext(ax, ...)` and
